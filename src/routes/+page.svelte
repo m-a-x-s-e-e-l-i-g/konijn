@@ -3,7 +3,11 @@
     import { onMount } from 'svelte';
 
     onMount(() => {
-        gsap.to('#konijn', { y: -100, duration: 0.5, repeat: -1, yoyo: true, ease: 'power1.out' });
+         const tl = gsap.timeline({ repeat: -1 });
+        tl.fromTo('#konijn', { y: -300 }, { y: 30, duration: .4, ease: 'power2.in' })
+          .to('#konijn', { scaleY: 0.8, scaleX: 1.2, duration: 0.2 }, '0.3')
+          .to('#konijn', { y: -300, duration: .4, ease: 'power2.out' })
+          .to('#konijn', { scale: 1, duration: .3 }, '0.5');
     });
 </script>
 
