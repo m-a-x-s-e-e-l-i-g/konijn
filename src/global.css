@@ -1,3 +1,7 @@
+:root{
+    cursor: url('/images/carrot-cursor.svg'), auto;
+}
+
 .caveat-brush-regular {
   font-family: "Caveat Brush", cursive;
   font-weight: 400;
