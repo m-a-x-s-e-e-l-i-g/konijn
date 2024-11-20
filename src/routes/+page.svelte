@@ -6,8 +6,7 @@
     import { Toaster } from "$lib/components/ui/sonner";
 
     var bounceSound = new Howl({
-        src: ['/audio/bounce.wav'],
-        volume: 0.5
+        src: ['/audio/bounce.wav']
     });
 
     const fontClassList = ['chewy-regular', 'caveat-brush-regular', 'road-rage-regular'];
