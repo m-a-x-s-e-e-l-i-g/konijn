@@ -1,6 +1,12 @@
 <script>
     import { gsap } from 'gsap';
     import { onMount } from 'svelte';
+    import {Howl} from 'howler';
+
+    var bounceSound = new Howl({
+        src: ['/audio/bounce.wav'],
+        volume: 0.5
+    });
 
     const fontClassList = ['chewy-regular', 'caveat-brush-regular', 'road-rage-regular'];
 
@@ -9,6 +15,8 @@
     }
 
     function emitBoing() {
+        bounceSound.play();
+
         const wordElement = document.createElement('div');
         wordElement.classList.add(getRandomFontClass());
         const wordContainer = document.getElementById('word-container');
