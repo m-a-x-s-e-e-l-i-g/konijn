@@ -3,6 +3,7 @@
     import { onMount } from 'svelte';
     import {Howl} from 'howler';
     import { bounceCount } from '$lib/store';
+    import { Toaster } from "$lib/components/ui/sonner";
 
     var bounceSound = new Howl({
         src: ['/audio/bounce.wav'],
@@ -83,3 +84,4 @@
     <div id="grass"></div>
     <div id="word-container"></div>
 </div>
+<Toaster/>
