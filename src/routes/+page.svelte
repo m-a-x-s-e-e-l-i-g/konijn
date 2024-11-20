@@ -2,6 +2,7 @@
     import { gsap } from 'gsap';
     import { onMount } from 'svelte';
     import {Howl} from 'howler';
+    import { bounceCount } from '$lib/store';
 
     var bounceSound = new Howl({
         src: ['/audio/bounce.wav'],
@@ -16,6 +17,7 @@
 
     function emitBoing() {
         bounceSound.play();
+        bounceCount.update(n => n + 1);
 
         const wordElement = document.createElement('div');
         wordElement.classList.add(getRandomFontClass());
