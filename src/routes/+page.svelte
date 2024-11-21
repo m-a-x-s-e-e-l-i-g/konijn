@@ -54,7 +54,7 @@
         // Weapon selection
         const fartSound = new Howl({ src: ['/audio/weapons/fart.mp3'] });
         const fartEquipSound = new Howl({ src: ['/audio/weapons/fart-equip.mp3'] });
-        const pistolSound = new Howl({ src: ['/audio/weapons/pistol.mp3'], volume: 0.1 });
+        const pistolSound = new Howl({ src: ['/audio/weapons/pistol.mp3'] });
         const pistolEquipSound = new Howl({ src: ['/audio/weapons/pistol-equip.mp3'] });
         const weapons = [
             { id: 0, name: 'fart', sound: fartSound, equipSound: fartEquipSound },
