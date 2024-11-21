@@ -52,7 +52,13 @@
         }
 
         // Weapon selection
-        const fartSound = new Howl({ src: ['/audio/weapons/fart.mp3'] });
+        let fartSound = new Howl({ 
+            src: ['/audio/weapons/fart.mp3'],
+            onplay: () => {
+                // Randomize the pitch between 0.5 and 1.5
+                fartSound.rate(Math.random() * (1.5 - 0.5) + 0.5);
+            }
+        });
         const fartEquipSound = new Howl({ src: ['/audio/weapons/fart-equip.mp3'] });
         const pistolSound = new Howl({ src: ['/audio/weapons/pistol.mp3'] });
         const pistolEquipSound = new Howl({ src: ['/audio/weapons/pistol-equip.mp3'] });
