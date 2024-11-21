@@ -94,7 +94,8 @@
     #boing-counter {
         position: fixed;
         top: 0;
-        right: 10px;
+        left: 50%;
+        transform: translateX(-50%);
         font-size: 2rem;
         font-weight: bold;
         pointer-events: none;
@@ -112,6 +113,8 @@
         <div id="word-container"></div>
     </div>
     <div id="grass"></div>
-    <div id="boing-counter">{$bounceCount}</div>
+    <div id="boing-counter">
+        <span class="text-4xl chewy-regular">{$bounceCount}</span>
+    </div>
 </div>
 <Toaster/>
