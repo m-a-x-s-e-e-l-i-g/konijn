@@ -2,7 +2,8 @@
     import { gsap } from 'gsap';
     import { onMount } from 'svelte';
     import {Howl} from 'howler';
-    import { bounceCount } from '$lib/store';
+    import { bounceCount } from '$lib/stores/bounce';
+    import { currentWeapon } from '$lib/stores/weapon';
     import { Toaster } from "$lib/components/ui/sonner";
 
     var bounceSound = new Howl({
@@ -36,6 +37,7 @@
     }
 
     onMount(() => {
+        // Konijn animation
         const tl = gsap.timeline({ repeat: -1 });
         tl.fromTo('#konijn', { y: -300 }, { y: 30, duration: .4, ease: 'power2.in' }) // jump
           .to('#konijn', { scaleY: 0.8, scaleX: 1.2, duration: 0.2, onComplete: emitBoing }, '0.3') // squash
@@ -48,6 +50,34 @@
                 window.location.reload();
             });
         }
+
+        // Weapon selection
+        const fartSound = new Howl({ src: ['/audio/weapons/fart.mp3'] });
+        const fartEquipSound = new Howl({ src: ['/audio/weapons/fart-equip.mp3'] });
+        const pistolSound = new Howl({ src: ['/audio/weapons/pistol.mp3'], volume: 0.1 });
+        const pistolEquipSound = new Howl({ src: ['/audio/weapons/pistol-equip.mp3'] });
+        const weapons = [
+            { id: 0, name: 'fart', sound: fartSound, equipSound: fartEquipSound },
+            { id: 1, name: 'pistol', sound: pistolSound, equipSound: pistolEquipSound },
+        ];
+
+        function switchWeapon() {
+            $currentWeapon = ($currentWeapon + 1) % weapons.length;
+            const nextWeapon = weapons[$currentWeapon];
+            nextWeapon.equipSound.play();
+        }
+
+        function shoot() {
+            weapons[$currentWeapon].sound.play();
+        }
+
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'n') {
+                switchWeapon();
+            } else if (event.key === ' ') {
+                shoot();
+            }
+        });
     });
 </script>
 
