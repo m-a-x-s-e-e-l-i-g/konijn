@@ -63,8 +63,8 @@
         const pistolSound = new Howl({ src: ['/audio/weapons/pistol.mp3'] });
         const pistolEquipSound = new Howl({ src: ['/audio/weapons/pistol-equip.mp3'] });
         const weapons = [
-            { id: 0, name: 'fart', sound: fartSound, equipSound: fartEquipSound },
-            { id: 1, name: 'pistol', sound: pistolSound, equipSound: pistolEquipSound },
+            { id: 0, name: 'fart', sound: fartSound, equipSound: fartEquipSound, fireRate: 200 },
+            { id: 1, name: 'pistol', sound: pistolSound, equipSound: pistolEquipSound, fireRate: 100 },
         ];
 
         function displayWeapon() {
@@ -87,9 +87,16 @@
             const nextWeapon = weapons[$currentWeapon];
             nextWeapon.equipSound.play();
         }
+        
+       let timeout: number | null = null;
 
         function shoot() {
+            if (timeout) return;
+
             weapons[$currentWeapon].sound.play();
+            timeout = setTimeout(() => {
+                timeout = null;
+            }, weapons[$currentWeapon].fireRate);
         }
 
         window.addEventListener('keydown', (event) => {
