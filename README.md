@@ -1,9 +1,9 @@
 [![Netlify Status](https://api.netlify.com/api/v1/badges/19e83ddd-4757-4e21-9f7b-89e723b49123/deploy-status)](https://app.netlify.com/sites/konijn/deploys)
 
-# Konijn
+# 🐰 Konine 🐇 KO9 🐰
 
 Very konijn indeed.
-Check out the [Konijn](https://konijn.netlify.app/).
+Check out the [Konijn](https://www.konine.art/).
 
 ## Developing
 
