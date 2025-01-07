@@ -166,7 +166,7 @@
         pointer-events: none;
     }
 
-        #switch-weapon-button, #shoot-button {
+    #switch-weapon-button, #shoot-button {
         position: fixed;
         bottom: 100px;
         width: 50px;
@@ -202,10 +202,10 @@
         <div id="word-container"></div>
     </div>
 
-    <button id="switch-weapon-button" onclick={switchWeapon}>
+    <button id="switch-weapon-button" onclick={switchWeapon} title="N">
         <Icon src="{ArrowPathRoundedSquare}" theme="solid" size="60%" />
     </button>
-    <button id="shoot-button" onclick={shoot}>
+    <button id="shoot-button" onclick={shoot} title="Spacebar">
         <Icon src="{Sparkles}" theme="solid" size="60%" />
     </button>
 
