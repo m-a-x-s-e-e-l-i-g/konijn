@@ -216,6 +216,8 @@
     width: 400px;
     border: 5px solid black;
     margin: 0 auto;
+    background-color: black;
+    align-content: space-evenly;
   }
 
   .indie-flower-regular {
@@ -274,9 +276,8 @@
             <div class="konijn-artwork">
                 <Image
                     src="/images/artwork/{i}.jpg"
-                    layout="fullWidth"
                     alt="Stampkonijn"
-                    height=600
+                    aspectRatio="13:20"
                     background="auto"
                     cdn="netlify"
                 />
