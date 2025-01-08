@@ -8,8 +8,6 @@
     import { Toaster } from "$lib/components/ui/sonner";
     import {Howl} from 'howler';
     import { Image } from "@unpic/svelte";
-    import { fade } from 'svelte/transition';
-
 
     var bounceSound = new Howl({
         src: ['/audio/bounce.mp3']
@@ -273,7 +271,7 @@
     </div>
     <div id="image-container">
         {#each Array.from({ length: 19 }, (_, i) => i + 1) as i}
-            <div class="konijn-artwork" transition:fade>
+            <div class="konijn-artwork">
                 <Image
                     src="/images/artwork/{i}.jpg"
                     layout="fullWidth"
