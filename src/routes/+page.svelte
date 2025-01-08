@@ -7,6 +7,8 @@
     import { onMount } from 'svelte';
     import { Toaster } from "$lib/components/ui/sonner";
     import {Howl} from 'howler';
+    import { Image } from "@unpic/svelte";
+    import { fade } from 'svelte/transition';
 
 
     var bounceSound = new Howl({
@@ -118,13 +120,14 @@
 
 <style>
     #background {
-        position: fixed;
+        position: absolute;
         left:0;right:0;top:0;bottom:0;
-        background: linear-gradient(to bottom, #87CEEB, #4682B4);    
+        background: linear-gradient(to bottom, #87CEEB, #4682B4);
+        overflow: hidden;
     }
 
     #konijn-container {
-        position: fixed;
+        position: absolute;
         bottom: 0;
         left: 50%;
         transform: translateX(-50%);
@@ -148,7 +151,7 @@
 
 
     #grass {
-        position: fixed;
+        position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
@@ -157,7 +160,7 @@
     }
 
     #boing-counter {
-        position: fixed;
+        position: absolute;
         top: 0;
         left: 50%;
         transform: translateX(-50%);
@@ -167,7 +170,7 @@
     }
 
     #switch-weapon-button, #shoot-button {
-        position: fixed;
+        position: absolute;
         bottom: 100px;
         width: 50px;
         height: 50px;
@@ -190,10 +193,59 @@
         right: 10%;
         background-color: #de884b;
     }
+
+    main {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        height: auto;
+        background: green;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+
+    #image-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 40px;
+        width: 100%;
+    }
+
+  .konijn-artwork {
+    width: 400px;
+    border: 5px solid black;
+    margin: 0 auto;
+  }
+
+  .indie-flower-regular {
+  font-family: "Indie Flower", serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.permanent-marker-regular {
+  font-family: "Permanent Marker", serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.rubik-regular {
+  font-family: "Rubik", serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+}
 </style>
 
 <svelte:head>
-  <title>Stampkonijn</title>
+    <title>🐰 Konine - KO9 - Konijn 🐇</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Indie+Flower&family=Permanent+Marker&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet">
+
 </svelte:head>
 
 <div id="background">
@@ -214,4 +266,24 @@
         <span class="text-4xl chewy-regular">{$bounceCount}</span>
     </div>
 </div>
+<main class="pb-5">
+    <div id="title" class="py-10 text-center">
+        <h1 class="text-4xl">🐰 <span class="rubik-regular">Konine</span> - <span class="permanent-marker-regular">KO9</span> - <span class="indie-flower-regular">Konijn</span> 🐇</h1>
+        <p class="text-lg">The bounciest rabbit in the world!</p>
+    </div>
+    <div id="image-container">
+        {#each Array.from({ length: 19 }, (_, i) => i + 1) as i}
+            <div class="konijn-artwork" transition:fade>
+                <Image
+                    src="/images/artwork/{i}.jpg"
+                    layout="fullWidth"
+                    alt="Stampkonijn"
+                    height=600
+                    background="auto"
+                    cdn="netlify"
+                />
+            </div>
+        {/each}
+    </div>
+</main>
 <Toaster/>
