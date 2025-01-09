@@ -154,7 +154,7 @@
         left: 0;
         width: 100%;
         height: 100px;
-        background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0 100 Q10 80 20 100 T40 100 T60 100 T80 100 T100 100 V100 H0 Z" fill="green"/></svg>') repeat-x;
+        background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0 100 Q10 80 20 100 T40 100 T60 100 T80 100 T100 100 V100 H0 Z" fill="%2352a300"/></svg>') repeat-x;
     }
 
     #boing-counter {
@@ -198,11 +198,17 @@
         left: 0;
         right: 0;
         height: auto;
-        background: green;
+        background-image: url('/images/carrot-tile.png');
         display: flex;
         align-items: center;
         justify-content: center;
         flex-direction: column;
+    }
+
+    #title {
+        background: linear-gradient(90deg, #f12711bd 0%, #f5af19db 100%);
+        border-radius: 10px;
+        border: 3px solid #000;
     }
 
     #image-container {
@@ -267,8 +273,8 @@
     </div>
 </div>
 <main class="pb-5">
-    <div id="title" class="py-10 text-center">
-        <h1 class="text-4xl">🐰 <span class="rubik-regular">Konine</span> - <span class="permanent-marker-regular">KO9</span> - <span class="indie-flower-regular">Konijn</span> 🐇</h1>
+    <div id="title" class="my-10 p-4 text-center">
+        <h1 class="text-2xl sm:text-3xl md:text-4xl">🐰 <span class="rubik-regular">Konine</span> - <span class="permanent-marker-regular">KO9</span> - <span class="indie-flower-regular">Konijn</span> 🐇</h1>
         <p class="text-lg">The bounciest rabbit in the world!</p>
     </div>
     <div id="image-container">
