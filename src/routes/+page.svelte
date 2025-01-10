@@ -105,7 +105,7 @@
         window.addEventListener('keydown', (event) => {
             if (event.key === 'n') {
                 switchWeapon();
-            } else if (event.key === ' ') {
+            } else if (event.key === 'x') {
                 shoot();
             }
         });
@@ -263,7 +263,7 @@
     <button id="switch-weapon-button" onclick={switchWeapon} title="N">
         <Icon src="{ArrowPathRoundedSquare}" theme="solid" size="60%" />
     </button>
-    <button id="shoot-button" onclick={shoot} title="Spacebar">
+    <button id="shoot-button" onclick={shoot} title="X">
         <Icon src="{Sparkles}" theme="solid" size="60%" />
     </button>
 
