@@ -278,7 +278,7 @@
         <p class="text-lg">The bounciest rabbit in the world!</p>
     </div>
     <div id="image-container">
-        {#each Array.from({ length: 19 }, (_, i) => 19 - i) as i}
+        {#each Array.from({ length: 20 }, (_, i) => 20 - i) as i}
             <div class="konijn-artwork">
                 <Image
                     src="/images/artwork/{i}.jpg"
