@@ -41,6 +41,7 @@
 		"@steeze-ui/heroicons": "^2.4.2",
 		"@steeze-ui/svelte-icon": "^1.6.2",
 		"@unpic/svelte": "^0.0.58",
-		"howler": "^2.2.4"
+		"howler": "^2.2.4",
+		"netlify-cli": "^21.5.0"
 	}
 }
