@@ -6,8 +6,26 @@
     import { gsap } from 'gsap';
     import { onMount } from 'svelte';
     import { Toaster } from "$lib/components/ui/sonner";
+    import { Modal } from "$lib/components/ui/modal";
     import {Howl} from 'howler';
     import { Image } from "@unpic/svelte";
+
+    // Image preview modal
+    let previewModalOpen = $state(false);
+    let selectedImage = $state<string | null>(null);
+    let selectedImageAlt = $state("Konijn Artwork");
+
+    function openImagePreview(imageNumber: number) {
+        console.log('Opening preview for image', imageNumber);
+        selectedImage = `/images/artwork/${imageNumber}.jpg`;
+        previewModalOpen = true;
+    }
+
+    function closeImagePreview() {
+        console.log('Closing preview modal');
+        previewModalOpen = false;
+        selectedImage = null;
+    }
 
     var bounceSound = new Howl({
         src: ['/audio/bounce.mp3']
@@ -224,6 +242,12 @@
     margin: 0 auto;
     background-color: black;
     align-content: space-evenly;
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out;
+  }
+
+  .konijn-artwork:hover {
+    transform: scale(1.03);
   }
 
   .indie-flower-regular {
@@ -279,16 +303,29 @@
     </div>
     <div id="image-container">
         {#each Array.from({ length: 22 }, (_, i) => 22 - i) as i}
-            <div class="konijn-artwork">
+            <button 
+                class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px]" 
+                onclick={() => openImagePreview(i)} 
+                aria-label={`View larger version of artwork ${i}`}
+            >
                 <Image
-                    src="/images/artwork/{i}.jpg"
+                    src={`/images/artwork/${i}.jpg`}
                     alt="Stampkonijn"
                     aspectRatio="13:20"
                     background="auto"
                     cdn="netlify"
                 />
-            </div>
+            </button>
         {/each}
     </div>
 </main>
+
+<Modal open={previewModalOpen} onClose={closeImagePreview} class="max-w-3xl">
+    {#if selectedImage}
+        <div class="flex flex-col items-center justify-center">
+            <img src={selectedImage} alt={selectedImageAlt} class="max-h-[80vh] object-contain" />
+        </div>
+    {/if}
+</Modal>
+
 <Toaster/>
