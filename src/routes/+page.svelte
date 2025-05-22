@@ -342,28 +342,26 @@
     
     <div id="image-container">
         {#each artworkCollection as artwork}
-            <div class="artwork-container relative">
-                <button 
-                    class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobile ? 'mobile-disabled' : ''}" 
-                    onclick={() => openImagePreview(artwork.id)} 
-                    aria-label={`View larger version of artwork ${artwork.id}`}
-                    title={isMobile ? "Image preview disabled on mobile devices" : "Click to view larger image"}
-                >
-                    <Image
-                        src={`/images/artwork/${artwork.id}.jpg`}
-                        alt={artwork.title || `Konijn Artwork ${artwork.id}`}
-                        aspectRatio={12/15}
-                        width={800}
-                        background="auto"
-                        cdn="netlify"
-                    />
-                    <div class="mt-2 flex flex-wrap justify-center w-100%">
-                        {#each artwork.tags as tag}
-                            <Tag {tag} />
-                        {/each}
-                    </div>
-                </button>
-            </div>
+            <button 
+                class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobile ? 'mobile-disabled' : ''}" 
+                onclick={() => openImagePreview(artwork.id)} 
+                aria-label={`View larger version of artwork ${artwork.id}`}
+                title={isMobile ? "Image preview disabled on mobile devices" : "Click to view larger image"}
+            >
+                <Image
+                    src={`/images/artwork/${artwork.id}.jpg`}
+                    alt={artwork.title || `Konijn Artwork ${artwork.id}`}
+                    aspectRatio={12/15}
+                    width={800}
+                    background="auto"
+                    cdn="netlify"
+                />
+                <div class="mt-2 flex flex-wrap justify-center">
+                    {#each artwork.tags as tag}
+                        <Tag {tag} />
+                    {/each}
+                </div>
+            </button>
         {/each}
     </div>
 </main>
