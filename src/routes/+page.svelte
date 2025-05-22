@@ -7,8 +7,10 @@
     import { Toaster } from "$lib/components/ui/sonner";
     import { Modal } from "$lib/components/ui/modal";
     import { Magnifier } from "$lib/components/ui/magnifier";
-    import {Howl} from 'howler';
+    import { Tag } from "$lib/components/ui/tag";
+    import { Howl } from 'howler';
     import { Image } from "@unpic/svelte";
+    import { artworkCollection, getArtworkById } from '$lib/data/artwork-tags';
 
     // Image preview modal
     let previewModalOpen = $state(false);
@@ -25,6 +27,7 @@
         if (isMobileDevice()) return;
         
         selectedImage = `/images/artwork/${imageNumber}.jpg`;
+        selectedImageAlt = `Konijn Artwork ${imageNumber}`;
         previewModalOpen = true;
     }
 
@@ -255,7 +258,7 @@
   .konijn-artwork:hover {
     transform: scale(1.03);
   }
-  
+
   /* Style for disabled artwork buttons on mobile */
   .mobile-disabled {
     cursor: default;
@@ -330,23 +333,31 @@
         <h1 class="text-2xl sm:text-3xl md:text-4xl">🐰 <span class="rubik-regular">Konine</span> - <span class="permanent-marker-regular">KO9</span> - <span class="indie-flower-regular">Konijn</span> 🐇</h1>
         <p class="text-lg">The bounciest rabbit in the world!</p>
     </div>
+    
     <div id="image-container">
-        {#each Array.from({ length: 22 }, (_, i) => 22 - i) as i}
-            <button 
-                class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobileDevice() ? 'mobile-disabled' : ''}" 
-                onclick={() => openImagePreview(i)} 
-                aria-label={`View larger version of artwork ${i}`}
-                title={isMobileDevice() ? "Image preview disabled on mobile devices" : "Click to view larger image"}
-            >
-                <Image
-                    src={`/images/artwork/${i}.jpg`}
-                    alt="Stampkonijn"
-                    aspectRatio={12/15}
-                    width={800}
-                    background="auto"
-                    cdn="netlify"
-                />
-            </button>
+        {#each artworkCollection as artwork}
+            <div class="artwork-container relative">
+                <button 
+                    class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobileDevice() ? 'mobile-disabled' : ''}" 
+                    onclick={() => openImagePreview(artwork.id)} 
+                    aria-label={`View larger version of artwork ${artwork.id}`}
+                    title={isMobileDevice() ? "Image preview disabled on mobile devices" : "Click to view larger image"}
+                >
+                    <Image
+                        src={`/images/artwork/${artwork.id}.jpg`}
+                        alt={artwork.title || `Konijn Artwork ${artwork.id}`}
+                        aspectRatio={12/15}
+                        width={800}
+                        background="auto"
+                        cdn="netlify"
+                    />
+                    <div class="mt-2 flex flex-wrap justify-center w-100%">
+                        {#each artwork.tags as tag}
+                            <Tag {tag} />
+                        {/each}
+                    </div>
+                </button>
+            </div>
         {/each}
     </div>
 </main>
@@ -363,6 +374,18 @@
                 borderColor="#f5af19"
                 borderWidth={3}
             />
+            
+            {#if selectedImage && selectedImage.includes('/artwork/')}
+                {@const imageId = parseInt(selectedImage.split('/').pop()?.split('.')[0] || '0')}
+                {@const artwork = getArtworkById(imageId)}
+                {#if artwork}
+                    <div class="mt-4 flex flex-wrap justify-center">
+                        {#each artwork.tags as tag}
+                            <Tag {tag} />
+                        {/each}
+                    </div>
+                {/if}
+            {/if}
         </div>
     {/if}
 </Modal>
