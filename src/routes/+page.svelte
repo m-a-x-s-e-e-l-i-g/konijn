@@ -364,7 +364,14 @@
             </button>
         {/each}
     </div>
+
+    <footer class="w-full flex items-center justify-center mt-10">
+      <a href="https://maxmade.nl" target="_blank" rel="noopener noreferrer">
+        <img src="/images/logo-MAXmade.svg" alt="MAXmade logo" class="h-4 w-auto" />
+      </a>
+    </footer>
 </main>
+
 
 <Modal open={previewModalOpen} onClose={closeImagePreview} class="max-w-3xl">
     {#if selectedImage}
