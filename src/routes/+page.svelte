@@ -309,7 +309,7 @@
                 <Image
                     src={`/images/artwork/${i}.jpg`}
                     alt="Stampkonijn"
-                    aspectRatio="13:20"
+                    aspectRatio={12/15}
                     background="auto"
                     cdn="netlify"
                 />
