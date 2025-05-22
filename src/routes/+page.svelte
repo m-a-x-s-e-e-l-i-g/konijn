@@ -17,14 +17,12 @@
     let selectedImage = $state<string | null>(null);
     let selectedImageAlt = $state("Konijn Artwork");
     
-    // Function to detect mobile devices
-    function isMobileDevice() {
-        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    }
-
+    // Initialize isMobileDevice to false, will be properly set in onMount
+    let isMobile = $state(false);
+    
     function openImagePreview(imageNumber: number) {
         // Skip opening preview on mobile devices
-        if (isMobileDevice()) return;
+        if (isMobile) return;
         
         selectedImage = `/images/artwork/${imageNumber}.jpg`;
         selectedImageAlt = `Konijn Artwork ${imageNumber}`;
@@ -100,6 +98,14 @@
     }
 
     onMount(() => {
+        // Function to detect mobile devices - only called in the browser
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+        
+        // Set the isMobile variable for use throughout the component
+        isMobile = isMobileDevice();
+        
         // Konijn animation
         const tl = gsap.timeline({ repeat: -1 });
         tl.fromTo('#konijn', { y: -300 }, { y: 30, duration: .4, ease: 'power2.in' }) // jump
@@ -338,10 +344,10 @@
         {#each artworkCollection as artwork}
             <div class="artwork-container relative">
                 <button 
-                    class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobileDevice() ? 'mobile-disabled' : ''}" 
+                    class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobile ? 'mobile-disabled' : ''}" 
                     onclick={() => openImagePreview(artwork.id)} 
                     aria-label={`View larger version of artwork ${artwork.id}`}
-                    title={isMobileDevice() ? "Image preview disabled on mobile devices" : "Click to view larger image"}
+                    title={isMobile ? "Image preview disabled on mobile devices" : "Click to view larger image"}
                 >
                     <Image
                         src={`/images/artwork/${artwork.id}.jpg`}
