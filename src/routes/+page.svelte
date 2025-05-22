@@ -310,6 +310,7 @@
                     src={`/images/artwork/${i}.jpg`}
                     alt="Stampkonijn"
                     aspectRatio={12/15}
+                    width={800}
                     background="auto"
                     cdn="netlify"
                 />
