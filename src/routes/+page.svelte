@@ -14,8 +14,16 @@
     let previewModalOpen = $state(false);
     let selectedImage = $state<string | null>(null);
     let selectedImageAlt = $state("Konijn Artwork");
+    
+    // Function to detect mobile devices
+    function isMobileDevice() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
 
     function openImagePreview(imageNumber: number) {
+        // Skip opening preview on mobile devices
+        if (isMobileDevice()) return;
+        
         selectedImage = `/images/artwork/${imageNumber}.jpg`;
         previewModalOpen = true;
     }
@@ -247,6 +255,29 @@
   .konijn-artwork:hover {
     transform: scale(1.03);
   }
+  
+  /* Style for disabled artwork buttons on mobile */
+  .mobile-disabled {
+    cursor: default;
+    position: relative;
+  }
+  
+  .mobile-disabled:hover {
+    transform: none !important;
+  }
+  
+  .mobile-disabled::after {
+    content: "Preview disabled on mobile";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px;
+    font-size: 12px;
+    text-align: center;
+  }
 
   .indie-flower-regular {
   font-family: "Indie Flower", serif;
@@ -302,9 +333,10 @@
     <div id="image-container">
         {#each Array.from({ length: 22 }, (_, i) => 22 - i) as i}
             <button 
-                class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px]" 
+                class="konijn-artwork bg-black border-5 border-black m-0 auto align-content-space-evenly transition-transform duration-200 hover:scale-105 p-0 w-[400px] {isMobileDevice() ? 'mobile-disabled' : ''}" 
                 onclick={() => openImagePreview(i)} 
                 aria-label={`View larger version of artwork ${i}`}
+                title={isMobileDevice() ? "Image preview disabled on mobile devices" : "Click to view larger image"}
             >
                 <Image
                     src={`/images/artwork/${i}.jpg`}
