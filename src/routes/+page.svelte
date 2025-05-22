@@ -1,5 +1,4 @@
-<script lang="ts">
-	import { ArrowPathRoundedSquare, Sparkles } from '@steeze-ui/heroicons';
+<script lang="ts">    import { ArrowPathRoundedSquare, Sparkles } from '@steeze-ui/heroicons';
     import { Icon } from '@steeze-ui/svelte-icon';
     import { bounceCount } from '$lib/stores/bounce';
     import { currentWeapon } from '$lib/stores/weapon';
@@ -7,6 +6,7 @@
     import { onMount } from 'svelte';
     import { Toaster } from "$lib/components/ui/sonner";
     import { Modal } from "$lib/components/ui/modal";
+    import { Magnifier } from "$lib/components/ui/magnifier";
     import {Howl} from 'howler';
     import { Image } from "@unpic/svelte";
 
@@ -16,13 +16,11 @@
     let selectedImageAlt = $state("Konijn Artwork");
 
     function openImagePreview(imageNumber: number) {
-        console.log('Opening preview for image', imageNumber);
         selectedImage = `/images/artwork/${imageNumber}.jpg`;
         previewModalOpen = true;
     }
 
     function closeImagePreview() {
-        console.log('Closing preview modal');
         previewModalOpen = false;
         selectedImage = null;
     }
@@ -323,7 +321,15 @@
 <Modal open={previewModalOpen} onClose={closeImagePreview} class="max-w-3xl">
     {#if selectedImage}
         <div class="flex flex-col items-center justify-center">
-            <img src={selectedImage} alt={selectedImageAlt} class="max-h-[80vh] object-contain" />
+            <Magnifier 
+                src={selectedImage} 
+                alt={selectedImageAlt} 
+                zoomLevel={10} 
+                zoomBoxSize={150} 
+                zoomBoxRadius={10}
+                borderColor="#f5af19"
+                borderWidth={3}
+            />
         </div>
     {/if}
 </Modal>
