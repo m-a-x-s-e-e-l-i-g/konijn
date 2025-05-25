@@ -274,19 +274,6 @@
   .mobile-disabled:hover {
     transform: none !important;
   }
-  
-  .mobile-disabled::after {
-    content: "Preview disabled on mobile";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 5px;
-    font-size: 12px;
-    text-align: center;
-  }
 
   .indie-flower-regular {
   font-family: "Indie Flower", serif;
