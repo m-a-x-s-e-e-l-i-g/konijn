@@ -29,7 +29,7 @@ export const artworkCollection: ArtworkMetadata[] = [
   { id: 4, tags: ['paper', 'A4'] },
   { id: 3, tags: ['paper', 'A4'] },
   { id: 2, tags: ['canvas', '30x40cm'] },
-  { id: 1, tags: ['cartboard', '26x27cm'] },
+  { id: 1, tags: ['cardboard', '26x27cm'] },
 ];
 
 // Helper function to get artwork metadata by ID
@@ -44,7 +44,7 @@ export function getTagColor(tag: string): string {
       return 'text-gray-400';
     case 'canvas':
     case 'paper':
-    case 'cartboard':
+    case 'cardboard':
       return 'bg-black';
     case 'SOLD':
       return 'bg-red-500';
