@@ -335,6 +335,9 @@
                 aria-label={`View larger version of artwork ${artwork.id}`}
                 title={isMobile ? "Image preview disabled on mobile devices" : "Click to view larger image"}
             >
+                <span class="text-xs text-white inline-block absolute bg-black w-10 h-5 text-center -translate-x-1/2 rounded-b">
+                    #{artwork.id}
+                </span>
                 <Image
                     src={`/images/artwork/${artwork.id}.jpg`}
                     alt={artwork.title || `Konijn Artwork ${artwork.id}`}
@@ -343,10 +346,12 @@
                     background="auto"
                     cdn="netlify"
                 />
-                <div class="mt-2 flex flex-wrap justify-center">
-                    {#each artwork.tags as tag}
-                        <Tag {tag} />
-                    {/each}
+                <div class="mt-2 flex flex-col items-center">
+                    <div class="flex flex-wrap justify-center">
+                        {#each artwork.tags as tag}
+                            <Tag {tag} />
+                        {/each}
+                    </div>
                 </div>
             </button>
         {/each}
