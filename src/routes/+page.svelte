@@ -35,6 +35,20 @@
         selectedImage = null;
     }
 
+    function getImageProps(artwork) {
+        const props = {
+            src: `/images/artwork/${artwork.id}.jpg`,
+            alt: artwork.title || `Konijn Artwork ${artwork.id}`,
+            aspectRatio: 12/15,
+            width: 800,
+            background: "auto"
+        };
+        if (!import.meta.env.DEV) {
+            props.cdn = "netlify";
+        }
+        return props;
+    }
+
     var bounceSound = new Howl({
         src: ['/audio/bounce.mp3']
     });
@@ -428,14 +442,7 @@
                 <span class="text-xs text-white inline-block absolute bg-black w-10 h-5 text-center -translate-x-1/2 rounded-b">
                     #{artwork.id}
                 </span>
-                <Image
-                    src={`/images/artwork/${artwork.id}.jpg`}
-                    alt={artwork.title || `Konijn Artwork ${artwork.id}`}
-                    aspectRatio={12/15}
-                    width={800}
-                    background="auto"
-                    cdn="netlify"
-                />
+                <Image {...getImageProps(artwork)} />
                 <div class="mt-2 flex flex-col items-center">
                     <div class="flex flex-wrap justify-center">
                         {#each artwork.tags as tag}
