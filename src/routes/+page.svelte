@@ -108,6 +108,11 @@
 
         weapons[$currentWeapon].sound.play();
         
+        // Add poop confetti for fart weapon
+        if (weapons[$currentWeapon].name === 'fart') {
+            createPoopConfetti();
+        }
+        
         // Add shooting animation for pistol
         if (weapons[$currentWeapon].name === 'pistol') {
             const pistolElement = document.getElementById('pistol');
@@ -176,6 +181,76 @@
         timeout = setTimeout(() => {
             timeout = null;
         }, weapons[$currentWeapon].fireRate);
+    }
+
+    function createPoopConfetti() {
+        const konijnElement = document.getElementById('konijn');
+        if (!konijnElement) return;
+
+        // Create 5-8 poop particles
+        const particleCount = Math.floor(Math.random() * 4) + 5; // 5-8 particles
+        
+        for (let i = 0; i < particleCount; i++) {
+            const poopParticle = document.createElement('div');
+            poopParticle.className = 'poop-particle';
+            
+            // Use poop emoji
+            poopParticle.innerHTML = '💩';
+            
+            // Get rabbit's position and dimensions
+            const konijnRect = konijnElement.getBoundingClientRect();
+            const konijnContainer = document.getElementById('konijn-container');
+            if (!konijnContainer) return;
+            const containerRect = konijnContainer.getBoundingClientRect();
+            
+            // Position relative to rabbit's bottom center
+            const rabbitBottomX = konijnRect.left + konijnRect.width / 2 - containerRect.left - 45;
+            const rabbitBottomY = konijnRect.bottom - containerRect.top;
+            
+            // Random starting position near the rabbit's bottom
+            const startX = rabbitBottomX + (Math.random() - 0.5) * 60; // -30 to 30px variation
+            const startY = rabbitBottomY - 10; // Start slightly above the very bottom
+            
+            // Add to container first
+            konijnContainer.appendChild(poopParticle);
+            
+            // Position the particle using GSAP set
+            gsap.set(poopParticle, {
+                left: `${startX}px`,
+                top: `${startY}px`,
+                position: 'absolute'
+            });
+            
+            // Random horizontal movement and falling motion
+            const randomX = (Math.random() - 0.5) * 200; // -100 to 100px
+            const randomRotation = Math.random() * 720 - 360; // -360 to 360 degrees
+            
+            // Animate with GSAP - falling downwards
+            gsap.fromTo(poopParticle, 
+                { 
+                    x: 0, 
+                    y: 0, 
+                    rotation: 0,
+                    scale: 2,
+                    opacity: 1
+                },
+                { 
+                    x: randomX,
+                    y: 150 + Math.random() * 100, // Fall down 150-250px
+                    rotation: randomRotation,
+                    scale: 0.6 + Math.random() * 0.3, // Scale down to 0.6-0.9
+                    opacity: 0,
+                    duration: 1.5 + Math.random() * 0.5, // 1.5-2s duration
+                    ease: 'expo.out', // More realistic falling curve
+                    onComplete: () => {
+                        // Remove particle after animation
+                        if (poopParticle.parentNode) {
+                            poopParticle.parentNode.removeChild(poopParticle);
+                        }
+                    }
+                }
+            );
+        }
     }
 
     onMount(() => {
@@ -380,6 +455,30 @@
 #muzzle-flash {
     transform-box: fill-box;
     transform-origin: 0% 50%; /* left-center of the flash group points forward */
+}
+
+/* Poop confetti styles */
+.poop-particle {
+    position: absolute;
+    font-size: 24px;
+    pointer-events: none;
+    z-index: 10;
+    user-select: none;
+}
+
+@keyframes poop-fall {
+    0% {
+        opacity: 1;
+        transform: translateY(0) rotate(0deg) scale(1);
+    }
+    50% {
+        opacity: 0.8;
+        transform: translateY(75px) rotate(180deg) scale(0.8);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(200px) rotate(360deg) scale(0.6);
+    }
 }
 </style>
 
