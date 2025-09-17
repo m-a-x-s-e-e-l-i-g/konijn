@@ -21,6 +21,9 @@
     // Initialize isMobileDevice to false, will be properly set in onMount
     let isMobile = $state(false);
     
+    // Store reference to the rabbit animation timeline
+    let rabbitTimeline: gsap.core.Timeline | null = null;
+    
     function openImagePreview(imageNumber: number) {
         // Skip opening preview on mobile devices
         if (isMobile) return;
@@ -57,6 +60,48 @@
 
     function getRandomFontClass() {
         return fontClassList[Math.floor(Math.random() * fontClassList.length)];
+    }
+
+    // Fart boost: briefly slow time for a tiny float, no new animations
+    let fartBoostActive = false;
+    function applyFartBoost() {
+        if (!rabbitTimeline || fartBoostActive) return;
+        fartBoostActive = true;
+
+        // Save current timescale and apply a short slow-mo (more airtime)
+        const originalScale = rabbitTimeline.timeScale();
+        const boostedScale = Math.max(0.55, originalScale * 0.6); // ~40% slower
+        rabbitTimeline.timeScale(boostedScale);
+
+        // Add a tiny height impulse that doesn't fight the main timeline
+        // Use yPercent so it composes with existing translateY from timeline
+        gsap.killTweensOf('#konijn', 'yPercent');
+        gsap.set('#konijn', { yPercent: 0 });
+        gsap.to('#konijn', {
+            yPercent: -6, // small upward bump (~6% of element height)
+            duration: 0.12,
+            ease: 'power2.out'
+        });
+        gsap.to('#konijn', {
+            yPercent: 0,
+            duration: 0.25,
+            delay: 0.18,
+            ease: 'power1.inOut'
+        });
+
+        // After a short real-world delay, restore normal timescale smoothly
+        // Using gsap.delayedCall ensures we don't interfere with the timeline itself
+        gsap.delayedCall(0.35, () => {
+            // Tween timescale back for a subtle ease-in to normal speed
+            gsap.to(rabbitTimeline, {
+                timeScale: originalScale,
+                duration: 0.2,
+                ease: 'power1.out',
+                onComplete: () => {
+                    fartBoostActive = false;
+                }
+            });
+        });
     }
 
     function emitBoing() {
@@ -111,6 +156,7 @@
         // Add poop confetti for fart weapon
         if (weapons[$currentWeapon].name === 'fart') {
             createPoopConfetti();
+            applyFartBoost(); // Apply fart boost to make rabbit float
         }
         
         // Add shooting animation for pistol
@@ -268,6 +314,9 @@
           .to('#konijn', { scaleY: 0.8, scaleX: 1.2, duration: 0.2, onComplete: emitBoing }, '0.3') // squash
           .to('#konijn', { y: -300, duration: .4, ease: 'power2.out' }) // fall
           .to('#konijn', { scale: 1, duration: .1 }, '0.5'); // stretch
+        
+        // Store timeline reference for fart boost
+        rabbitTimeline = tl;
 
         // Force full page reload on changes, for development
         if (import.meta.hot) {
