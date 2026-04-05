@@ -8,8 +8,8 @@ export interface ArtworkMetadata {
 
 // Artwork metadata collection
 export const artworkCollection: ArtworkMetadata[] = [
-  { id: 30, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
-  { id: 29, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
+  { id: 30, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
+  { id: 29, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 27, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 26, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 25, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
@@ -23,7 +23,7 @@ export const artworkCollection: ArtworkMetadata[] = [
   { id: 17, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 16, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 15, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
-  { id: 14, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
+  { id: 14, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 13, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 12, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 11, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
