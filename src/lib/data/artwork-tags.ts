@@ -10,6 +10,7 @@ export interface ArtworkMetadata {
 export const artworkCollection: ArtworkMetadata[] = [
   { id: 30, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 29, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
+  { id: 28, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 27, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 26, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 25, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
