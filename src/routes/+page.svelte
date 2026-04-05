@@ -28,7 +28,7 @@
         // Skip opening preview on mobile devices
         if (isMobile) return;
         
-        selectedImage = `/images/artwork/${imageNumber}.jpg`;
+        selectedImage = `/images/artwork/${imageNumber}.webp`;
         selectedImageAlt = `Konijn Artwork ${imageNumber}`;
         previewModalOpen = true;
     }
@@ -40,7 +40,7 @@
 
     function getImageProps(artwork) {
         const props = {
-            src: `/images/artwork/${artwork.id}.jpg`,
+            src: `/images/artwork/${artwork.id}.webp`,
             alt: artwork.title || `Konijn Artwork ${artwork.id}`,
             aspectRatio: 12/15,
             width: 800,
