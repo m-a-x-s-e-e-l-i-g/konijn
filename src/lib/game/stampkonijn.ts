@@ -5,6 +5,7 @@ export type GamePhase = 'idle' | 'playing' | 'finished';
 export type WeaponName = 'poop' | 'pistol';
 type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
 type StampSurfaceKind = 'floor' | 'wall';
+type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
 
 export interface StampHudState {
 	phase: GamePhase;
@@ -77,6 +78,18 @@ interface ArmRagdoll {
 	angularVelocity: number;
 }
 
+interface LeftRoomDoor {
+	room: LeftRoomName;
+	label: string;
+	centerZ: number;
+	width: number;
+	height: number;
+	pivot: THREE.Group;
+	surfaces: THREE.Object3D[];
+	open: boolean;
+	openAmount: number;
+}
+
 const ROOM_WIDTH = 14;
 const ROOM_DEPTH = 10;
 const ROOM_HEIGHT = 4.8;
@@ -97,10 +110,21 @@ const DOOR_CENTER_Z = 1.15;
 const DOOR_WIDTH = 2.25;
 const DOOR_HEIGHT = 2.85;
 const GOOD_DOOR_STAMP_SPEED = 6.5;
+const LEFT_ROOMS_WIDTH = 6.5;
+const LEFT_ROOMS_MIN_X = -ROOM_WIDTH / 2 - LEFT_ROOMS_WIDTH;
+const LEFT_ROOMS_MAX_X = -ROOM_WIDTH / 2;
+const LEFT_ROOMS_CENTER_X = (LEFT_ROOMS_MIN_X + LEFT_ROOMS_MAX_X) / 2;
+const LEFT_ROOM_DOOR_WIDTH = 1.9;
+const LEFT_ROOM_DOOR_HEIGHT = 2.65;
+const BATHROOM_MAX_Z = -1.65;
+const BEDROOM_MIN_Z = 1.65;
+const BATHROOM_DOOR_Z = (BACK_WALL_Z + BATHROOM_MAX_Z) / 2;
+const STAIRS_DOOR_Z = 0;
+const BEDROOM_DOOR_Z = (BEDROOM_MIN_Z + ROOM_DEPTH / 2) / 2;
 const GARDEN_WIDTH = 22;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
-const WORLD_MIN_X = -GARDEN_WIDTH / 2;
+const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X);
 const WORLD_MAX_X = KITCHEN_MAX_X;
 const PLAYER_RADIUS = 0.52;
 const PLAYER_HEIGHT = 1.38;
@@ -225,6 +249,7 @@ export class StampKonijnGame {
 	private stampTargetKind: StampSurfaceKind = 'floor';
 	private stampTargetsWindow = false;
 	private stampTargetsDoor = false;
+	private stampTargetLeftDoor: LeftRoomDoor | null = null;
 	private stampPose = new THREE.Quaternion();
 	private breakableTilt = new THREE.Quaternion();
 	private uprightPose = new THREE.Quaternion();
@@ -245,6 +270,8 @@ export class StampKonijnGame {
 	private doorOpenAmount = 0;
 	private playerOutside = false;
 	private playerInKitchen = false;
+	private playerLeftRoom: LeftRoomName | null = null;
+	private leftRoomDoors: LeftRoomDoor[] = [];
 	private debris: DebrisPiece[] = [];
 	private impactRings: ImpactRing[] = [];
 	private surfaceCracks: SurfaceCrack[] = [];
@@ -364,6 +391,7 @@ export class StampKonijnGame {
 		this.pendingStampFeedback = '';
 		this.stampTargetsWindow = false;
 		this.stampTargetsDoor = false;
+		this.stampTargetLeftDoor = null;
 		this.stampPose.identity();
 		this.resetArmRagdolls();
 		this.score = 0;
@@ -438,6 +466,8 @@ export class StampKonijnGame {
 		this.stampTargetKind = target.kind;
 		this.stampTargetsWindow = this.windowStampSurfaces.includes(target.object);
 		this.stampTargetsDoor = this.doorStampSurfaces.includes(target.object);
+		this.stampTargetLeftDoor =
+			this.leftRoomDoors.find((door) => door.surfaces.includes(target.object)) ?? null;
 		if (target.kind === 'floor') {
 			this.stampDirection.set(0, -1, 0);
 		} else {
@@ -531,16 +561,6 @@ export class StampKonijnGame {
 		rug.position.set(0, 0.018, 1.1);
 		this.scene.add(rug);
 
-		const leftWall = box(
-			[0.18, ROOM_HEIGHT, ROOM_DEPTH],
-			[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0],
-			COLORS.wall
-		);
-		leftWall.receiveShadow = true;
-		this.scene.add(leftWall);
-		this.bulletImpactSurfaces.push(leftWall);
-		this.stampSurfaceKinds.set(leftWall, 'wall');
-
 		const windowLeft = WINDOW_CENTER_X - WINDOW_WIDTH / 2;
 		const windowRight = WINDOW_CENTER_X + WINDOW_WIDTH / 2;
 		const windowBottom = WINDOW_CENTER_Y - WINDOW_HEIGHT / 2;
@@ -611,8 +631,223 @@ export class StampKonijnGame {
 
 		const skirting = box([ROOM_WIDTH - 0.2, 0.22, 0.16], [0, 0.11, -4.84], COLORS.cream);
 		this.scene.add(skirting);
+		this.createLeftRooms();
 		this.createKitchen();
 		this.createGarden();
+	}
+
+	private createLeftRooms() {
+		const doorConfigs: Array<{
+			room: LeftRoomName;
+			label: string;
+			centerZ: number;
+			color: number;
+		}> = [
+			{ room: 'bathroom', label: 'BADKAMER', centerZ: BATHROOM_DOOR_Z, color: 0x76a4ae },
+			{ room: 'stairs', label: 'TRAP', centerZ: STAIRS_DOOR_Z, color: 0xd1a64d },
+			{ room: 'bedroom', label: 'SLAAPKAMER', centerZ: BEDROOM_DOOR_Z, color: 0xb77875 }
+		];
+
+		let wallCursor = BACK_WALL_Z;
+		for (const config of doorConfigs) {
+			const doorMinZ = config.centerZ - LEFT_ROOM_DOOR_WIDTH / 2;
+			const panelDepth = doorMinZ - wallCursor;
+			if (panelDepth > 0.01) {
+				const panel = box(
+					[0.18, ROOM_HEIGHT, panelDepth],
+					[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, wallCursor + panelDepth / 2],
+					COLORS.wall
+				);
+				panel.receiveShadow = true;
+				this.scene.add(panel);
+				this.bulletImpactSurfaces.push(panel);
+				this.stampSurfaceKinds.set(panel, 'wall');
+			}
+			const header = box(
+				[0.18, ROOM_HEIGHT - LEFT_ROOM_DOOR_HEIGHT, LEFT_ROOM_DOOR_WIDTH],
+				[
+					-ROOM_WIDTH / 2,
+					LEFT_ROOM_DOOR_HEIGHT + (ROOM_HEIGHT - LEFT_ROOM_DOOR_HEIGHT) / 2,
+					config.centerZ
+				],
+				COLORS.wall
+			);
+			header.receiveShadow = true;
+			this.scene.add(header);
+			this.bulletImpactSurfaces.push(header);
+			this.stampSurfaceKinds.set(header, 'wall');
+			wallCursor = config.centerZ + LEFT_ROOM_DOOR_WIDTH / 2;
+		}
+		const finalPanelDepth = ROOM_DEPTH / 2 - wallCursor;
+		if (finalPanelDepth > 0.01) {
+			const panel = box(
+				[0.18, ROOM_HEIGHT, finalPanelDepth],
+				[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, wallCursor + finalPanelDepth / 2],
+				COLORS.wall
+			);
+			panel.receiveShadow = true;
+			this.scene.add(panel);
+			this.bulletImpactSurfaces.push(panel);
+			this.stampSurfaceKinds.set(panel, 'wall');
+		}
+
+		const roomFloors: Array<{
+			room: LeftRoomName;
+			minZ: number;
+			maxZ: number;
+			color: number;
+		}> = [
+			{ room: 'bathroom', minZ: BACK_WALL_Z, maxZ: BATHROOM_MAX_Z, color: 0xb9d1cf },
+			{ room: 'stairs', minZ: BATHROOM_MAX_Z, maxZ: BEDROOM_MIN_Z, color: 0x9a704e },
+			{ room: 'bedroom', minZ: BEDROOM_MIN_Z, maxZ: ROOM_DEPTH / 2, color: 0xc49087 }
+		];
+		for (const room of roomFloors) {
+			const depth = room.maxZ - room.minZ;
+			const floor = shadowMesh(
+				new THREE.PlaneGeometry(LEFT_ROOMS_WIDTH, depth),
+				material(room.color, 0.94)
+			);
+			floor.rotation.x = -Math.PI / 2;
+			floor.position.set(LEFT_ROOMS_CENTER_X, -0.003, (room.minZ + room.maxZ) / 2);
+			floor.receiveShadow = true;
+			this.scene.add(floor);
+			this.bulletImpactSurfaces.push(floor);
+			this.stampSurfaceKinds.set(floor, 'floor');
+		}
+
+		for (let x = LEFT_ROOMS_MIN_X + 0.55; x < LEFT_ROOMS_MAX_X; x += 0.55) {
+			const seam = box(
+				[0.016, 0.008, BATHROOM_MAX_Z - BACK_WALL_Z - 0.12],
+				[x, 0.018, (BACK_WALL_Z + BATHROOM_MAX_Z) / 2],
+				0x8ba9a7
+			);
+			seam.receiveShadow = false;
+			this.scene.add(seam);
+		}
+		for (let z = BACK_WALL_Z + 0.55; z < BATHROOM_MAX_Z; z += 0.55) {
+			const seam = box(
+				[LEFT_ROOMS_WIDTH - 0.12, 0.008, 0.016],
+				[LEFT_ROOMS_CENTER_X, 0.019, z],
+				0x8ba9a7
+			);
+			seam.receiveShadow = false;
+			this.scene.add(seam);
+		}
+
+		const outerWall = box(
+			[0.18, ROOM_HEIGHT, ROOM_DEPTH],
+			[LEFT_ROOMS_MIN_X, ROOM_HEIGHT / 2, 0],
+			0xd8c7b4
+		);
+		const bathroomBackWall = box(
+			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
+			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BACK_WALL_Z],
+			0xd7e2df
+		);
+		const bathroomDivider = box(
+			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
+			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BATHROOM_MAX_Z],
+			0xd7e2df
+		);
+		const bedroomDivider = box(
+			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
+			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BEDROOM_MIN_Z],
+			0xe2d0c1
+		);
+		for (const wall of [outerWall, bathroomBackWall, bathroomDivider, bedroomDivider]) {
+			wall.receiveShadow = true;
+			this.scene.add(wall);
+			this.bulletImpactSurfaces.push(wall);
+			this.stampSurfaceKinds.set(wall, 'wall');
+		}
+
+		const vanity = box([1.5, 0.76, 0.58], [-8.65, 0.38, BACK_WALL_Z + 0.45], 0x6b8e88);
+		const basin = shadowMesh(new THREE.SphereGeometry(0.38, 18, 10), material(0xe6e2d8, 0.42));
+		basin.scale.set(1.25, 0.38, 0.78);
+		basin.position.set(-8.65, 0.82, BACK_WALL_Z + 0.48);
+		const mirror = box([1.05, 0.92, 0.035], [-8.65, 1.82, BACK_WALL_Z + 0.12], 0x88b4bd);
+		this.scene.add(vanity, basin, mirror);
+
+		for (let index = 0; index < 8; index += 1) {
+			const stepHeight = 0.24 * (index + 1);
+			const step = box(
+				[0.72, stepHeight, 2.35],
+				[-7.55 - index * 0.72, stepHeight / 2, 0],
+				index % 2 === 0 ? 0x956743 : 0xa47750
+			);
+			this.scene.add(step);
+		}
+		const stairRail = cylinder(0.055, 0.055, 5.15, [-10.1, 1.7, -1.06], 0x3d3029, 10);
+		stairRail.rotation.z = Math.PI / 2 - 0.34;
+		this.scene.add(stairRail);
+
+		const wardrobe = box([0.82, 2.2, 1.35], [LEFT_ROOMS_MIN_X + 0.52, 1.1, 3.25], 0x7d5a46);
+		const bedroomRug = shadowMesh(new THREE.CircleGeometry(1.2, 32), material(0x725c72, 0.95));
+		bedroomRug.scale.z = 0.64;
+		bedroomRug.rotation.x = -Math.PI / 2;
+		bedroomRug.position.set(-9.15, 0.015, 3.5);
+		this.scene.add(wardrobe, bedroomRug);
+
+		for (const config of doorConfigs) {
+			this.createLeftRoomDoor(config.room, config.label, config.centerZ, config.color);
+		}
+	}
+
+	private createLeftRoomDoor(
+		room: LeftRoomName,
+		label: string,
+		centerZ: number,
+		accentColor: number
+	) {
+		const doorMinZ = centerZ - LEFT_ROOM_DOOR_WIDTH / 2;
+		const doorMaxZ = centerZ + LEFT_ROOM_DOOR_WIDTH / 2;
+		const frameX = -ROOM_WIDTH / 2 + 0.02;
+		const frameColor = 0x332b27;
+		this.scene.add(
+			box(
+				[0.22, LEFT_ROOM_DOOR_HEIGHT + 0.18, 0.16],
+				[frameX, LEFT_ROOM_DOOR_HEIGHT / 2, doorMinZ],
+				frameColor
+			),
+			box(
+				[0.22, LEFT_ROOM_DOOR_HEIGHT + 0.18, 0.16],
+				[frameX, LEFT_ROOM_DOOR_HEIGHT / 2, doorMaxZ],
+				frameColor
+			),
+			box(
+				[0.22, 0.18, LEFT_ROOM_DOOR_WIDTH + 0.16],
+				[frameX, LEFT_ROOM_DOOR_HEIGHT, centerZ],
+				frameColor
+			)
+		);
+
+		const pivot = new THREE.Group();
+		pivot.position.set(-ROOM_WIDTH / 2 + 0.105, 0, doorMinZ + 0.08);
+		const leafDepth = LEFT_ROOM_DOOR_WIDTH - 0.16;
+		const leaf = box(
+			[0.12, LEFT_ROOM_DOOR_HEIGHT - 0.12, leafDepth],
+			[0, (LEFT_ROOM_DOOR_HEIGHT - 0.12) / 2, leafDepth / 2],
+			0x8f593f
+		);
+		const marker = box([0.035, 0.44, 0.62], [0.068, 1.94, leafDepth / 2], accentColor);
+		const handle = shadowMesh(new THREE.SphereGeometry(0.078, 12, 8), material(0xd2a74b, 0.36));
+		handle.position.set(0.105, 1.25, leafDepth - 0.25);
+		pivot.add(leaf, marker, handle);
+		this.scene.add(pivot);
+
+		const door: LeftRoomDoor = {
+			room,
+			label,
+			centerZ,
+			width: LEFT_ROOM_DOOR_WIDTH,
+			height: LEFT_ROOM_DOOR_HEIGHT,
+			pivot,
+			surfaces: [leaf],
+			open: false,
+			openAmount: 0
+		};
+		this.leftRoomDoors.push(door);
+		this.setLeftRoomDoorCollisionEnabled(door, true);
 	}
 
 	private createKitchen() {
@@ -973,6 +1208,9 @@ export class StampKonijnGame {
 			1.05,
 			'wood'
 		);
+		this.addBreakable('TOILET', 280, this.makeToilet(), [-9.05, 0, -3.05], 0.62, 1.12, 'ceramic');
+		this.addBreakable('BADKUIP', 520, this.makeBathtub(), [-11.65, 0, -3.45], 1.2, 0.72, 'ceramic');
+		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
 		this.addBreakable('HONDENHOK', 140, this.makeDoghouse(), [4.15, 0, -8.45], 1.12, 1.72, 'wood');
@@ -1298,6 +1536,43 @@ export class StampKonijnGame {
 		return group;
 	}
 
+	private makeToilet() {
+		const group = new THREE.Group();
+		group.add(cylinder(0.28, 0.36, 0.42, [0, 0.21, 0], 0xe8e5dd, 18));
+		const bowl = shadowMesh(new THREE.TorusGeometry(0.31, 0.105, 10, 24), material(0xefede6, 0.38));
+		bowl.rotation.x = Math.PI / 2;
+		bowl.scale.z = 1.18;
+		bowl.position.set(0, 0.52, 0.08);
+		group.add(bowl);
+		group.add(box([0.54, 0.6, 0.3], [0, 0.78, -0.25], 0xe1dfd7));
+		group.add(box([0.56, 0.08, 0.32], [0, 1.1, -0.25], 0xefede6));
+		return group;
+	}
+
+	private makeBathtub() {
+		const group = new THREE.Group();
+		group.add(box([2.2, 0.62, 1.02], [0, 0.31, 0], 0xe7e1d6));
+		const water = box([1.84, 0.035, 0.7], [0, 0.635, 0], 0x78b7c3);
+		group.add(water);
+		for (const x of [-0.82, 0.82]) {
+			for (const z of [-0.34, 0.34]) {
+				group.add(cylinder(0.06, 0.075, 0.16, [x, 0.08, z], 0x7a7772, 10));
+			}
+		}
+		return group;
+	}
+
+	private makeBed() {
+		const group = new THREE.Group();
+		group.add(box([2.3, 0.38, 1.5], [0, 0.19, 0], 0x6f5142));
+		group.add(box([2.16, 0.28, 1.4], [0, 0.5, 0.04], 0xe1c9b6));
+		group.add(box([2.1, 0.1, 0.72], [0, 0.67, 0.35], 0x8e6f87));
+		group.add(box([0.72, 0.18, 0.52], [-0.58, 0.72, -0.36], 0xeee5d8));
+		group.add(box([0.72, 0.18, 0.52], [0.58, 0.72, -0.36], 0xeee5d8));
+		group.add(box([2.34, 0.92, 0.14], [0, 0.46, -0.74], 0x6f5142));
+		return group;
+	}
+
 	private makeAppleTree() {
 		const group = new THREE.Group();
 		group.add(cylinder(0.27, 0.43, 2.65, [0, 1.32, 0], 0x76503a, 14));
@@ -1488,6 +1763,25 @@ export class StampKonijnGame {
 				wallNormal = new THREE.Vector3(-side, 0, 0);
 				this.velocity.x *= -0.78;
 			}
+		} else if (this.playerLeftRoom) {
+			const leftLimit = LEFT_ROOMS_MIN_X + PLAYER_RADIUS;
+			const livingWallLimit = LEFT_ROOMS_MAX_X - PLAYER_RADIUS;
+			if (this.player.position.x < leftLimit) {
+				wallImpactSpeed = Math.max(wallImpactSpeed, Math.abs(this.velocity.x));
+				this.player.position.x = leftLimit;
+				wallNormal = new THREE.Vector3(1, 0, 0);
+				this.velocity.x *= -0.78;
+			} else if (this.player.position.x > livingWallLimit) {
+				const roomDoor = this.leftRoomDoors.find((door) => door.room === this.playerLeftRoom);
+				if (roomDoor?.open && this.isInsideLeftDoorPassage(roomDoor)) {
+					if (this.player.position.x > LEFT_ROOMS_MAX_X) this.playerLeftRoom = null;
+				} else {
+					wallImpactSpeed = Math.max(wallImpactSpeed, Math.abs(this.velocity.x));
+					this.player.position.x = livingWallLimit;
+					wallNormal = new THREE.Vector3(-1, 0, 0);
+					this.velocity.x *= -0.78;
+				}
+			}
 		} else if (this.playerInKitchen) {
 			const kitchenRightLimit = KITCHEN_MAX_X - PLAYER_RADIUS;
 			const kitchenLeftLimit = KITCHEN_MIN_X + PLAYER_RADIUS;
@@ -1510,10 +1804,17 @@ export class StampKonijnGame {
 			const roomLeftLimit = -ROOM_WIDTH / 2 + PLAYER_RADIUS;
 			const roomRightLimit = ROOM_WIDTH / 2 - PLAYER_RADIUS;
 			if (this.player.position.x < roomLeftLimit) {
-				wallImpactSpeed = Math.max(wallImpactSpeed, Math.abs(this.velocity.x));
-				this.player.position.x = roomLeftLimit;
-				wallNormal = new THREE.Vector3(1, 0, 0);
-				this.velocity.x *= -0.78;
+				const openDoor = this.leftRoomDoors.find(
+					(door) => door.open && this.isInsideLeftDoorPassage(door)
+				);
+				if (openDoor) {
+					if (this.player.position.x < LEFT_ROOMS_MAX_X) this.playerLeftRoom = openDoor.room;
+				} else {
+					wallImpactSpeed = Math.max(wallImpactSpeed, Math.abs(this.velocity.x));
+					this.player.position.x = roomLeftLimit;
+					wallNormal = new THREE.Vector3(1, 0, 0);
+					this.velocity.x *= -0.78;
+				}
 			} else if (this.player.position.x > roomRightLimit) {
 				if (this.doorOpen && this.isInsideDoorPassage()) {
 					if (this.player.position.x > KITCHEN_MIN_X) this.playerInKitchen = true;
@@ -1548,6 +1849,23 @@ export class StampKonijnGame {
 					this.velocity.z *= -0.78;
 				}
 			}
+		} else if (this.playerLeftRoom) {
+			const bounds = this.getLeftRoomZBounds(this.playerLeftRoom);
+			const frontLimit = bounds.maxZ - PLAYER_RADIUS;
+			const backLimit = bounds.minZ + PLAYER_RADIUS;
+			if (this.player.position.z > frontLimit) {
+				const zImpact = Math.abs(this.velocity.z);
+				this.player.position.z = frontLimit;
+				if (!wallNormal || zImpact > wallImpactSpeed) wallNormal = new THREE.Vector3(0, 0, -1);
+				wallImpactSpeed = Math.max(wallImpactSpeed, zImpact);
+				this.velocity.z *= -0.78;
+			} else if (this.player.position.z < backLimit) {
+				const zImpact = Math.abs(this.velocity.z);
+				this.player.position.z = backLimit;
+				if (!wallNormal || zImpact > wallImpactSpeed) wallNormal = new THREE.Vector3(0, 0, 1);
+				wallImpactSpeed = Math.max(wallImpactSpeed, zImpact);
+				this.velocity.z *= -0.78;
+			}
 		} else if (this.player.position.z > ROOM_DEPTH / 2 - PLAYER_RADIUS) {
 			const zImpact = Math.abs(this.velocity.z);
 			this.player.position.z = ROOM_DEPTH / 2 - PLAYER_RADIUS;
@@ -1555,7 +1873,12 @@ export class StampKonijnGame {
 			wallImpactSpeed = Math.max(wallImpactSpeed, zImpact);
 			this.velocity.z *= -0.78;
 		} else if (this.player.position.z < BACK_WALL_Z + PLAYER_RADIUS) {
-			if (!this.playerInKitchen && this.windowBroken && this.isInsideWindowPassage()) {
+			if (
+				!this.playerInKitchen &&
+				!this.playerLeftRoom &&
+				this.windowBroken &&
+				this.isInsideWindowPassage()
+			) {
 				if (this.player.position.z < BACK_WALL_Z) this.playerOutside = true;
 			} else {
 				const zImpact = Math.abs(this.velocity.z);
@@ -1566,6 +1889,13 @@ export class StampKonijnGame {
 			}
 		}
 		if (wallNormal) {
+			const leftDoor = this.stampTargetLeftDoor;
+			const leftDoorStamp =
+				leftDoor !== null &&
+				!leftDoor.open &&
+				wallNormal.x > 0.72 &&
+				wallImpactSpeed >= GOOD_DOOR_STAMP_SPEED &&
+				this.isInsideLeftDoorTarget(leftDoor);
 			const doorStamp =
 				!this.doorOpen &&
 				this.stampTargetsDoor &&
@@ -1578,7 +1908,10 @@ export class StampKonijnGame {
 				wallNormal.z > 0.72 &&
 				wallImpactSpeed >= GOOD_WINDOW_STAMP_SPEED &&
 				this.isInsideWindowTarget();
-			if (doorStamp) {
+			if (leftDoorStamp && leftDoor) {
+				this.performLeftDoorStamp(leftDoor, wallImpactSpeed);
+				return;
+			} else if (doorStamp) {
 				this.performDoorStamp(wallImpactSpeed);
 				return;
 			} else if (windowStamp) {
@@ -1605,11 +1938,12 @@ export class StampKonijnGame {
 			this.playSound('wall');
 		}
 
-		if (this.player.position.y <= 0) {
+		const floorHeight = this.getActiveFloorHeight();
+		if (this.player.position.y <= floorHeight) {
 			const impactSpeed = Math.abs(this.velocity.y);
 			const stampImpactSpeed = this.velocity.length();
 			const floorNormal = new THREE.Vector3(0, 1, 0);
-			this.player.position.y = 0;
+			this.player.position.y = floorHeight;
 			if (this.isTargetStampSurface(floorNormal) && stampImpactSpeed > 2.8) {
 				this.performGroundStamp(stampImpactSpeed);
 				this.finishStampRebound(floorNormal, 0.7, stampImpactSpeed);
@@ -1628,6 +1962,84 @@ export class StampKonijnGame {
 			? target
 			: THREE.MathUtils.lerp(this.doorOpenAmount, target, 1 - Math.exp(-8 * delta));
 		this.doorPivot.rotation.y = this.doorOpenAmount * 1.38;
+		for (const door of this.leftRoomDoors) {
+			const doorTarget = door.open ? 1 : 0;
+			door.openAmount = this.reducedMotion
+				? doorTarget
+				: THREE.MathUtils.lerp(door.openAmount, doorTarget, 1 - Math.exp(-8 * delta));
+			door.pivot.rotation.y = door.openAmount * -1.38;
+		}
+	}
+
+	private getLeftRoomZBounds(room: LeftRoomName) {
+		if (room === 'bathroom') return { minZ: BACK_WALL_Z, maxZ: BATHROOM_MAX_Z };
+		if (room === 'stairs') return { minZ: BATHROOM_MAX_Z, maxZ: BEDROOM_MIN_Z };
+		return { minZ: BEDROOM_MIN_Z, maxZ: ROOM_DEPTH / 2 };
+	}
+
+	private getActiveFloorHeight() {
+		if (this.playerLeftRoom !== 'stairs') return 0;
+		const stepIndex = THREE.MathUtils.clamp(
+			Math.floor((-this.player.position.x - 7.19) / 0.72),
+			0,
+			7
+		);
+		return (stepIndex + 1) * 0.24;
+	}
+
+	private isInsideLeftDoorTarget(door: LeftRoomDoor) {
+		const centerY = this.player.position.y + PLAYER_HEIGHT / 2;
+		return (
+			Math.abs(this.player.position.z - door.centerZ) <= door.width / 2 + 0.16 &&
+			centerY <= door.height + 0.18
+		);
+	}
+
+	private isInsideLeftDoorPassage(door: LeftRoomDoor) {
+		return (
+			Math.abs(this.player.position.z - door.centerZ) <= door.width / 2 - 0.12 &&
+			this.player.position.y + PLAYER_HEIGHT <= door.height + 0.12
+		);
+	}
+
+	private performLeftDoorStamp(door: LeftRoomDoor, speed: number) {
+		this.breakContacts(0.16);
+		door.open = true;
+		this.setLeftRoomDoorCollisionEnabled(door, false);
+		this.playerOutside = false;
+		this.playerInKitchen = false;
+		this.playerLeftRoom = door.room;
+		this.player.position.x = LEFT_ROOMS_MAX_X - PLAYER_RADIUS - 0.16;
+		this.player.position.z = THREE.MathUtils.clamp(
+			this.player.position.z,
+			door.centerZ - 0.4,
+			door.centerZ + 0.4
+		);
+		const throughDoor = this.stampDirection.clone();
+		throughDoor.x = Math.min(-0.62, throughDoor.x);
+		throughDoor.normalize();
+		this.velocity.copy(throughDoor).multiplyScalar(Math.max(8.4, speed * 0.64));
+		this.squash = 1;
+		this.cameraShake = Math.max(this.cameraShake, 0.9);
+		this.playImpactSample(Math.min(1, speed / 7));
+		this.cancelStamp();
+		this.joltRagdoll(2.5);
+		this.callbacks.onFeedback(
+			door.room === 'stairs' ? 'DEUR OPEN! TRAP OMHOOG!' : `DEUR OPEN! ${door.label} IN!`
+		);
+		this.emitHud(true);
+	}
+
+	private setLeftRoomDoorCollisionEnabled(door: LeftRoomDoor, enabled: boolean) {
+		for (const surface of door.surfaces) {
+			if (enabled) {
+				this.stampSurfaceKinds.set(surface, 'wall');
+				if (!this.bulletImpactSurfaces.includes(surface)) this.bulletImpactSurfaces.push(surface);
+			} else {
+				this.stampSurfaceKinds.delete(surface);
+				this.bulletImpactSurfaces = this.bulletImpactSurfaces.filter((item) => item !== surface);
+			}
+		}
 	}
 
 	private isInsideDoorTarget() {
@@ -1650,6 +2062,7 @@ export class StampKonijnGame {
 		this.doorOpen = true;
 		this.setDoorCollisionEnabled(false);
 		this.playerOutside = false;
+		this.playerLeftRoom = null;
 		this.playerInKitchen = true;
 		this.player.position.x = KITCHEN_MIN_X + PLAYER_RADIUS + 0.16;
 		this.player.position.z = THREE.MathUtils.clamp(
@@ -2381,7 +2794,11 @@ export class StampKonijnGame {
 		});
 		const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.52, 48), ringMaterial);
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(this.player.position.x, 0.035, this.player.position.z);
+		ring.position.set(
+			this.player.position.x,
+			this.getActiveFloorHeight() + 0.035,
+			this.player.position.z
+		);
 		ring.scale.setScalar(0.4);
 		this.scene.add(ring);
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });
@@ -2524,18 +2941,33 @@ export class StampKonijnGame {
 			THREE.MathUtils.clamp(this.player.position.y + PLAYER_HEIGHT / 2, 0.3, ROOM_HEIGHT - 0.3),
 			this.player.position.z
 		);
+		const leftRoomBounds = this.playerLeftRoom
+			? this.getLeftRoomZBounds(this.playerLeftRoom)
+			: null;
 		const activeMinX = this.playerOutside
 			? -GARDEN_WIDTH / 2
-			: this.playerInKitchen
-				? KITCHEN_MIN_X
-				: -ROOM_WIDTH / 2;
+			: leftRoomBounds
+				? LEFT_ROOMS_MIN_X
+				: this.playerInKitchen
+					? KITCHEN_MIN_X
+					: -ROOM_WIDTH / 2;
 		const activeMaxX = this.playerOutside
 			? GARDEN_WIDTH / 2
-			: this.playerInKitchen
-				? KITCHEN_MAX_X
-				: ROOM_WIDTH / 2;
-		const activeFrontZ = this.playerOutside ? BACK_WALL_Z : ROOM_DEPTH / 2;
-		const activeBackZ = this.playerOutside ? GARDEN_BACK_Z : BACK_WALL_Z;
+			: leftRoomBounds
+				? LEFT_ROOMS_MAX_X
+				: this.playerInKitchen
+					? KITCHEN_MAX_X
+					: ROOM_WIDTH / 2;
+		const activeFrontZ = this.playerOutside
+			? BACK_WALL_Z
+			: leftRoomBounds
+				? leftRoomBounds.maxZ
+				: ROOM_DEPTH / 2;
+		const activeBackZ = this.playerOutside
+			? GARDEN_BACK_Z
+			: leftRoomBounds
+				? leftRoomBounds.minZ
+				: BACK_WALL_Z;
 		if (emphasizeWindow) {
 			surfacePoint.set(
 				THREE.MathUtils.clamp(
@@ -2552,7 +2984,7 @@ export class StampKonijnGame {
 			);
 		} else if (normal.y > 0.5) {
 			surfacePoint.x = THREE.MathUtils.clamp(surfacePoint.x, activeMinX + 0.2, activeMaxX - 0.2);
-			surfacePoint.y = 0.024;
+			surfacePoint.y = this.getActiveFloorHeight() + 0.024;
 			surfacePoint.z = THREE.MathUtils.clamp(surfacePoint.z, activeBackZ + 0.2, activeFrontZ - 0.2);
 		} else if (Math.abs(normal.x) > 0.5) {
 			const inset = this.playerOutside ? 0.285 : 0.095;
@@ -2563,7 +2995,9 @@ export class StampKonijnGame {
 				? normal.z > 0
 					? GARDEN_BACK_Z + 0.285
 					: BACK_WALL_Z - 0.095
-				: -normal.z * (ROOM_DEPTH / 2 - 0.095);
+				: normal.z > 0
+					? activeBackZ + 0.095
+					: activeFrontZ - 0.095;
 			surfacePoint.x = THREE.MathUtils.clamp(surfacePoint.x, activeMinX + 0.2, activeMaxX - 0.2);
 		}
 
@@ -2604,7 +3038,20 @@ export class StampKonijnGame {
 	}
 
 	private updateCamera(delta: number) {
-		if (this.playerInKitchen) {
+		if (this.playerLeftRoom) {
+			const bounds = this.getLeftRoomZBounds(this.playerLeftRoom);
+			const roomCenterZ = (bounds.minZ + bounds.maxZ) / 2;
+			this.cameraDesiredPosition.set(
+				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.14,
+				6.35 + this.player.position.y * 0.05,
+				bounds.maxZ - 0.22
+			);
+			this.cameraDesiredTarget.set(
+				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.42,
+				1.45 + this.player.position.y * 0.12,
+				roomCenterZ + (this.player.position.z - roomCenterZ) * 0.28
+			);
+		} else if (this.playerInKitchen) {
 			this.cameraDesiredPosition.set(
 				KITCHEN_CENTER_X + (this.player.position.x - KITCHEN_CENTER_X) * 0.16,
 				6.45 + this.player.position.y * 0.06,
@@ -2671,10 +3118,17 @@ export class StampKonijnGame {
 		this.doorOpenAmount = 0;
 		this.playerOutside = false;
 		this.playerInKitchen = false;
+		this.playerLeftRoom = null;
 		this.windowBreakaway.visible = true;
 		this.doorPivot.rotation.y = 0;
 		this.setWindowCollisionEnabled(true);
 		this.setDoorCollisionEnabled(true);
+		for (const door of this.leftRoomDoors) {
+			door.open = false;
+			door.openAmount = 0;
+			door.pivot.rotation.y = 0;
+			this.setLeftRoomDoorCollisionEnabled(door, true);
+		}
 	}
 
 	private clearDebris() {
@@ -2776,6 +3230,7 @@ export class StampKonijnGame {
 		this.stompTimeout = 0;
 		this.stampTargetsWindow = false;
 		this.stampTargetsDoor = false;
+		this.stampTargetLeftDoor = null;
 		this.stampPose.identity();
 	}
 
