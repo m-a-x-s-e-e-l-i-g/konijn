@@ -15,7 +15,7 @@ export const bounceCount = writable(initialBounceCount);
 const achievementGoals = [50, 100, 250, 1000, 10000, 100000, 1000000];
 
 var achievementSound = new Howl({
-	src: ['/audio/achievement.mp3']
+	src: ['/audio/achievement.ogg']
 });
 
 // Subscribe to changes and update localStorage
@@ -28,5 +28,5 @@ if (isBrowser) {
 			achievementSound.play();
 			toast(`🏆 Achievement unlocked: ${value} bounces!`);
 		}
-	});	
+	});
 }
