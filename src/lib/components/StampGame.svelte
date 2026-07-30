@@ -152,7 +152,7 @@
 	<title>STAMPKONIJN | Konine</title>
 	<meta
 		name="description"
-		content="Bestuur het dikste konijn van het internet en stamp een kunstkamer compleet kapot."
+		content="Bestuur het dikste konijn van het internet en stamp een kunstkamer en tuin compleet kapot."
 	/>
 </svelte:head>
 
@@ -160,7 +160,7 @@
 	<canvas
 		bind:this={canvas}
 		tabindex="0"
-		aria-label="3D-kamer waarin Stampkonijn automatisch stuitert. Beweeg de muis om te sturen, gebruik LMB om te stampen, scroll om van wapen te wisselen en gebruik RMB voor de geselecteerde actie."
+		aria-label="3D-kamer met een uitbreidbare tuin waarin Stampkonijn automatisch stuitert. Beweeg de muis om te sturen, gebruik LMB om te stampen, scroll om van wapen te wisselen en gebruik RMB voor de geselecteerde actie."
 		onpointermove={trackPointer}
 		onpointerenter={trackPointer}
 		onpointerleave={stopTrackingPointer}
@@ -230,7 +230,7 @@
 			<strong>{hud.time}</strong>
 		</div>
 		<div class="hud-stat hud-stat--room">
-			<span class="hud-label">KAMER</span>
+			<span class="hud-label">KAPOT</span>
 			<strong>{hud.destroyed}/{hud.total}</strong>
 		</div>
 		{#if hud.combo > 1 && hud.phase === 'playing'}
