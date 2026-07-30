@@ -171,6 +171,9 @@ const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const STAIR_STEP_RISE = 0.48;
+const STAIR_STEP_RUN = 0.72;
+const STAIR_DOOR_REST_ANGLE = Math.atan(STAIR_STEP_RUN / STAIR_STEP_RISE);
+const STAIR_DOOR_REST_LIFT = 0.12;
 const STAIR_STRAIGHT_STEP_COUNT = 8;
 const STAIR_TURN_STEP_COUNT = 2;
 const STAIR_TOP_X = -12.24;
@@ -938,8 +941,8 @@ export class StampKonijnGame {
 		for (let index = 0; index < STAIR_STRAIGHT_STEP_COUNT; index += 1) {
 			const stepHeight = STAIR_STEP_RISE * (index + 1);
 			const step = box(
-				[0.72, stepHeight, 2.35],
-				[-7.55 - index * 0.72, stepHeight / 2, 0],
+				[STAIR_STEP_RUN, stepHeight, 2.35],
+				[-7.55 - index * STAIR_STEP_RUN, stepHeight / 2, 0],
 				index % 2 === 0 ? 0x956743 : 0xa47750
 			);
 			this.scene.add(step);
@@ -3276,8 +3279,8 @@ export class StampKonijnGame {
 				: THREE.MathUtils.lerp(door.openAmount, doorTarget, 1 - Math.exp(-8 * delta));
 			if (door.room === 'stairs') {
 				door.pivot.rotation.y = 0;
-				door.leafRoot.rotation.set(0, 0, door.openAmount * 0.99);
-				door.leafRoot.position.y = door.openAmount * 0.04;
+				door.leafRoot.rotation.set(0, 0, door.openAmount * STAIR_DOOR_REST_ANGLE);
+				door.leafRoot.position.y = door.openAmount * STAIR_DOOR_REST_LIFT;
 			} else {
 				door.pivot.rotation.y = (door.openAmount * -Math.PI) / 2;
 				door.leafRoot.rotation.set(0, 0, 0);
@@ -3305,7 +3308,7 @@ export class StampKonijnGame {
 		if (this.playerUpstairs) return UPSTAIRS_FLOOR_Y;
 		if (this.playerLeftRoom !== 'stairs') return 0;
 		const stepIndex = THREE.MathUtils.clamp(
-			Math.floor((-this.player.position.x - 7.19) / 0.72),
+			Math.floor((-this.player.position.x - 7.19) / STAIR_STEP_RUN),
 			0,
 			STAIR_STRAIGHT_STEP_COUNT - 1
 		);
