@@ -1939,7 +1939,7 @@ export class StampKonijnGame {
 
 	private playBreakSound(kind: BreakMaterial, label: string) {
 		if (this.muted) return;
-		if (label === 'STOEL') {
+		if (label === 'STOEL' || label === 'BOEKENKAST') {
 			this.playChairBreakSample();
 			return;
 		}
