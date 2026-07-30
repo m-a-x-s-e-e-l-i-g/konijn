@@ -160,7 +160,7 @@
 	<canvas
 		bind:this={canvas}
 		tabindex="0"
-		aria-label="3D-kamer waarin Stampkonijn automatisch stuitert. Beweeg de muis om te sturen, klik links om te stampen, scroll om van wapen te wisselen en klik rechts om het geselecteerde wapen te gebruiken."
+		aria-label="3D-kamer waarin Stampkonijn automatisch stuitert. Beweeg de muis om te sturen, gebruik LMB om te stampen, scroll om van wapen te wisselen en gebruik RMB voor de geselecteerde actie."
 		onpointermove={trackPointer}
 		onpointerenter={trackPointer}
 		onpointerleave={stopTrackingPointer}
@@ -261,10 +261,10 @@
 				</button>
 				<div class="control-hints" aria-label="Besturing">
 					<span><kbd>MUIS</kbd> RICHTEN</span>
-					<span><kbd>KLIK</kbd> VLOER OF MUUR</span>
+					<span><kbd>LMB</kbd> STAMP</span>
 					<span><kbd>AUTOMATISCH</kbd> STUITEREN</span>
 					<span><kbd>SCROLL</kbd> WAPEN</span>
-					<span><kbd>RECHTS</kbd> WAPENACTIE</span>
+					<span><kbd>RMB</kbd> ACTIE</span>
 				</div>
 			</div>
 			<p class="start-callout">€20 VAAS? <strong>€20 PUNTEN.</strong></p>
@@ -293,9 +293,9 @@
 
 	<div class="desktop-hint" aria-hidden="true">
 		<span><kbd>MUIS</kbd> richten</span>
-		<span><kbd>KLIK VLAK</kbd> daar stampen</span>
+		<span><kbd>LMB</kbd> stamp</span>
 		<span><kbd>SCROLL</kbd> wapen</span>
-		<span><kbd>RECHTS</kbd> wapenactie</span>
+		<span><kbd>RMB</kbd> actie</span>
 		<span><kbd>AUTOMATISCH</kbd> stuiteren</span>
 	</div>
 
