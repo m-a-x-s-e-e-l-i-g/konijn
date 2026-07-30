@@ -1426,7 +1426,7 @@ export class StampKonijnGame {
 
 	private performWindowStamp(speed: number, wallNormal: THREE.Vector3) {
 		this.breakContacts(0.16);
-		this.spawnSurfaceCrack(wallNormal, speed);
+		this.spawnSurfaceCrack(wallNormal, speed, true);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.92);
 		this.playImpactSample(Math.min(1, speed / 7));
@@ -2112,7 +2112,7 @@ export class StampKonijnGame {
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });
 	}
 
-	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number) {
+	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number, emphasizeWindow = false) {
 		const normal = surfaceNormal.clone().normalize();
 		if (normal.z < -0.5) return;
 
@@ -2128,13 +2128,19 @@ export class StampKonijnGame {
 			y: 128 + (Math.random() - 0.5) * 8
 		};
 		const paths: Array<Array<{ x: number; y: number }>> = [];
-		const branchCount = 4 + Math.floor(strength * 6) + Math.floor(Math.random() * 2);
+		const branchCount = emphasizeWindow
+			? 11 + Math.floor(Math.random() * 3)
+			: 4 + Math.floor(strength * 6) + Math.floor(Math.random() * 2);
 
 		for (let branch = 0; branch < branchCount; branch += 1) {
 			let angle = (branch / branchCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.55;
-			const length = 42 + strength * 54 + Math.random() * 22;
-			const segmentCount = 4 + Math.floor(strength * 3) + Math.floor(Math.random() * 3);
-			const startDistance = 7 + Math.random() * 6;
+			const length = emphasizeWindow
+				? 72 + Math.random() * 28
+				: 42 + strength * 54 + Math.random() * 22;
+			const segmentCount = emphasizeWindow
+				? 6 + Math.floor(Math.random() * 3)
+				: 4 + Math.floor(strength * 3) + Math.floor(Math.random() * 3);
+			const startDistance = emphasizeWindow ? 3 + Math.random() * 4 : 7 + Math.random() * 6;
 			const points = [
 				{
 					x: center.x + Math.cos(angle) * startDistance,
@@ -2153,7 +2159,7 @@ export class StampKonijnGame {
 			}
 			paths.push(points);
 
-			if (points.length > 4 && Math.random() < 0.45 + strength * 0.35) {
+			if (points.length > 4 && Math.random() < (emphasizeWindow ? 0.9 : 0.45 + strength * 0.35)) {
 				const splitIndex = 2 + Math.floor(Math.random() * (points.length - 3));
 				const split = points[splitIndex];
 				let splitAngle = Math.atan2(
@@ -2163,7 +2169,8 @@ export class StampKonijnGame {
 				splitAngle += (Math.random() < 0.5 ? -1 : 1) * (0.55 + Math.random() * 0.65);
 				const splitPoints = [{ ...split }];
 				let splitDistance = 0;
-				for (let segment = 0; segment < 3; segment += 1) {
+				const splitSegments = emphasizeWindow ? 4 : 3;
+				for (let segment = 0; segment < splitSegments; segment += 1) {
 					splitDistance += length * (0.08 + Math.random() * 0.035);
 					splitAngle += (Math.random() - 0.5) * 0.45;
 					splitPoints.push({
@@ -2172,6 +2179,28 @@ export class StampKonijnGame {
 					});
 				}
 				paths.push(splitPoints);
+			}
+		}
+
+		if (emphasizeWindow) {
+			for (let ring = 0; ring < 3; ring += 1) {
+				const radius = 24 + ring * 19 + Math.random() * 5;
+				const pieces = 4 + ring;
+				const offset = Math.random() * Math.PI * 2;
+				for (let piece = 0; piece < pieces; piece += 1) {
+					const startAngle = offset + (piece / pieces) * Math.PI * 2;
+					const arc = 0.42 + Math.random() * 0.32;
+					const ringPoints: Array<{ x: number; y: number }> = [];
+					for (let step = 0; step <= 4; step += 1) {
+						const angle = startAngle + (step / 4) * arc;
+						const wobble = (Math.random() - 0.5) * 4;
+						ringPoints.push({
+							x: center.x + Math.cos(angle) * (radius + wobble),
+							y: center.y + Math.sin(angle) * (radius + wobble)
+						});
+					}
+					paths.push(ringPoints);
+				}
 			}
 		}
 
@@ -2190,8 +2219,14 @@ export class StampKonijnGame {
 			}
 		};
 
-		strokePaths('rgba(246, 237, 220, 0.35)', 4.4 + strength * 2.4);
-		strokePaths('rgba(37, 31, 27, 0.82)', 1.25 + strength);
+		strokePaths(
+			emphasizeWindow ? 'rgba(246, 250, 244, 0.92)' : 'rgba(246, 237, 220, 0.35)',
+			emphasizeWindow ? 7.2 : 4.4 + strength * 2.4
+		);
+		strokePaths(
+			emphasizeWindow ? 'rgba(37, 42, 43, 0.96)' : 'rgba(37, 31, 27, 0.82)',
+			emphasizeWindow ? 2.15 : 1.25 + strength
+		);
 
 		const texture = new THREE.CanvasTexture(canvas);
 		texture.colorSpace = THREE.SRGBColorSpace;
@@ -2201,6 +2236,7 @@ export class StampKonijnGame {
 				map: texture,
 				transparent: true,
 				alphaTest: 0.04,
+				side: THREE.DoubleSide,
 				depthWrite: false,
 				polygonOffset: true,
 				polygonOffsetFactor: -2,
@@ -2216,7 +2252,21 @@ export class StampKonijnGame {
 		const activeWidth = this.playerOutside ? GARDEN_WIDTH : ROOM_WIDTH;
 		const activeFrontZ = this.playerOutside ? BACK_WALL_Z : ROOM_DEPTH / 2;
 		const activeBackZ = this.playerOutside ? GARDEN_BACK_Z : BACK_WALL_Z;
-		if (normal.y > 0.5) {
+		if (emphasizeWindow) {
+			surfacePoint.set(
+				THREE.MathUtils.clamp(
+					this.player.position.x,
+					WINDOW_CENTER_X - 0.42,
+					WINDOW_CENTER_X + 0.42
+				),
+				THREE.MathUtils.clamp(
+					this.player.position.y + PLAYER_HEIGHT / 2,
+					WINDOW_CENTER_Y - 0.28,
+					WINDOW_CENTER_Y + 0.28
+				),
+				BACK_WALL_Z + 0.18 + 0.025
+			);
+		} else if (normal.y > 0.5) {
 			surfacePoint.x = THREE.MathUtils.clamp(
 				surfacePoint.x,
 				-activeWidth / 2 + 0.2,
@@ -2240,7 +2290,9 @@ export class StampKonijnGame {
 			);
 		}
 
-		const crackSize = THREE.MathUtils.lerp(0.62, 1.72, strength) * (0.9 + Math.random() * 0.2);
+		const crackSize = emphasizeWindow
+			? 2.05
+			: THREE.MathUtils.lerp(0.62, 1.72, strength) * (0.9 + Math.random() * 0.2);
 		crack.scale.setScalar(crackSize);
 		crack.position.copy(surfacePoint).addScaledVector(normal, 0.012);
 		crack.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
