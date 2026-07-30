@@ -12,7 +12,6 @@ export interface StampHudState {
 	phase: GamePhase;
 	paused: boolean;
 	score: number;
-	combo: number;
 	destroyed: number;
 	total: number;
 	lastHit: string;
@@ -23,7 +22,7 @@ export interface StampHudState {
 
 interface GameCallbacks {
 	onHud: (state: StampHudState) => void;
-	onImpact: (label: string, value: number, combo: number) => void;
+	onImpact: (label: string, value: number) => void;
 	onFeedback: (message: string) => void;
 	onReady: () => void;
 	onError: (message: string) => void;
@@ -369,9 +368,7 @@ export class StampKonijnGame {
 	private weaponCooldown = 0;
 	private weaponHeld = false;
 	private score = 0;
-	private combo = 1;
 	private destroyedCount = 0;
-	private lastBreakAt = 0;
 	private lastHit = '';
 	private lastValue = 0;
 	private lastHudSignature = '';
@@ -478,11 +475,9 @@ export class StampKonijnGame {
 		this.stampPose.identity();
 		this.resetArmRagdolls();
 		this.score = 0;
-		this.combo = 1;
 		this.destroyedCount = 0;
 		this.lastHit = '';
 		this.lastValue = 0;
-		this.lastBreakAt = 0;
 		this.phase = 'playing';
 		this.paused = false;
 		this.weapon = 'poop';
@@ -3712,11 +3707,9 @@ export class StampKonijnGame {
 			.add(chaos);
 		this.cancelStamp();
 		this.joltRagdoll(1.15 + quality * 1.5);
-		const feedback =
-			this.pendingStampFeedback ||
-			(quality >= 0.82 ? 'DIKKE KONTSTAMP!' : quality >= 0.48 ? 'KONTSTAMP!' : 'STAMP!');
+		const feedback = this.pendingStampFeedback;
 		this.pendingStampFeedback = '';
-		this.callbacks.onFeedback(feedback);
+		if (feedback) this.callbacks.onFeedback(feedback);
 		this.emitHud(true);
 	}
 
@@ -4190,17 +4183,13 @@ export class StampKonijnGame {
 				: undefined;
 		breakable.broken = true;
 		breakable.group.visible = effect === 'sink';
-		const now = performance.now();
-		this.combo =
-			this.lastBreakAt > 0 && now - this.lastBreakAt < 1800 ? Math.min(8, this.combo + 1) : 1;
-		this.lastBreakAt = now;
-		const points = breakable.value * this.combo;
+		const points = breakable.value;
 		this.score += points;
 		this.destroyedCount += 1;
 		this.lastHit = breakable.label;
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
-		this.callbacks.onImpact(breakable.label, points, this.combo);
+		this.callbacks.onImpact(breakable.label, points);
 		this.playBreakSound(breakable.material, breakable.label);
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
 		this.emitHud(true);
@@ -5244,12 +5233,10 @@ export class StampKonijnGame {
 	}
 
 	private emitHud(force = false) {
-		if (performance.now() - this.lastBreakAt > 1800 && this.combo !== 1) this.combo = 1;
 		const state: StampHudState = {
 			phase: this.phase,
 			paused: this.paused,
 			score: this.score,
-			combo: this.combo,
 			destroyed: this.destroyedCount,
 			total: this.breakables.length,
 			lastHit: this.lastHit,

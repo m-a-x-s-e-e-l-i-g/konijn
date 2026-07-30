@@ -6,7 +6,6 @@
 		phase: 'idle',
 		paused: false,
 		score: 0,
-		combo: 1,
 		destroyed: 0,
 		total: 12,
 		lastHit: '',
@@ -50,8 +49,8 @@
 			onHud: (nextHud) => {
 				hud = nextHud;
 			},
-			onImpact: (label, value, combo) => {
-				showImpact(`${label} +€${scoreFormatter.format(value)}${combo > 1 ? ` · x${combo}` : ''}`);
+			onImpact: (label, value) => {
+				showImpact(`${label} +€${scoreFormatter.format(value)}`);
 			},
 			onFeedback: (message) => showImpact(message, 900),
 			onReady: () => {
@@ -228,9 +227,6 @@
 			<span class="hud-label">KAPOT</span>
 			<strong>{hud.destroyed}/{hud.total}</strong>
 		</div>
-		{#if hud.combo > 1 && hud.phase === 'playing'}
-			<div class="combo" aria-label={`Combo maal ${hud.combo}`}>x{hud.combo}</div>
-		{/if}
 	</div>
 	{#key impactNonce}
 		{#if impactText}
@@ -524,18 +520,6 @@
 		font-size: 1.65rem;
 		font-weight: 400;
 		line-height: 1;
-	}
-
-	.combo {
-		align-self: center;
-		padding: 0.3rem 0.62rem;
-		border: 2px solid var(--ink);
-		border-radius: 999px;
-		background: var(--red);
-		color: var(--cream);
-		font-family: 'Chewy', system-ui, sans-serif;
-		font-size: 1.25rem;
-		box-shadow: 0.16rem 0.16rem 0 var(--ink);
 	}
 
 	.start-layer,
