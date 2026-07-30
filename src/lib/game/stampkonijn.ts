@@ -171,6 +171,11 @@ const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const STAIR_STEP_RISE = 0.48;
+const STAIR_STRAIGHT_STEP_COUNT = 8;
+const STAIR_TURN_STEP_COUNT = 2;
+const STAIR_TOP_X = -12.24;
+const STAIR_TURN_STEP_ONE_Z = -0.2;
+const STAIR_TURN_STEP_TWO_Z = -0.7;
 const UPSTAIRS_FLOOR_Y = ROOM_HEIGHT;
 const UPSTAIRS_MIN_X = LEFT_ROOMS_MIN_X;
 const UPSTAIRS_MAX_X = LEFT_ROOMS_MAX_X;
@@ -930,7 +935,7 @@ export class StampKonijnGame {
 		this.scene.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
 		this.createToiletRoomDecor();
 
-		for (let index = 0; index < 8; index += 1) {
+		for (let index = 0; index < STAIR_STRAIGHT_STEP_COUNT; index += 1) {
 			const stepHeight = STAIR_STEP_RISE * (index + 1);
 			const step = box(
 				[0.72, stepHeight, 2.35],
@@ -939,9 +944,21 @@ export class StampKonijnGame {
 			);
 			this.scene.add(step);
 		}
+		for (let index = 0; index < STAIR_TURN_STEP_COUNT; index += 1) {
+			const stepHeight = STAIR_STEP_RISE * (STAIR_STRAIGHT_STEP_COUNT + index + 1);
+			const turnStep = box(
+				[1.42, stepHeight, 0.5],
+				[-12.46, stepHeight / 2, -0.45 - index * 0.5],
+				index % 2 === 0 ? 0xa47750 : 0x956743
+			);
+			this.scene.add(turnStep);
+		}
+		const turnPost = cylinder(0.075, 0.075, 4.45, [-11.73, 2.23, -0.18], 0x3d3029, 10);
+		const turnRail = cylinder(0.055, 0.055, 1.16, [-11.73, 4.18, -0.72], 0x3d3029, 10);
+		turnRail.rotation.x = Math.PI / 2;
 		const stairRail = cylinder(0.055, 0.055, 5.15, [-10.1, 2.15, -1.06], 0x3d3029, 10);
 		stairRail.rotation.z = Math.PI / 2 - 0.64;
-		this.scene.add(stairRail);
+		this.scene.add(stairRail, turnPost, turnRail);
 
 		const wardrobe = box([0.82, 2.2, 1.35], [LEFT_ROOMS_MIN_X + 0.52, 1.1, 3.25], 0x7d5a46);
 		const bedroomRug = shadowMesh(new THREE.CircleGeometry(1.2, 32), material(0x725c72, 0.95));
@@ -1000,13 +1017,13 @@ export class StampKonijnGame {
 		}
 
 		const stairwell = box(
-			[1.9, 0.035, 2.45],
-			[UPSTAIRS_STAIRWELL_X, UPSTAIRS_FLOOR_Y + 0.022, 0],
+			[1.78, 0.035, 1.42],
+			[UPSTAIRS_STAIRWELL_X, UPSTAIRS_FLOOR_Y + 0.022, -0.67],
 			0x332b27
 		);
 		const landingRail = box(
-			[0.12, 0.92, 3],
-			[UPSTAIRS_STAIRWELL_X + 1.02, UPSTAIRS_FLOOR_Y + 0.46, 0],
+			[0.12, 0.92, 1.58],
+			[UPSTAIRS_STAIRWELL_X + 0.94, UPSTAIRS_FLOOR_Y + 0.46, -0.62],
 			0x4d3528
 		);
 		this.scene.add(stairwell, landingRail);
@@ -2820,11 +2837,15 @@ export class StampKonijnGame {
 		} else if (this.playerUpstairs) {
 			const leftLimit = UPSTAIRS_MIN_X + PLAYER_RADIUS;
 			const rightLimit = UPSTAIRS_MAX_X - PLAYER_RADIUS;
-			if (this.player.position.x < leftLimit && Math.abs(this.player.position.z) < 1.08) {
+			if (this.player.position.x < leftLimit && this.player.position.z < STAIR_TURN_STEP_ONE_Z) {
 				this.playerUpstairs = false;
 				this.playerLeftRoom = 'stairs';
-				this.player.position.set(LEFT_ROOMS_MIN_X + PLAYER_RADIUS + 0.18, STAIR_STEP_RISE * 8, 0);
-				this.velocity.set(4.2, -1.5, 0);
+				this.player.position.set(
+					LEFT_ROOMS_MIN_X + PLAYER_RADIUS + 0.18,
+					STAIR_STEP_RISE * (STAIR_STRAIGHT_STEP_COUNT + 1),
+					STAIR_TURN_STEP_ONE_Z - 0.08
+				);
+				this.velocity.set(2.7, -1.2, 1.4);
 				this.callbacks.onFeedback('TERUG DE TRAP AF!');
 				return;
 			} else if (this.player.position.x < leftLimit) {
@@ -2852,13 +2873,15 @@ export class StampKonijnGame {
 			const livingWallLimit = LEFT_ROOMS_MAX_X - PLAYER_RADIUS;
 			if (
 				this.playerLeftRoom === 'stairs' &&
-				this.player.position.x < leftLimit &&
-				this.player.position.y >= STAIR_STEP_RISE * 7
+				this.player.position.x <= STAIR_TOP_X &&
+				this.player.position.z <= STAIR_TURN_STEP_TWO_Z &&
+				this.player.position.y >=
+					STAIR_STEP_RISE * (STAIR_STRAIGHT_STEP_COUNT + STAIR_TURN_STEP_COUNT - 1)
 			) {
 				this.playerLeftRoom = null;
 				this.playerUpstairs = true;
-				this.player.position.set(UPSTAIRS_STAIRWELL_X + 0.82, UPSTAIRS_FLOOR_Y, 0);
-				this.velocity.set(4.4, 4.8, 0);
+				this.player.position.set(UPSTAIRS_STAIRWELL_X + 0.88, UPSTAIRS_FLOOR_Y, -0.78);
+				this.velocity.set(Math.max(1.8, this.velocity.x), Math.min(this.velocity.y, 1.6), 1.2);
 				this.callbacks.onFeedback('BOVENVERDIEPING!');
 				return;
 			} else if (this.player.position.x < leftLimit) {
@@ -3284,8 +3307,14 @@ export class StampKonijnGame {
 		const stepIndex = THREE.MathUtils.clamp(
 			Math.floor((-this.player.position.x - 7.19) / 0.72),
 			0,
-			7
+			STAIR_STRAIGHT_STEP_COUNT - 1
 		);
+		if (this.player.position.x <= STAIR_TOP_X) {
+			if (this.player.position.z <= STAIR_TURN_STEP_TWO_Z) return UPSTAIRS_FLOOR_Y;
+			if (this.player.position.z <= STAIR_TURN_STEP_ONE_Z) {
+				return STAIR_STEP_RISE * (STAIR_STRAIGHT_STEP_COUNT + 1);
+			}
+		}
 		return (stepIndex + 1) * STAIR_STEP_RISE;
 	}
 
@@ -4826,15 +4855,18 @@ export class StampKonijnGame {
 		} else if (this.playerLeftRoom) {
 			const bounds = this.getLeftRoomZBounds(this.playerLeftRoom);
 			const roomCenterZ = (bounds.minZ + bounds.maxZ) / 2;
+			const onStairs = this.playerLeftRoom === 'stairs';
 			const roomTargetHeight = this.playerLeftRoom === 'bathroom' ? 1.88 : 1.45;
 			this.cameraDesiredPosition.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.14,
-				4.05 + this.player.position.y * 0.05,
+				onStairs ? 5.15 + this.player.position.y * 0.62 : 4.05 + this.player.position.y * 0.05,
 				bounds.maxZ - 0.34
 			);
 			this.cameraDesiredTarget.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.42,
-				roomTargetHeight + this.player.position.y * 0.12,
+				onStairs
+					? this.player.position.y + PLAYER_HEIGHT * 0.48
+					: roomTargetHeight + this.player.position.y * 0.12,
 				roomCenterZ + (this.player.position.z - roomCenterZ) * 0.28
 			);
 		} else if (this.playerInKitchen) {
