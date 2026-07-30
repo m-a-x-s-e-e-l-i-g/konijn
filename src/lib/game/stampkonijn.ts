@@ -61,6 +61,7 @@ interface WeaponProjectile {
 	velocity: THREE.Vector3;
 	life: number;
 	kind: WeaponName;
+	spawnDelay: number;
 }
 
 interface ArmRagdoll {
@@ -93,6 +94,10 @@ const FART_PITCH_MIN = 0.5;
 const FART_PITCH_MAX = 1.5;
 const POOP_BOOST_IMPULSE = 4.2;
 const POOP_BOOST_MAX_SPEED = 22;
+const BULLET_HALF_LENGTH = 0.06;
+const BULLET_SPEED = 26;
+const BULLET_LIFETIME = 0.62;
+const PISTOL_SPAWN_DELAY = 0.018;
 const ARM_AXIS = new THREE.Vector3(0, 0, 1);
 const ARM_MIN_ANGLE = -0.22;
 const ARM_MAX_ANGLE = 2.2;
@@ -1632,7 +1637,8 @@ export class StampKonijnGame {
 						)
 					),
 				life: 3.2 + Math.random() * 1.8,
-				kind: 'poop'
+				kind: 'poop',
+				spawnDelay: 0
 			});
 		}
 		while (this.weaponProjectiles.length > 110) {
@@ -1661,31 +1667,6 @@ export class StampKonijnGame {
 			: new THREE.Vector3(0, 0, 1).applyQuaternion(
 					this.player.getWorldQuaternion(new THREE.Quaternion())
 				);
-		const ray = new THREE.Ray(origin, direction);
-		let target: Breakable | null = null;
-		let targetDistance = Infinity;
-		for (const breakable of this.breakables) {
-			if (breakable.broken) continue;
-			const hitBox = new THREE.Box3(
-				new THREE.Vector3(
-					breakable.group.position.x - breakable.radius,
-					breakable.group.position.y,
-					breakable.group.position.z - breakable.radius
-				),
-				new THREE.Vector3(
-					breakable.group.position.x + breakable.radius,
-					breakable.group.position.y + breakable.height,
-					breakable.group.position.z + breakable.radius
-				)
-			);
-			const hitPoint = ray.intersectBox(hitBox, new THREE.Vector3());
-			if (!hitPoint) continue;
-			const distance = origin.distanceTo(hitPoint);
-			if (distance <= 13 && distance < targetDistance) {
-				target = breakable;
-				targetDistance = distance;
-			}
-		}
 
 		const bullet = shadowMesh(
 			new THREE.LatheGeometry(
@@ -1700,22 +1681,83 @@ export class StampKonijnGame {
 			),
 			material(0xc78b42, 0.22, 0.72)
 		);
-		bullet.position.copy(origin).addScaledVector(direction, 0.06);
+		bullet.position.copy(origin).addScaledVector(direction, BULLET_HALF_LENGTH);
 		bullet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-		this.scene.add(bullet);
-		this.weaponProjectiles.push({
-			mesh: bullet,
-			velocity: direction.clone().multiplyScalar(26),
-			life: 0.62,
-			kind: 'pistol'
-		});
 
-		if (target) this.breakObject(target);
+		const barrelLength = this.pistolPivot
+			? this.pistolPivot.getWorldPosition(new THREE.Vector3()).distanceTo(origin)
+			: BULLET_HALF_LENGTH * 2;
+		const probeOrigin = origin.clone().addScaledVector(direction, -barrelLength);
+		const probeDistance = barrelLength + BULLET_HALF_LENGTH * 2;
+		const immediateSurfaceHit = this.findSurfaceHit(probeOrigin, direction, probeDistance);
+		const immediateObjectHit = this.findBreakableHit(probeOrigin, direction, probeDistance);
+		if (
+			immediateObjectHit &&
+			(!immediateSurfaceHit || immediateObjectHit.distance < immediateSurfaceHit.distance)
+		) {
+			bullet.geometry.dispose();
+			bullet.material.dispose();
+			this.breakObject(immediateObjectHit.breakable);
+		} else if (immediateSurfaceHit) {
+			bullet.geometry.dispose();
+			bullet.material.dispose();
+			this.spawnBulletHole(immediateSurfaceHit.point, immediateSurfaceHit.normal);
+			this.playBulletImpact();
+		} else {
+			this.scene.add(bullet);
+			this.weaponProjectiles.push({
+				mesh: bullet,
+				velocity: direction.clone().multiplyScalar(BULLET_SPEED),
+				life: BULLET_LIFETIME,
+				kind: 'pistol',
+				spawnDelay: PISTOL_SPAWN_DELAY
+			});
+		}
+
 		this.velocity.addScaledVector(direction, -5.8);
 		this.velocity.clampLength(0, 17);
 		this.joltRagdoll(5.8);
 		this.cameraShake = Math.max(this.cameraShake, 0.52);
 		this.playGunshot();
+	}
+
+	private findSurfaceHit(origin: THREE.Vector3, direction: THREE.Vector3, distance: number) {
+		this.projectileRaycaster.set(origin, direction);
+		this.projectileRaycaster.near = 0;
+		this.projectileRaycaster.far = distance;
+		const hit = this.projectileRaycaster.intersectObjects(this.bulletImpactSurfaces, false)[0];
+		if (!hit?.face) return null;
+		const normal = hit.face.normal
+			.clone()
+			.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld))
+			.normalize();
+		return { point: hit.point.clone(), normal, distance: hit.distance };
+	}
+
+	private findBreakableHit(origin: THREE.Vector3, direction: THREE.Vector3, distance: number) {
+		const ray = new THREE.Ray(origin, direction);
+		let nearest: { breakable: Breakable; point: THREE.Vector3; distance: number } | null = null;
+		for (const breakable of this.breakables) {
+			if (breakable.broken) continue;
+			const hitBox = new THREE.Box3(
+				new THREE.Vector3(
+					breakable.group.position.x - breakable.radius,
+					breakable.group.position.y,
+					breakable.group.position.z - breakable.radius
+				),
+				new THREE.Vector3(
+					breakable.group.position.x + breakable.radius,
+					breakable.group.position.y + breakable.height,
+					breakable.group.position.z + breakable.radius
+				)
+			);
+			const point = ray.intersectBox(hitBox, new THREE.Vector3());
+			if (!point) continue;
+			const hitDistance = origin.distanceTo(point);
+			if (hitDistance > distance || (nearest && hitDistance >= nearest.distance)) continue;
+			nearest = { breakable, point, distance: hitDistance };
+		}
+		return nearest;
 	}
 
 	private breakContacts(extraReach: number) {
@@ -1859,22 +1901,27 @@ export class StampKonijnGame {
 			const projectile = this.weaponProjectiles[index];
 			projectile.life -= delta;
 			if (projectile.kind === 'pistol') {
+				if (projectile.spawnDelay > 0) {
+					projectile.spawnDelay = Math.max(0, projectile.spawnDelay - delta);
+					continue;
+				}
 				this.projectileStep.copy(projectile.velocity).multiplyScalar(delta);
 				const travelDistance = this.projectileStep.length();
 				if (travelDistance > 0) {
-					this.projectileRaycaster.set(projectile.mesh.position, this.projectileStep.normalize());
-					this.projectileRaycaster.near = 0;
-					this.projectileRaycaster.far = travelDistance + 0.02;
-					const surfaceHit = this.projectileRaycaster.intersectObjects(
-						this.bulletImpactSurfaces,
-						false
-					)[0];
-					if (surfaceHit?.face) {
-						const surfaceNormal = surfaceHit.face.normal
-							.clone()
-							.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(surfaceHit.object.matrixWorld))
-							.normalize();
-						this.spawnBulletHole(surfaceHit.point, surfaceNormal);
+					const direction = this.projectileStep.normalize();
+					const rayOrigin = projectile.mesh.position
+						.clone()
+						.addScaledVector(direction, -BULLET_HALF_LENGTH);
+					const collisionDistance = travelDistance + BULLET_HALF_LENGTH * 2;
+					const surfaceHit = this.findSurfaceHit(rayOrigin, direction, collisionDistance);
+					const objectHit = this.findBreakableHit(rayOrigin, direction, collisionDistance);
+					if (objectHit && (!surfaceHit || objectHit.distance < surfaceHit.distance)) {
+						this.breakObject(objectHit.breakable);
+						this.removeWeaponProjectile(index);
+						continue;
+					}
+					if (surfaceHit) {
+						this.spawnBulletHole(surfaceHit.point, surfaceHit.normal);
 						this.playBulletImpact();
 						this.removeWeaponProjectile(index);
 						continue;
