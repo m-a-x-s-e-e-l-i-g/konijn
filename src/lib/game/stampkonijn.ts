@@ -79,11 +79,12 @@ interface SewerObstacle {
 }
 
 interface MuzzleEffect {
-	mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+	mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | THREE.Sprite;
 	velocity: THREE.Vector3;
 	life: number;
 	maxLife: number;
 	growth: number;
+	opacity: number;
 }
 
 interface ArmRagdoll {
@@ -357,6 +358,7 @@ export class StampKonijnGame {
 	private surfaceCracks: SurfaceCrack[] = [];
 	private weaponProjectiles: WeaponProjectile[] = [];
 	private muzzleEffects: MuzzleEffect[] = [];
+	private muzzleGlowTexture: THREE.CanvasTexture | null = null;
 	private bulletHoles: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[] = [];
 	private resizeObserver: ResizeObserver | null = null;
 	private frame = 0;
@@ -454,6 +456,8 @@ export class StampKonijnGame {
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
+		this.muzzleGlowTexture?.dispose();
+		this.muzzleGlowTexture = null;
 		this.clearBulletHoles();
 		this.resetBreakables();
 		this.player.position.set(0, 0, 2.4);
@@ -595,6 +599,8 @@ export class StampKonijnGame {
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
+		this.muzzleGlowTexture?.dispose();
+		this.muzzleGlowTexture = null;
 		this.clearBulletHoles();
 		disposeObject(this.scene);
 		this.renderer.dispose();
@@ -3946,45 +3952,51 @@ export class StampKonijnGame {
 
 	private spawnMuzzleEffects(origin: THREE.Vector3, direction: THREE.Vector3) {
 		const flashMaterial = new THREE.MeshBasicMaterial({
-			color: 0xffd22e,
+			color: 0xffd98a,
 			transparent: true,
-			opacity: 0.96,
+			opacity: 0.76,
 			depthTest: false,
 			depthWrite: false,
+			blending: THREE.AdditiveBlending,
 			toneMapped: false
 		});
-		const flash = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.08, 7), flashMaterial);
-		flash.position.copy(origin).addScaledVector(direction, 0.44);
+		const flash = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.34, 7), flashMaterial);
+		flash.position.copy(origin).addScaledVector(direction, 0.14);
 		flash.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
 		flash.renderOrder = 5;
 		this.scene.add(flash);
 		this.muzzleEffects.push({
 			mesh: flash,
-			velocity: direction.clone().multiplyScalar(1.4),
-			life: 0.18,
-			maxLife: 0.18,
-			growth: 2.1
+			velocity: direction.clone().multiplyScalar(0.35),
+			life: 0.075,
+			maxLife: 0.075,
+			growth: 0.55,
+			opacity: 0.76
 		});
-		const flashCore = new THREE.Mesh(
-			new THREE.SphereGeometry(0.25, 10, 8),
-			new THREE.MeshBasicMaterial({
-				color: 0xff6a00,
+
+		const flashCore = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: this.getMuzzleGlowTexture(),
+				color: 0xffc46b,
 				transparent: true,
-				opacity: 1,
+				opacity: 0.58,
 				depthTest: false,
 				depthWrite: false,
+				blending: THREE.AdditiveBlending,
 				toneMapped: false
 			})
 		);
-		flashCore.position.copy(origin).addScaledVector(direction, 0.08);
+		flashCore.scale.setScalar(0.42);
+		flashCore.position.copy(origin).addScaledVector(direction, 0.055);
 		flashCore.renderOrder = 6;
 		this.scene.add(flashCore);
 		this.muzzleEffects.push({
 			mesh: flashCore,
-			velocity: direction.clone().multiplyScalar(0.8),
-			life: 0.11,
-			maxLife: 0.11,
-			growth: 1.35
+			velocity: direction.clone().multiplyScalar(0.18),
+			life: 0.095,
+			maxLife: 0.095,
+			growth: 0.5,
+			opacity: 0.58
 		});
 
 		const smokeSide = new THREE.Vector3(1, 0, 0).applyQuaternion(
@@ -4016,9 +4028,30 @@ export class StampKonijnGame {
 				velocity,
 				life: 0.62 + index * 0.07,
 				maxLife: 0.62 + index * 0.07,
-				growth: 0.48
+				growth: 0.48,
+				opacity: 0.46
 			});
 		}
+	}
+
+	private getMuzzleGlowTexture() {
+		if (this.muzzleGlowTexture) return this.muzzleGlowTexture;
+		const canvas = document.createElement('canvas');
+		canvas.width = 64;
+		canvas.height = 64;
+		const context = canvas.getContext('2d');
+		if (context) {
+			const glow = context.createRadialGradient(32, 32, 0, 32, 32, 31);
+			glow.addColorStop(0, 'rgba(255, 250, 222, 0.96)');
+			glow.addColorStop(0.16, 'rgba(255, 211, 122, 0.72)');
+			glow.addColorStop(0.48, 'rgba(255, 145, 60, 0.22)');
+			glow.addColorStop(1, 'rgba(255, 116, 32, 0)');
+			context.fillStyle = glow;
+			context.fillRect(0, 0, canvas.width, canvas.height);
+		}
+		this.muzzleGlowTexture = new THREE.CanvasTexture(canvas);
+		this.muzzleGlowTexture.colorSpace = THREE.SRGBColorSpace;
+		return this.muzzleGlowTexture;
 	}
 
 	private updateMuzzleEffects(delta: number) {
@@ -4029,7 +4062,7 @@ export class StampKonijnGame {
 			effect.velocity.y += delta * 0.18;
 			effect.mesh.scale.addScalar(effect.growth * delta);
 			const lifeRatio = Math.max(0, effect.life / effect.maxLife);
-			effect.mesh.material.opacity = effect.maxLife < 0.2 ? lifeRatio : lifeRatio * 0.46;
+			effect.mesh.material.opacity = lifeRatio * effect.opacity;
 			if (effect.life <= 0) {
 				this.scene.remove(effect.mesh);
 				effect.mesh.geometry.dispose();
