@@ -85,6 +85,8 @@ interface MuzzleEffect {
 	maxLife: number;
 	growth: number;
 	opacity: number;
+	delay: number;
+	followMuzzleUntilVisible: boolean;
 }
 
 interface ArmRagdoll {
@@ -282,6 +284,7 @@ export class StampKonijnGame {
 	private armRotation = new THREE.Quaternion();
 	private pistolPivot: THREE.Group | null = null;
 	private pistolMuzzle: THREE.Object3D | null = null;
+	private pistolMuzzleWorldPosition = new THREE.Vector3();
 	private cameraDesiredPosition = CAMERA_HOME.clone();
 	private cameraDesiredTarget = CAMERA_TARGET.clone();
 	private cameraLookTarget = CAMERA_TARGET.clone();
@@ -359,6 +362,7 @@ export class StampKonijnGame {
 	private weaponProjectiles: WeaponProjectile[] = [];
 	private muzzleEffects: MuzzleEffect[] = [];
 	private muzzleGlowTexture: THREE.CanvasTexture | null = null;
+	private muzzleSmokeTexture: THREE.CanvasTexture | null = null;
 	private bulletHoles: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[] = [];
 	private resizeObserver: ResizeObserver | null = null;
 	private frame = 0;
@@ -458,6 +462,8 @@ export class StampKonijnGame {
 		this.clearMuzzleEffects();
 		this.muzzleGlowTexture?.dispose();
 		this.muzzleGlowTexture = null;
+		this.muzzleSmokeTexture?.dispose();
+		this.muzzleSmokeTexture = null;
 		this.clearBulletHoles();
 		this.resetBreakables();
 		this.player.position.set(0, 0, 2.4);
@@ -601,6 +607,8 @@ export class StampKonijnGame {
 		this.clearMuzzleEffects();
 		this.muzzleGlowTexture?.dispose();
 		this.muzzleGlowTexture = null;
+		this.muzzleSmokeTexture?.dispose();
+		this.muzzleSmokeTexture = null;
 		this.clearBulletHoles();
 		disposeObject(this.scene);
 		this.renderer.dispose();
@@ -3971,7 +3979,9 @@ export class StampKonijnGame {
 			life: 0.075,
 			maxLife: 0.075,
 			growth: 0.55,
-			opacity: 0.76
+			opacity: 0.76,
+			delay: 0,
+			followMuzzleUntilVisible: false
 		});
 
 		const flashCore = new THREE.Sprite(
@@ -3996,40 +4006,49 @@ export class StampKonijnGame {
 			life: 0.095,
 			maxLife: 0.095,
 			growth: 0.5,
-			opacity: 0.58
+			opacity: 0.58,
+			delay: 0,
+			followMuzzleUntilVisible: false
 		});
 
 		const smokeSide = new THREE.Vector3(1, 0, 0).applyQuaternion(
 			new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction)
 		);
-		for (let index = 0; index < 6; index += 1) {
-			const size = 0.085 + index * 0.019;
-			const smokeMaterial = new THREE.MeshBasicMaterial({
-				color: 0xaaa59d,
+		for (let index = 0; index < 8; index += 1) {
+			const size = 0.085 + index * 0.007;
+			const smokeMaterial = new THREE.SpriteMaterial({
+				map: this.getMuzzleSmokeTexture(),
+				color: index % 2 === 0 ? 0xb8b1a8 : 0xc4bdb2,
 				transparent: true,
-				opacity: 0.46,
+				opacity: 0.16,
 				depthTest: false,
-				depthWrite: false
+				depthWrite: false,
+				toneMapped: false
 			});
-			const smoke = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 6), smokeMaterial);
+			const smoke = new THREE.Sprite(smokeMaterial);
+			smoke.scale.set(size * 1.28, size, 1);
 			smoke.position
 				.copy(origin)
-				.addScaledVector(direction, 0.08 + index * 0.065)
-				.addScaledVector(smokeSide, (Math.random() - 0.5) * 0.045);
+				.addScaledVector(direction, 0.035)
+				.addScaledVector(smokeSide, (Math.random() - 0.5) * 0.025);
+			const delay = index * 0.055;
+			smoke.visible = delay === 0;
 			const velocity = direction
 				.clone()
-				.multiplyScalar(0.55 + index * 0.12)
-				.add(new THREE.Vector3(0, 0.28 + Math.random() * 0.22, 0))
-				.addScaledVector(smokeSide, (Math.random() - 0.5) * 0.24);
+				.multiplyScalar(0.2 + index * 0.025)
+				.add(new THREE.Vector3(0, 0.1 + Math.random() * 0.09, 0))
+				.addScaledVector(smokeSide, (Math.random() - 0.5) * 0.08);
 			this.scene.add(smoke);
 			smoke.renderOrder = 4;
 			this.muzzleEffects.push({
 				mesh: smoke,
 				velocity,
-				life: 0.62 + index * 0.07,
-				maxLife: 0.62 + index * 0.07,
-				growth: 0.48,
-				opacity: 0.46
+				life: 0.9 + index * 0.055,
+				maxLife: 0.9 + index * 0.055,
+				growth: 0.12,
+				opacity: 0.16 - index * 0.006,
+				delay,
+				followMuzzleUntilVisible: delay > 0
 			});
 		}
 	}
@@ -4054,9 +4073,40 @@ export class StampKonijnGame {
 		return this.muzzleGlowTexture;
 	}
 
+	private getMuzzleSmokeTexture() {
+		if (this.muzzleSmokeTexture) return this.muzzleSmokeTexture;
+		const canvas = document.createElement('canvas');
+		canvas.width = 64;
+		canvas.height = 64;
+		const context = canvas.getContext('2d');
+		if (context) {
+			const smoke = context.createRadialGradient(32, 32, 3, 32, 32, 31);
+			smoke.addColorStop(0, 'rgba(224, 219, 209, 0.62)');
+			smoke.addColorStop(0.38, 'rgba(181, 177, 169, 0.3)');
+			smoke.addColorStop(0.76, 'rgba(126, 126, 121, 0.08)');
+			smoke.addColorStop(1, 'rgba(104, 106, 101, 0)');
+			context.fillStyle = smoke;
+			context.fillRect(0, 0, canvas.width, canvas.height);
+		}
+		this.muzzleSmokeTexture = new THREE.CanvasTexture(canvas);
+		this.muzzleSmokeTexture.colorSpace = THREE.SRGBColorSpace;
+		return this.muzzleSmokeTexture;
+	}
+
 	private updateMuzzleEffects(delta: number) {
 		for (let index = this.muzzleEffects.length - 1; index >= 0; index -= 1) {
 			const effect = this.muzzleEffects[index];
+			if (effect.delay > 0) {
+				effect.delay -= delta;
+				if (effect.followMuzzleUntilVisible && this.pistolMuzzle) {
+					this.pistolMuzzle.updateWorldMatrix(true, false);
+					effect.mesh.position.copy(
+						this.pistolMuzzle.getWorldPosition(this.pistolMuzzleWorldPosition)
+					);
+				}
+				if (effect.delay > 0) continue;
+				effect.mesh.visible = true;
+			}
 			effect.life -= delta;
 			effect.mesh.position.addScaledVector(effect.velocity, delta);
 			effect.velocity.y += delta * 0.18;
