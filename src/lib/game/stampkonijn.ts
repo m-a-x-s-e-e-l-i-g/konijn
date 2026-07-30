@@ -823,6 +823,7 @@ export class StampKonijnGame {
 		this.addBreakable('KRUKJE', 25, this.makeStool(), [0.15, 0, -2.8], 0.62, 0.82, 'wood');
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
+		this.addBreakable('HONDENHOK', 140, this.makeDoghouse(), [4.15, 0, -8.45], 1.12, 1.72, 'wood');
 		const leftGardenChair = this.makeGardenChair(COLORS.orange);
 		leftGardenChair.rotation.y = 0.42;
 		this.addBreakable('TUINSTOEL', 45, leftGardenChair, [-4.2, 0, -9.4], 0.82, 1.15, 'wood');
@@ -1042,6 +1043,42 @@ export class StampKonijnGame {
 		}
 		const shelf = box([1.15, 0.08, 0.48], [0, 0.42, 0], 0x6d6259);
 		group.add(shelf);
+		return group;
+	}
+
+	private makeDoghouse() {
+		const group = new THREE.Group();
+		group.add(box([1.72, 0.14, 1.72], [0, 0.07, 0], 0x6f4b39));
+		group.add(box([1.56, 1.06, 1.5], [0, 0.6, 0], 0xc76c45));
+
+		const leftRoof = box([1.08, 0.14, 1.92], [-0.42, 1.38, 0], 0x5e4438);
+		leftRoof.rotation.z = -0.58;
+		const rightRoof = box([1.08, 0.14, 1.92], [0.42, 1.38, 0], 0x5e4438);
+		rightRoof.rotation.z = 0.58;
+		group.add(leftRoof, rightRoof);
+
+		const doorwayShape = new THREE.Shape();
+		doorwayShape.moveTo(-0.37, -0.48);
+		doorwayShape.lineTo(-0.37, 0.08);
+		doorwayShape.absarc(0, 0.08, 0.37, Math.PI, 0, true);
+		doorwayShape.lineTo(0.37, -0.48);
+		doorwayShape.closePath();
+		const doorway = new THREE.Mesh(
+			new THREE.ShapeGeometry(doorwayShape, 12),
+			new THREE.MeshBasicMaterial({ color: COLORS.ink })
+		);
+		doorway.position.set(0, 0.54, 0.756);
+		group.add(doorway);
+
+		const bone = new THREE.Group();
+		bone.add(box([0.42, 0.09, 0.06], [0, 0, 0], COLORS.cream));
+		for (const x of [-0.24, 0.24]) {
+			const end = shadowMesh(new THREE.SphereGeometry(0.09, 10, 8), material(COLORS.cream));
+			end.position.x = x;
+			bone.add(end);
+		}
+		bone.position.set(0, 1.12, 0.82);
+		group.add(bone);
 		return group;
 	}
 
