@@ -912,6 +912,7 @@ export class StampKonijnGame {
 		const tapHandle = box([0.2, 0.035, 0.055], [handBasinX, 1.12, handBasinZ - 0.1], 0x777a78);
 		const mirror = box([0.74, 0.82, 0.035], [handBasinX, 1.7, BACK_WALL_Z + 0.12], 0x88b4bd);
 		this.scene.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
+		this.createToiletRoomDecor();
 
 		for (let index = 0; index < 8; index += 1) {
 			const stepHeight = STAIR_STEP_RISE * (index + 1);
@@ -2106,6 +2107,181 @@ export class StampKonijnGame {
 			pictureMaterial.map = texture;
 			pictureMaterial.needsUpdate = true;
 		});
+		return group;
+	}
+
+	private createToiletRoomDecor() {
+		const rabbitArt: Array<{
+			source: string;
+			x: number;
+			y: number;
+			scale: number;
+			rotation: number;
+		}> = [
+			{ source: '/images/artwork/3.webp', x: -13.25, y: 1.48, scale: 0.27, rotation: -0.08 },
+			{ source: '/images/artwork/7.webp', x: -12.48, y: 1.65, scale: 0.31, rotation: 0.05 },
+			{ source: '/images/artwork/14.webp', x: -11.62, y: 1.45, scale: 0.26, rotation: -0.04 },
+			{ source: '/images/artwork/18.webp', x: -9.78, y: 1.62, scale: 0.3, rotation: 0.08 },
+			{ source: '/images/artwork/24.webp', x: -9.02, y: 1.46, scale: 0.25, rotation: -0.06 }
+		];
+		for (const art of rabbitArt) {
+			const frame = this.makeArtwork(art.source);
+			frame.position.set(art.x, art.y, BACK_WALL_Z + 0.18);
+			frame.scale.setScalar(art.scale);
+			frame.rotation.z = art.rotation;
+			this.scene.add(frame);
+		}
+
+		const sideArt = this.makeArtwork('/images/artwork/29.webp');
+		sideArt.position.set(LEFT_ROOMS_MIN_X + 0.18, 1.34, -3.18);
+		sideArt.scale.setScalar(0.3);
+		sideArt.rotation.set(0, Math.PI / 2, -0.05);
+		this.scene.add(sideArt);
+
+		const calendar = this.makeToiletCalendar();
+		calendar.position.set(-10.62, 1.3, BACK_WALL_Z + 0.18);
+		this.scene.add(calendar);
+
+		const plunger = new THREE.Group();
+		plunger.add(cylinder(0.085, 0.21, 0.2, [0, 0.1, 0], 0xb84c3e, 18));
+		plunger.add(cylinder(0.03, 0.034, 0.88, [0, 0.62, 0], 0x876044, 10));
+		plunger.position.set(-13.16, 0, -2.82);
+		plunger.rotation.z = -0.12;
+		this.scene.add(plunger);
+
+		const toiletBrush = new THREE.Group();
+		toiletBrush.add(cylinder(0.14, 0.12, 0.34, [0, 0.17, 0], 0xe8e1d5, 16));
+		toiletBrush.add(cylinder(0.026, 0.026, 0.72, [0, 0.67, 0], 0x3e4744, 10));
+		const brushGrip = shadowMesh(new THREE.SphereGeometry(0.055, 10, 8), material(0x3e4744));
+		brushGrip.position.y = 1.04;
+		toiletBrush.add(brushGrip);
+		toiletBrush.position.set(-13.2, 0, -3.58);
+		this.scene.add(toiletBrush);
+
+		const toiletCleaner = this.makeToiletCleaner();
+		toiletCleaner.position.set(-9.62, 0, -4.22);
+		toiletCleaner.rotation.y = -0.08;
+		this.scene.add(toiletCleaner);
+	}
+
+	private makeToiletCalendar() {
+		const group = new THREE.Group();
+		group.add(box([0.78, 1.04, 0.055], [0, 0, 0], 0x59453b));
+		const canvas = document.createElement('canvas');
+		canvas.width = 384;
+		canvas.height = 512;
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.fillStyle = '#f6eddc';
+			context.fillRect(0, 0, canvas.width, canvas.height);
+			context.fillStyle = '#ef7f31';
+			context.fillRect(0, 0, canvas.width, 132);
+			context.fillStyle = '#251f1b';
+			context.textAlign = 'center';
+			context.font = '900 46px system-ui, sans-serif';
+			context.fillText('WC-KONIJN', canvas.width / 2, 54);
+			context.font = '800 34px system-ui, sans-serif';
+			context.fillText('JULI', canvas.width / 2, 108);
+			context.lineWidth = 4;
+			context.strokeStyle = '#251f1b';
+			const gridTop = 160;
+			const cellWidth = canvas.width / 7;
+			const cellHeight = 62;
+			for (let column = 0; column <= 7; column += 1) {
+				context.beginPath();
+				context.moveTo(column * cellWidth, gridTop);
+				context.lineTo(column * cellWidth, gridTop + cellHeight * 5);
+				context.stroke();
+			}
+			for (let row = 0; row <= 5; row += 1) {
+				context.beginPath();
+				context.moveTo(0, gridTop + row * cellHeight);
+				context.lineTo(canvas.width, gridTop + row * cellHeight);
+				context.stroke();
+			}
+			context.font = '700 22px system-ui, sans-serif';
+			context.textBaseline = 'middle';
+			for (let day = 1; day <= 31; day += 1) {
+				const index = day + 1;
+				const column = index % 7;
+				const row = Math.floor(index / 7);
+				const x = column * cellWidth + cellWidth / 2;
+				const y = gridTop + row * cellHeight + cellHeight / 2;
+				if (day === 29) {
+					context.fillStyle = '#ef7f31';
+					context.beginPath();
+					context.arc(x, y, 22, 0, Math.PI * 2);
+					context.fill();
+				}
+				context.fillStyle = '#251f1b';
+				context.fillText(String(day), x, y);
+			}
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const sheet = new THREE.Mesh(
+			new THREE.PlaneGeometry(0.72, 0.98),
+			new THREE.MeshBasicMaterial({ map: texture })
+		);
+		sheet.position.z = 0.032;
+		group.add(sheet);
+		return group;
+	}
+
+	private makeToiletCleaner() {
+		const group = new THREE.Group();
+		const bottle = shadowMesh(
+			new THREE.CapsuleGeometry(0.15, 0.3, 5, 12),
+			material(0x2f8d83, 0.66)
+		);
+		bottle.scale.z = 0.68;
+		bottle.position.y = 0.3;
+		group.add(bottle);
+		const neck = cylinder(0.065, 0.08, 0.17, [0.035, 0.61, 0], 0x2f8d83, 12);
+		neck.rotation.z = -0.24;
+		const cap = cylinder(0.076, 0.076, 0.07, [0.055, 0.72, 0], COLORS.orange, 12);
+		cap.rotation.z = -0.24;
+		group.add(neck, cap);
+
+		const canvas = document.createElement('canvas');
+		canvas.width = 256;
+		canvas.height = 256;
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.fillStyle = '#f6eddc';
+			context.beginPath();
+			context.roundRect(10, 10, 236, 236, 30);
+			context.fill();
+			context.fillStyle = '#ef7f31';
+			context.font = '900 58px system-ui, sans-serif';
+			context.textAlign = 'center';
+			context.fillText('WC', 128, 78);
+			context.fillStyle = '#251f1b';
+			context.font = '900 34px system-ui, sans-serif';
+			context.fillText('KONIJN', 128, 224);
+			context.strokeStyle = '#251f1b';
+			context.lineWidth = 10;
+			context.beginPath();
+			context.ellipse(128, 143, 48, 42, 0, 0, Math.PI * 2);
+			context.moveTo(103, 113);
+			context.lineTo(94, 88);
+			context.moveTo(153, 113);
+			context.lineTo(162, 88);
+			context.stroke();
+			context.fillStyle = '#251f1b';
+			context.beginPath();
+			context.arc(111, 141, 5, 0, Math.PI * 2);
+			context.arc(145, 141, 5, 0, Math.PI * 2);
+			context.fill();
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const label = new THREE.Mesh(
+			new THREE.PlaneGeometry(0.24, 0.25),
+			new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+		);
+		label.position.set(0, 0.3, 0.105);
+		group.add(label);
 		return group;
 	}
 
@@ -4422,6 +4598,7 @@ export class StampKonijnGame {
 		} else if (this.playerLeftRoom) {
 			const bounds = this.getLeftRoomZBounds(this.playerLeftRoom);
 			const roomCenterZ = (bounds.minZ + bounds.maxZ) / 2;
+			const roomTargetHeight = this.playerLeftRoom === 'bathroom' ? 1.88 : 1.45;
 			this.cameraDesiredPosition.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.14,
 				4.05 + this.player.position.y * 0.05,
@@ -4429,7 +4606,7 @@ export class StampKonijnGame {
 			);
 			this.cameraDesiredTarget.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.42,
-				1.45 + this.player.position.y * 0.12,
+				roomTargetHeight + this.player.position.y * 0.12,
 				roomCenterZ + (this.player.position.z - roomCenterZ) * 0.28
 			);
 		} else if (this.playerInKitchen) {
