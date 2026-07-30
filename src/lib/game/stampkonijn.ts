@@ -171,7 +171,7 @@ const UPSTAIRS_MIN_X = LEFT_ROOMS_MIN_X;
 const UPSTAIRS_MAX_X = LEFT_ROOMS_MAX_X;
 const UPSTAIRS_CENTER_X = (UPSTAIRS_MIN_X + UPSTAIRS_MAX_X) / 2;
 const UPSTAIRS_STAIRWELL_X = -12.25;
-const GARDEN_WIDTH = 22;
+const GARDEN_WIDTH = 28;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
@@ -1326,12 +1326,30 @@ export class StampKonijnGame {
 			[KITCHEN_MAX_X, ROOM_HEIGHT / 2, 0],
 			0xe0cbb1
 		);
-		const kitchenBackWall = box(
-			[KITCHEN_WIDTH, ROOM_HEIGHT, 0.18],
-			[KITCHEN_CENTER_X, ROOM_HEIGHT / 2, BACK_WALL_Z],
-			0xe7d6bd
-		);
-		for (const wall of [kitchenOuterWall, kitchenBackWall]) {
+		const backDoorLeft = KITCHEN_BACK_DOOR_X - KITCHEN_BACK_DOOR_WIDTH / 2;
+		const backDoorRight = KITCHEN_BACK_DOOR_X + KITCHEN_BACK_DOOR_WIDTH / 2;
+		const kitchenBackWalls = [
+			box(
+				[backDoorLeft - KITCHEN_MIN_X, ROOM_HEIGHT, 0.18],
+				[(KITCHEN_MIN_X + backDoorLeft) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
+				0xe7d6bd
+			),
+			box(
+				[KITCHEN_MAX_X - backDoorRight, ROOM_HEIGHT, 0.18],
+				[(backDoorRight + KITCHEN_MAX_X) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
+				0xe7d6bd
+			),
+			box(
+				[KITCHEN_BACK_DOOR_WIDTH, ROOM_HEIGHT - KITCHEN_BACK_DOOR_HEIGHT, 0.18],
+				[
+					KITCHEN_BACK_DOOR_X,
+					KITCHEN_BACK_DOOR_HEIGHT + (ROOM_HEIGHT - KITCHEN_BACK_DOOR_HEIGHT) / 2,
+					BACK_WALL_Z
+				],
+				0xe7d6bd
+			)
+		];
+		for (const wall of [kitchenOuterWall, ...kitchenBackWalls]) {
 			wall.receiveShadow = true;
 			this.scene.add(wall);
 			this.bulletImpactSurfaces.push(wall);
@@ -1421,9 +1439,11 @@ export class StampKonijnGame {
 		);
 		this.lockedBackDoorLeafRoot.add(leaf);
 		this.bulletImpactSurfaces.push(leaf);
+		const lockwork = new THREE.Group();
+		this.lockedBackDoorLeafRoot.add(lockwork);
 
 		for (let plank = -2; plank <= 2; plank += 1) {
-			this.lockedBackDoorLeafRoot.add(
+			lockwork.add(
 				box(
 					[0.026, KITCHEN_BACK_DOOR_HEIGHT - 0.22, 0.026],
 					[plank * 0.285, KITCHEN_BACK_DOOR_HEIGHT / 2, 0.158],
@@ -1440,7 +1460,7 @@ export class StampKonijnGame {
 		] as Array<[number, number]>) {
 			const bar = box([KITCHEN_BACK_DOOR_WIDTH + 0.34, 0.15, 0.15], [0, y, 0.23], iron);
 			bar.rotation.z = angle;
-			this.lockedBackDoorLeafRoot.add(bar);
+			lockwork.add(bar);
 			for (const x of [-KITCHEN_BACK_DOOR_WIDTH / 2 - 0.08, KITCHEN_BACK_DOOR_WIDTH / 2 + 0.08]) {
 				const bolt = shadowMesh(
 					new THREE.SphereGeometry(0.07, 8, 6),
@@ -1448,7 +1468,7 @@ export class StampKonijnGame {
 				);
 				bolt.position.set(x, y + x * Math.sin(angle), 0.32);
 				bolt.scale.z = 0.55;
-				this.lockedBackDoorLeafRoot.add(bolt);
+				lockwork.add(bolt);
 			}
 		}
 
@@ -1466,7 +1486,7 @@ export class StampKonijnGame {
 				);
 				link.scale.y = 1.28;
 				link.rotation.z = direction * -0.55 + (index % 2) * 0.32;
-				this.lockedBackDoorLeafRoot.add(link);
+				lockwork.add(link);
 			}
 		}
 
@@ -1482,8 +1502,11 @@ export class StampKonijnGame {
 			shackle.position.set(x, y + 0.12, 0.38);
 			shackle.scale.y = 1.2;
 			const lockBody = box([0.28, 0.25, 0.13], [x, y, 0.39], color);
-			this.lockedBackDoorLeafRoot.add(shackle, lockBody);
+			lockwork.add(shackle, lockBody);
 		}
+		const exteriorLockwork = lockwork.clone(true);
+		exteriorLockwork.scale.z = -1;
+		this.lockedBackDoorLeafRoot.add(exteriorLockwork);
 
 		this.scene.add(this.lockedBackDoorLeafRoot);
 	}
@@ -4365,14 +4388,14 @@ export class StampKonijnGame {
 			);
 		} else if (this.playerOutside) {
 			this.cameraDesiredPosition.set(
-				this.player.position.x * 0.7 + WINDOW_CENTER_X * 0.3,
+				this.player.position.x * 0.76 + WINDOW_CENTER_X * 0.24,
 				6.7 + this.player.position.y * 0.08,
-				Math.min(BACK_WALL_Z - 0.65, this.player.position.z + 7.4)
+				Math.max(GARDEN_BACK_Z + 0.65, this.player.position.z - 7.4)
 			);
 			this.cameraDesiredTarget.set(
 				this.player.position.x,
 				this.player.position.y + PLAYER_HEIGHT * 0.55,
-				this.player.position.z - 0.35
+				this.player.position.z + 0.35
 			);
 		} else {
 			this.cameraDesiredPosition.copy(CAMERA_HOME);
