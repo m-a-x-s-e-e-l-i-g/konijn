@@ -41,6 +41,7 @@ interface Breakable {
 	stampCount: number;
 	stampsRequired: number;
 	lastStampSequence: number;
+	basePosition: THREE.Vector3;
 	baseQuaternion: THREE.Quaternion;
 	tiltAxis: THREE.Vector3;
 }
@@ -121,6 +122,12 @@ const BEDROOM_MIN_Z = 1.65;
 const BATHROOM_DOOR_Z = (BACK_WALL_Z + BATHROOM_MAX_Z) / 2;
 const STAIRS_DOOR_Z = 0;
 const BEDROOM_DOOR_Z = (BEDROOM_MIN_Z + ROOM_DEPTH / 2) / 2;
+const TOILET_X = -9.05;
+const TOILET_Z = -3.05;
+const TOILET_POOPS_REQUIRED = 16;
+const TOILET_CATCH_RADIUS = 0.46;
+const SEWER_FLOOR_Y = -4.2;
+const SEWER_HOLE_RADIUS = 0.8;
 const GARDEN_WIDTH = 22;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
@@ -272,6 +279,15 @@ export class StampKonijnGame {
 	private playerInKitchen = false;
 	private playerLeftRoom: LeftRoomName | null = null;
 	private leftRoomDoors: LeftRoomDoor[] = [];
+	private toiletBreakable: Breakable | null = null;
+	private toiletFillRoot = new THREE.Group();
+	private toiletPoopCount = 0;
+	private toiletSinking = false;
+	private toiletSinkAmount = 0;
+	private sewerOpen = false;
+	private playerInSewer = false;
+	private sewerEntrance = new THREE.Group();
+	private sewerLight = new THREE.PointLight(0xb7cb74, 0, 8, 2);
 	private debris: DebrisPiece[] = [];
 	private impactRings: ImpactRing[] = [];
 	private surfaceCracks: SurfaceCrack[] = [];
@@ -791,6 +807,117 @@ export class StampKonijnGame {
 		for (const config of doorConfigs) {
 			this.createLeftRoomDoor(config.room, config.label, config.centerZ, config.color);
 		}
+		this.createSewer();
+	}
+
+	private createSewer() {
+		const bathroomDepth = BATHROOM_MAX_Z - BACK_WALL_Z;
+		const bathroomCenterZ = (BACK_WALL_Z + BATHROOM_MAX_Z) / 2;
+		const sewerFloor = shadowMesh(
+			new THREE.PlaneGeometry(LEFT_ROOMS_WIDTH, bathroomDepth),
+			material(0x4d554b, 0.98)
+		);
+		sewerFloor.rotation.x = -Math.PI / 2;
+		sewerFloor.position.set(LEFT_ROOMS_CENTER_X, SEWER_FLOOR_Y, bathroomCenterZ);
+		sewerFloor.receiveShadow = true;
+		this.scene.add(sewerFloor);
+		this.bulletImpactSurfaces.push(sewerFloor);
+		this.stampSurfaceKinds.set(sewerFloor, 'floor');
+
+		const wallHeight = Math.abs(SEWER_FLOOR_Y) + 0.1;
+		const sewerWalls = [
+			box(
+				[0.18, wallHeight, bathroomDepth],
+				[LEFT_ROOMS_MIN_X, SEWER_FLOOR_Y + wallHeight / 2, bathroomCenterZ],
+				0x343c36
+			),
+			box(
+				[0.18, wallHeight, bathroomDepth],
+				[LEFT_ROOMS_MAX_X, SEWER_FLOOR_Y + wallHeight / 2, bathroomCenterZ],
+				0x343c36
+			),
+			box(
+				[LEFT_ROOMS_WIDTH, wallHeight, 0.18],
+				[LEFT_ROOMS_CENTER_X, SEWER_FLOOR_Y + wallHeight / 2, BACK_WALL_Z],
+				0x3a423b
+			),
+			box(
+				[LEFT_ROOMS_WIDTH, wallHeight, 0.18],
+				[LEFT_ROOMS_CENTER_X, SEWER_FLOOR_Y + wallHeight / 2, BATHROOM_MAX_Z],
+				0x3a423b
+			)
+		];
+		for (const wall of sewerWalls) {
+			this.scene.add(wall);
+			this.bulletImpactSurfaces.push(wall);
+			this.stampSurfaceKinds.set(wall, 'wall');
+		}
+
+		const water = shadowMesh(
+			new THREE.PlaneGeometry(1.2, bathroomDepth - 0.24),
+			new THREE.MeshStandardMaterial({
+				color: 0x627047,
+				roughness: 0.58,
+				metalness: 0.04,
+				transparent: true,
+				opacity: 0.88
+			})
+		);
+		water.rotation.x = -Math.PI / 2;
+		water.position.set(LEFT_ROOMS_CENTER_X, SEWER_FLOOR_Y + 0.025, bathroomCenterZ);
+		this.scene.add(water);
+		for (const x of [LEFT_ROOMS_CENTER_X - 1.75, LEFT_ROOMS_CENTER_X + 1.75]) {
+			const walkway = box(
+				[2.05, 0.16, bathroomDepth - 0.2],
+				[x, SEWER_FLOOR_Y + 0.08, bathroomCenterZ],
+				0x66665c
+			);
+			this.scene.add(walkway);
+		}
+
+		for (const x of [LEFT_ROOMS_MIN_X + 0.38, LEFT_ROOMS_MAX_X - 0.38]) {
+			const pipe = cylinder(
+				0.13,
+				0.13,
+				bathroomDepth - 0.3,
+				[x, SEWER_FLOOR_Y + 2.35, bathroomCenterZ],
+				0x835b3c,
+				14
+			);
+			pipe.rotation.x = Math.PI / 2;
+			this.scene.add(pipe);
+		}
+
+		const ladderColor = 0x9d8c61;
+		for (const x of [TOILET_X - 0.3, TOILET_X + 0.3]) {
+			this.scene.add(cylinder(0.035, 0.035, 3.1, [x, -2.05, TOILET_Z - 0.64], ladderColor, 8));
+		}
+		for (let y = -3.35; y < -0.6; y += 0.36) {
+			const rung = cylinder(0.03, 0.03, 0.62, [TOILET_X, y, TOILET_Z - 0.64], ladderColor, 8);
+			rung.rotation.z = Math.PI / 2;
+			this.scene.add(rung);
+		}
+
+		this.sewerLight.position.set(LEFT_ROOMS_CENTER_X, SEWER_FLOOR_Y + 2.35, bathroomCenterZ);
+		this.scene.add(this.sewerLight);
+
+		this.sewerEntrance = new THREE.Group();
+		this.sewerEntrance.position.set(TOILET_X, 0, TOILET_Z);
+		const darkness = new THREE.Mesh(
+			new THREE.CircleGeometry(SEWER_HOLE_RADIUS, 32),
+			new THREE.MeshBasicMaterial({ color: 0x121712, side: THREE.DoubleSide })
+		);
+		darkness.rotation.x = -Math.PI / 2;
+		darkness.position.y = 0.024;
+		const rim = shadowMesh(
+			new THREE.TorusGeometry(SEWER_HOLE_RADIUS, 0.09, 10, 32),
+			material(0x3c4039, 0.98)
+		);
+		rim.rotation.x = Math.PI / 2;
+		rim.position.y = 0.038;
+		this.sewerEntrance.add(darkness, rim);
+		this.sewerEntrance.visible = false;
+		this.scene.add(this.sewerEntrance);
 	}
 
 	private createLeftRoomDoor(
@@ -1208,7 +1335,15 @@ export class StampKonijnGame {
 			1.05,
 			'wood'
 		);
-		this.addBreakable('TOILET', 280, this.makeToilet(), [-9.05, 0, -3.05], 0.62, 1.12, 'ceramic');
+		this.toiletBreakable = this.addBreakable(
+			'TOILET',
+			280,
+			this.makeToilet(),
+			[TOILET_X, 0, TOILET_Z],
+			0.62,
+			1.12,
+			'ceramic'
+		);
 		this.addBreakable('BADKUIP', 520, this.makeBathtub(), [-11.65, 0, -3.45], 1.2, 0.72, 'ceramic');
 		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
 
@@ -1254,7 +1389,7 @@ export class StampKonijnGame {
 		price.position.set(0, height + 0.24, 0);
 		group.add(price);
 		this.breakablesRoot.add(group);
-		this.breakables.push({
+		const breakable: Breakable = {
 			group,
 			label,
 			value,
@@ -1266,9 +1401,12 @@ export class StampKonijnGame {
 			stampCount: 0,
 			stampsRequired,
 			lastStampSequence: -1,
+			basePosition: group.position.clone(),
 			baseQuaternion: group.quaternion.clone(),
 			tiltAxis: new THREE.Vector3()
-		});
+		};
+		this.breakables.push(breakable);
+		return breakable;
 	}
 
 	private makeVase(color: number) {
@@ -1544,6 +1682,17 @@ export class StampKonijnGame {
 		bowl.scale.z = 1.18;
 		bowl.position.set(0, 0.52, 0.08);
 		group.add(bowl);
+		const water = new THREE.Mesh(
+			new THREE.CircleGeometry(0.235, 24),
+			new THREE.MeshStandardMaterial({ color: 0x8eb8b7, roughness: 0.35 })
+		);
+		water.rotation.x = -Math.PI / 2;
+		water.scale.z = 1.16;
+		water.position.set(0, 0.515, 0.08);
+		group.add(water);
+		this.toiletFillRoot = new THREE.Group();
+		this.toiletFillRoot.position.set(0, 0.535, 0.08);
+		group.add(this.toiletFillRoot);
 		group.add(box([0.54, 0.6, 0.3], [0, 0.78, -0.25], 0xe1dfd7));
 		group.add(box([0.56, 0.08, 0.32], [0, 1.1, -0.25], 0xefede6));
 		return group;
@@ -1674,6 +1823,7 @@ export class StampKonijnGame {
 			this.updateDebris(delta);
 			this.updateImpactRings(delta);
 			this.updateWeaponProjectiles(delta);
+			this.updateToilet(delta);
 		}
 		this.updateCamera(delta);
 		this.renderer.render(this.scene, this.camera);
@@ -1929,7 +2079,27 @@ export class StampKonijnGame {
 			}
 		}
 
-		if (!this.playerOutside && this.player.position.y + PLAYER_HEIGHT >= ROOM_HEIGHT) {
+		const overSewerHole = this.isOverSewerHole();
+		if (!this.playerInSewer && overSewerHole && this.player.position.y < -0.65) {
+			this.playerInSewer = true;
+			this.callbacks.onFeedback('HET RIOOL IN!');
+		} else if (this.playerInSewer) {
+			if (overSewerHole && this.player.position.y > -0.2) {
+				this.playerInSewer = false;
+				this.callbacks.onFeedback('TERUG UIT HET RIOOL!');
+			} else if (!overSewerHole && this.player.position.y + PLAYER_HEIGHT >= -0.08) {
+				this.player.position.y = -PLAYER_HEIGHT - 0.08;
+				this.velocity.y = -Math.abs(this.velocity.y) * 0.68;
+				this.joltRagdoll(1.2);
+				this.squash = Math.max(this.squash, 0.5);
+			}
+		}
+
+		if (
+			!this.playerOutside &&
+			!this.playerInSewer &&
+			this.player.position.y + PLAYER_HEIGHT >= ROOM_HEIGHT
+		) {
 			this.player.position.y = ROOM_HEIGHT - PLAYER_HEIGHT;
 			this.velocity.y = -Math.abs(this.velocity.y) * 0.82;
 			this.joltRagdoll(1.5);
@@ -1939,7 +2109,8 @@ export class StampKonijnGame {
 		}
 
 		const floorHeight = this.getActiveFloorHeight();
-		if (this.player.position.y <= floorHeight) {
+		const canFallThroughSewer = !this.playerInSewer && this.isOverSewerHole();
+		if (!canFallThroughSewer && this.player.position.y <= floorHeight) {
 			const impactSpeed = Math.abs(this.velocity.y);
 			const stampImpactSpeed = this.velocity.length();
 			const floorNormal = new THREE.Vector3(0, 1, 0);
@@ -1978,6 +2149,7 @@ export class StampKonijnGame {
 	}
 
 	private getActiveFloorHeight() {
+		if (this.playerInSewer) return SEWER_FLOOR_Y;
 		if (this.playerLeftRoom !== 'stairs') return 0;
 		const stepIndex = THREE.MathUtils.clamp(
 			Math.floor((-this.player.position.x - 7.19) / 0.72),
@@ -1985,6 +2157,15 @@ export class StampKonijnGame {
 			7
 		);
 		return (stepIndex + 1) * 0.24;
+	}
+
+	private isOverSewerHole() {
+		return (
+			this.sewerOpen &&
+			this.playerLeftRoom === 'bathroom' &&
+			Math.hypot(this.player.position.x - TOILET_X, this.player.position.z - TOILET_Z) <
+				SEWER_HOLE_RADIUS - 0.08
+		);
 	}
 
 	private isInsideLeftDoorTarget(door: LeftRoomDoor) {
@@ -2395,6 +2576,81 @@ export class StampKonijnGame {
 		this.playFartSound();
 	}
 
+	private tryCatchPoopInToilet(projectile: WeaponProjectile) {
+		if (
+			projectile.kind !== 'poop' ||
+			this.sewerOpen ||
+			this.toiletSinking ||
+			!this.toiletBreakable ||
+			this.toiletBreakable.broken ||
+			projectile.velocity.y >= 0
+		) {
+			return false;
+		}
+
+		const dx = projectile.mesh.position.x - TOILET_X;
+		const dz = projectile.mesh.position.z - (TOILET_Z + 0.08);
+		const insideBowl = Math.hypot(dx, dz) <= TOILET_CATCH_RADIUS;
+		const aboveBowl = projectile.mesh.position.y >= 0.43 && projectile.mesh.position.y <= 0.92;
+		if (!insideBowl || !aboveBowl) return false;
+
+		this.toiletPoopCount += 1;
+		this.addToiletPoop();
+		if (this.toiletPoopCount >= TOILET_POOPS_REQUIRED) {
+			this.openSewer();
+		} else if (this.toiletPoopCount % 4 === 0) {
+			const remaining = TOILET_POOPS_REQUIRED - this.toiletPoopCount;
+			this.callbacks.onFeedback(
+				remaining <= 4
+					? 'WC BIJNA VOL! NOG EVEN SCHIJTEN!'
+					: `WC VULT ZICH! ${this.toiletPoopCount}/${TOILET_POOPS_REQUIRED}`
+			);
+		}
+		return true;
+	}
+
+	private addToiletPoop() {
+		const poop = shadowMesh(
+			new THREE.DodecahedronGeometry(0.075 + Math.random() * 0.025, 0),
+			material(Math.random() > 0.45 ? 0x4b3020 : 0x62402a, 0.98)
+		);
+		const progress = this.toiletPoopCount / TOILET_POOPS_REQUIRED;
+		const angle = this.toiletPoopCount * 2.37 + Math.random() * 0.65;
+		const radius = Math.sqrt(Math.random()) * (0.12 + progress * 0.08);
+		poop.position.set(
+			Math.cos(angle) * radius,
+			0.02 + progress * 0.16 + Math.random() * 0.035,
+			Math.sin(angle) * radius * 0.82
+		);
+		poop.scale.set(1.08, 0.72 + Math.random() * 0.2, 0.92);
+		poop.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+		this.toiletFillRoot.add(poop);
+	}
+
+	private openSewer() {
+		if (this.sewerOpen || !this.toiletBreakable) return;
+		this.sewerOpen = true;
+		this.toiletSinking = true;
+		this.toiletSinkAmount = 0;
+		this.sewerEntrance.visible = true;
+		this.sewerLight.intensity = 15;
+		this.breakObject(this.toiletBreakable, 'sink');
+		this.cameraShake = Math.max(this.cameraShake, 1.05);
+		this.callbacks.onFeedback('WC TE VOL! HET RIOOL GAAT OPEN!');
+	}
+
+	private updateToilet(delta: number) {
+		if (!this.toiletSinking || !this.toiletBreakable) return;
+		this.toiletSinkAmount = Math.min(1, this.toiletSinkAmount + delta / 0.9);
+		const eased = 1 - Math.pow(1 - this.toiletSinkAmount, 4);
+		this.toiletBreakable.group.position.y = this.toiletBreakable.basePosition.y - eased * 2.35;
+		this.toiletBreakable.group.rotation.z = Math.sin(eased * Math.PI) * 0.08;
+		if (this.toiletSinkAmount >= 1) {
+			this.toiletSinking = false;
+			this.toiletBreakable.group.visible = false;
+		}
+	}
+
 	private firePistol() {
 		const origin = this.pistolMuzzle
 			? this.pistolMuzzle.getWorldPosition(new THREE.Vector3())
@@ -2519,6 +2775,18 @@ export class StampKonijnGame {
 
 	private damageBreakable(breakable: Breakable, source: 'stamp' | 'bullet') {
 		if (breakable.broken) return;
+		if (breakable === this.toiletBreakable && !this.sewerOpen) {
+			if (source === 'stamp') {
+				if (breakable.lastStampSequence === this.stampSequence) return;
+				breakable.lastStampSequence = this.stampSequence;
+				this.pendingStampFeedback = 'DE WC WIL KEUTELS!';
+				this.cameraShake = Math.max(this.cameraShake, 0.35);
+			} else {
+				this.playBulletImpact();
+				this.callbacks.onFeedback('NIET SCHIETEN. SCHIJTEN!');
+			}
+			return;
+		}
 		if (breakable.stampsRequired <= 1) {
 			this.breakObject(breakable);
 			return;
@@ -2554,14 +2822,14 @@ export class StampKonijnGame {
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
 	}
 
-	private breakObject(breakable: Breakable) {
+	private breakObject(breakable: Breakable, effect: 'smash' | 'sink' = 'smash') {
 		if (breakable.broken) return;
 		const supportedObject =
 			breakable.label === 'TAFEL'
 				? this.breakables.find((item) => item.label === 'FRUITSCHAAL' && !item.broken)
 				: undefined;
 		breakable.broken = true;
-		breakable.group.visible = false;
+		breakable.group.visible = effect === 'sink';
 		const now = performance.now();
 		this.combo =
 			this.lastBreakAt > 0 && now - this.lastBreakAt < 1800 ? Math.min(8, this.combo + 1) : 1;
@@ -2571,7 +2839,7 @@ export class StampKonijnGame {
 		this.destroyedCount += 1;
 		this.lastHit = breakable.label;
 		this.lastValue = points;
-		this.spawnDebris(breakable);
+		if (effect === 'smash') this.spawnDebris(breakable);
 		this.callbacks.onImpact(breakable.label, points, this.combo);
 		this.playBreakSound(breakable.material, breakable.label);
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
@@ -2708,6 +2976,10 @@ export class StampKonijnGame {
 				projectile.mesh.position.addScaledVector(projectile.velocity, delta);
 				projectile.mesh.rotation.x += delta * 5.4;
 				projectile.mesh.rotation.z += delta * 3.7;
+				if (this.tryCatchPoopInToilet(projectile)) {
+					this.removeWeaponProjectile(index);
+					continue;
+				}
 
 				if (projectile.mesh.position.y < 0.08) {
 					projectile.mesh.position.y = 0.08;
@@ -2741,7 +3013,7 @@ export class StampKonijnGame {
 				projectile.mesh.position.z > ROOM_DEPTH / 2 + 0.4 ||
 				projectile.mesh.position.z < GARDEN_BACK_Z - 0.4 ||
 				projectile.mesh.position.y > ROOM_HEIGHT + 8 ||
-				projectile.mesh.position.y < -0.4
+				projectile.mesh.position.y < SEWER_FLOOR_Y - 0.4
 			) {
 				this.removeWeaponProjectile(index);
 			}
@@ -3038,13 +3310,25 @@ export class StampKonijnGame {
 	}
 
 	private updateCamera(delta: number) {
-		if (this.playerLeftRoom) {
+		if (this.playerInSewer) {
+			const bathroomCenterZ = (BACK_WALL_Z + BATHROOM_MAX_Z) / 2;
+			this.cameraDesiredPosition.set(
+				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.16,
+				SEWER_FLOOR_Y + 3,
+				BATHROOM_MAX_Z - 0.3
+			);
+			this.cameraDesiredTarget.set(
+				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.48,
+				this.player.position.y + PLAYER_HEIGHT * 0.55,
+				bathroomCenterZ + (this.player.position.z - bathroomCenterZ) * 0.34
+			);
+		} else if (this.playerLeftRoom) {
 			const bounds = this.getLeftRoomZBounds(this.playerLeftRoom);
 			const roomCenterZ = (bounds.minZ + bounds.maxZ) / 2;
 			this.cameraDesiredPosition.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.14,
-				6.35 + this.player.position.y * 0.05,
-				bounds.maxZ - 0.22
+				4.05 + this.player.position.y * 0.05,
+				bounds.maxZ - 0.34
 			);
 			this.cameraDesiredTarget.set(
 				LEFT_ROOMS_CENTER_X + (this.player.position.x - LEFT_ROOMS_CENTER_X) * 0.42,
@@ -3108,6 +3392,7 @@ export class StampKonijnGame {
 			breakable.broken = false;
 			breakable.stampCount = 0;
 			breakable.lastStampSequence = -1;
+			breakable.group.position.copy(breakable.basePosition);
 			breakable.group.quaternion.copy(breakable.baseQuaternion);
 			breakable.tiltAxis.set(0, 0, 0);
 			breakable.group.visible = true;
@@ -3119,6 +3404,17 @@ export class StampKonijnGame {
 		this.playerOutside = false;
 		this.playerInKitchen = false;
 		this.playerLeftRoom = null;
+		this.playerInSewer = false;
+		this.sewerOpen = false;
+		this.toiletSinking = false;
+		this.toiletSinkAmount = 0;
+		this.toiletPoopCount = 0;
+		this.sewerEntrance.visible = false;
+		this.sewerLight.intensity = 0;
+		for (const poop of [...this.toiletFillRoot.children]) {
+			this.toiletFillRoot.remove(poop);
+			disposeObject(poop);
+		}
 		this.windowBreakaway.visible = true;
 		this.doorPivot.rotation.y = 0;
 		this.setWindowCollisionEnabled(true);
