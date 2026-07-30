@@ -86,6 +86,8 @@ interface LeftRoomDoor {
 	width: number;
 	height: number;
 	pivot: THREE.Group;
+	leafRoot: THREE.Group;
+	damage: THREE.Group;
 	surfaces: THREE.Object3D[];
 	open: boolean;
 	openAmount: number;
@@ -290,6 +292,8 @@ export class StampKonijnGame {
 	private windowHits = 0;
 	private windowBroken = false;
 	private doorPivot = new THREE.Group();
+	private doorLeafRoot = new THREE.Group();
+	private doorDamage = new THREE.Group();
 	private doorStampSurfaces: THREE.Object3D[] = [];
 	private doorOpen = false;
 	private doorOpenAmount = 0;
@@ -1053,6 +1057,61 @@ export class StampKonijnGame {
 		this.scene.add(this.sewerLight);
 	}
 
+	private makeBrokenDoorDetails(leafHeight: number, leafDepth: number, faceOffset: number) {
+		const damage = new THREE.Group();
+		const crackColor = 0x34231b;
+		const impactY = leafHeight * 0.43;
+		const impactZ = leafDepth * 0.7;
+		const crackBranches = [
+			[0.76, -1.03],
+			[0.58, -0.48],
+			[0.69, 0.08],
+			[0.62, 0.62],
+			[0.52, 1.16]
+		] as Array<[number, number]>;
+
+		for (const face of [-1, 1]) {
+			const impact = new THREE.Mesh(
+				new THREE.CircleGeometry(0.145, 7),
+				new THREE.MeshBasicMaterial({ color: crackColor, side: THREE.DoubleSide })
+			);
+			impact.position.set(face * (faceOffset + 0.003), impactY, impactZ);
+			impact.rotation.y = face > 0 ? Math.PI / 2 : -Math.PI / 2;
+			damage.add(impact);
+
+			for (const [length, angle] of crackBranches) {
+				const y = impactY + Math.cos(angle) * length * 0.48;
+				const z = impactZ + Math.sin(angle) * length * 0.48;
+				const scar = box([0.026, length, 0.073], [face * faceOffset, y, z], crackColor);
+				scar.rotation.x = angle;
+				scar.castShadow = false;
+				damage.add(scar);
+			}
+		}
+
+		for (const [y, size, angle] of [
+			[leafHeight * 0.24, 0.23, -0.42],
+			[leafHeight * 0.51, 0.3, 0.48],
+			[leafHeight * 0.78, 0.2, -0.3]
+		] as Array<[number, number, number]>) {
+			const gouge = box([0.15, size, 0.21], [0, y, leafDepth - 0.045], crackColor);
+			gouge.rotation.x = angle;
+			damage.add(gouge);
+
+			const splinter = box(
+				[0.075, size * 1.45, 0.085],
+				[0, y + size * 0.08, leafDepth + 0.11],
+				y > leafHeight * 0.6 ? 0x9d6645 : 0x75472f
+			);
+			splinter.rotation.x = angle * 1.45;
+			splinter.rotation.z = angle * 0.15;
+			damage.add(splinter);
+		}
+
+		damage.visible = false;
+		return damage;
+	}
+
 	private createLeftRoomDoor(
 		room: LeftRoomName,
 		label: string,
@@ -1084,6 +1143,7 @@ export class StampKonijnGame {
 		const pivot = new THREE.Group();
 		pivot.position.set(-ROOM_WIDTH / 2 + 0.105, 0, doorMinZ + 0.08);
 		const leafDepth = LEFT_ROOM_DOOR_WIDTH - 0.16;
+		const leafRoot = new THREE.Group();
 		const leaf = box(
 			[0.12, LEFT_ROOM_DOOR_HEIGHT - 0.12, leafDepth],
 			[0, (LEFT_ROOM_DOOR_HEIGHT - 0.12) / 2, leafDepth / 2],
@@ -1092,7 +1152,9 @@ export class StampKonijnGame {
 		const marker = box([0.035, 0.44, 0.62], [0.068, 1.94, leafDepth / 2], accentColor);
 		const handle = shadowMesh(new THREE.SphereGeometry(0.078, 12, 8), material(0xd2a74b, 0.36));
 		handle.position.set(0.105, 1.25, leafDepth - 0.25);
-		pivot.add(leaf, marker, handle);
+		const damage = this.makeBrokenDoorDetails(LEFT_ROOM_DOOR_HEIGHT - 0.12, leafDepth, 0.071);
+		leafRoot.add(leaf, marker, handle, damage);
+		pivot.add(leafRoot);
 		this.scene.add(pivot);
 
 		const door: LeftRoomDoor = {
@@ -1102,6 +1164,8 @@ export class StampKonijnGame {
 			width: LEFT_ROOM_DOOR_WIDTH,
 			height: LEFT_ROOM_DOOR_HEIGHT,
 			pivot,
+			leafRoot,
+			damage,
 			surfaces: [leaf],
 			open: false,
 			openAmount: 0
@@ -1213,6 +1277,7 @@ export class StampKonijnGame {
 		this.doorPivot = new THREE.Group();
 		this.doorPivot.position.set(ROOM_WIDTH / 2 - 0.105, 0, doorMinZ + 0.09);
 		const leafDepth = DOOR_WIDTH - 0.18;
+		this.doorLeafRoot = new THREE.Group();
 		const doorLeaf = box(
 			[0.12, DOOR_HEIGHT - 0.12, leafDepth],
 			[0, (DOOR_HEIGHT - 0.12) / 2, leafDepth / 2],
@@ -1221,7 +1286,9 @@ export class StampKonijnGame {
 		const doorWindow = box([0.035, 0.58, 0.78], [-0.068, 2.18, leafDepth / 2], 0x7eafbd);
 		const handle = shadowMesh(new THREE.SphereGeometry(0.085, 12, 8), material(0xd2a74b, 0.36));
 		handle.position.set(-0.105, 1.34, leafDepth - 0.27);
-		this.doorPivot.add(doorLeaf, doorWindow, handle);
+		this.doorDamage = this.makeBrokenDoorDetails(DOOR_HEIGHT - 0.12, leafDepth, 0.071);
+		this.doorLeafRoot.add(doorLeaf, doorWindow, handle, this.doorDamage);
+		this.doorPivot.add(this.doorLeafRoot);
 		this.scene.add(this.doorPivot);
 		this.doorStampSurfaces = [doorLeaf];
 		this.setDoorCollisionEnabled(true);
@@ -2421,12 +2488,18 @@ export class StampKonijnGame {
 			? target
 			: THREE.MathUtils.lerp(this.doorOpenAmount, target, 1 - Math.exp(-8 * delta));
 		this.doorPivot.rotation.y = this.doorOpenAmount * 1.38;
+		this.doorLeafRoot.rotation.x = this.doorOpenAmount * 0.06;
+		this.doorLeafRoot.rotation.z = this.doorOpenAmount * -0.024;
+		this.doorLeafRoot.position.y = this.doorOpenAmount * -0.055;
 		for (const door of this.leftRoomDoors) {
 			const doorTarget = door.open ? 1 : 0;
 			door.openAmount = this.reducedMotion
 				? doorTarget
 				: THREE.MathUtils.lerp(door.openAmount, doorTarget, 1 - Math.exp(-8 * delta));
 			door.pivot.rotation.y = door.openAmount * -1.38;
+			door.leafRoot.rotation.x = door.openAmount * 0.065;
+			door.leafRoot.rotation.z = door.openAmount * (door.room === 'stairs' ? 0.026 : -0.022);
+			door.leafRoot.position.y = door.openAmount * -0.06;
 		}
 	}
 
@@ -2499,6 +2572,7 @@ export class StampKonijnGame {
 	private performLeftDoorStamp(door: LeftRoomDoor, speed: number) {
 		this.breakContacts(0.16);
 		door.open = true;
+		door.damage.visible = true;
 		this.setLeftRoomDoorCollisionEnabled(door, false);
 		this.playerOutside = false;
 		this.playerInKitchen = false;
@@ -2554,6 +2628,7 @@ export class StampKonijnGame {
 	private performDoorStamp(speed: number) {
 		this.breakContacts(0.16);
 		this.doorOpen = true;
+		this.doorDamage.visible = true;
 		this.setDoorCollisionEnabled(false);
 		this.playerOutside = false;
 		this.playerLeftRoom = null;
@@ -3804,12 +3879,18 @@ export class StampKonijnGame {
 		}
 		this.windowBreakaway.visible = true;
 		this.doorPivot.rotation.y = 0;
+		this.doorLeafRoot.position.y = 0;
+		this.doorLeafRoot.rotation.set(0, 0, 0);
+		this.doorDamage.visible = false;
 		this.setWindowCollisionEnabled(true);
 		this.setDoorCollisionEnabled(true);
 		for (const door of this.leftRoomDoors) {
 			door.open = false;
 			door.openAmount = 0;
 			door.pivot.rotation.y = 0;
+			door.leafRoot.position.y = 0;
+			door.leafRoot.rotation.set(0, 0, 0);
+			door.damage.visible = false;
 			this.setLeftRoomDoorCollisionEnabled(door, true);
 		}
 	}
