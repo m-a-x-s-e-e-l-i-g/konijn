@@ -306,11 +306,11 @@
 				type="button"
 				onclick={cycleWeapon}
 				disabled={hud.paused}
-				aria-label={`Kies wapen. Nu geselecteerd: ${hud.weapon === 'poop' ? 'konijnenkeutels' : 'pistool'}`}
+				aria-label={`Kies wapen. Nu geselecteerd: ${hud.weapon === 'poop' ? 'konijnenkeutels' : 'Glock 17'}`}
 			>
 				<span class="weapon-icon" aria-hidden="true">{hud.weapon === 'poop' ? '●●' : '↗'}</span>
 				<span class="weapon-copy"
-					><small>WAPEN</small><strong>{hud.weapon === 'poop' ? 'KEUTELS' : 'PISTOOL'}</strong
+					><small>WAPEN</small><strong>{hud.weapon === 'poop' ? 'KEUTELS' : 'GLOCK 17'}</strong
 					></span
 				>
 			</button>
@@ -325,7 +325,7 @@
 				disabled={hud.paused}
 				aria-label={hud.weapon === 'poop'
 					? 'Houd ingedrukt om konijnenkeutels te gebruiken'
-					: 'Houd ingedrukt om met het pistool te schieten'}
+					: 'Houd ingedrukt om met de Glock 17 te schieten'}
 			>
 				<span aria-hidden="true">{hud.weapon === 'poop' ? '💨' : '💥'}</span>
 				<strong
@@ -346,7 +346,7 @@
 
 	<p class="sr-only" aria-live="polite">
 		Score {hud.score} euro. Nog {hud.time} seconden. {hud.destroyed} van {hud.total} voorwerpen kapot.
-		Wapen: {hud.weapon === 'poop' ? 'konijnenkeutels' : 'pistool'}.
+		Wapen: {hud.weapon === 'poop' ? 'konijnenkeutels' : 'Glock 17'}.
 	</p>
 </section>
 
