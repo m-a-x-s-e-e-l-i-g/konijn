@@ -399,7 +399,6 @@ export class StampKonijnGame {
 		if (target.kind === 'floor') this.velocity.y *= 0.45;
 		else this.velocity.multiplyScalar(0.45);
 		this.joltArms(0.7);
-		this.playSound('stamp');
 	}
 
 	togglePause() {
@@ -1059,7 +1058,6 @@ export class StampKonijnGame {
 		this.spawnSurfaceCrack(new THREE.Vector3(0, 1, 0), speed);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.9);
-		this.playSound('impact');
 		this.playImpactSample(Math.min(1, speed / 20));
 	}
 
@@ -1068,7 +1066,6 @@ export class StampKonijnGame {
 		this.spawnSurfaceCrack(wallNormal, speed);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.72);
-		this.playSound('impact');
 		this.playImpactSample(Math.min(1, speed / 7));
 	}
 
@@ -2029,7 +2026,7 @@ export class StampKonijnGame {
 		});
 	}
 
-	private playSound(kind: 'start' | 'bounce' | 'stamp' | 'impact' | 'wall' | 'finish') {
+	private playSound(kind: 'start' | 'bounce' | 'wall' | 'finish') {
 		if (this.muted) return;
 		this.ensureAudio();
 		const audio = this.audioContext;
@@ -2040,8 +2037,6 @@ export class StampKonijnGame {
 		const settings = {
 			start: [260, 520, 0.12, 'sine'],
 			bounce: [170, 300, 0.1, 'sine'],
-			stamp: [120, 68, 0.1, 'square'],
-			impact: [82, 36, 0.2, 'sawtooth'],
 			wall: [115, 78, 0.08, 'triangle'],
 			finish: [180, 600, 0.4, 'sine']
 		} as const;
@@ -2049,7 +2044,7 @@ export class StampKonijnGame {
 		oscillator.type = type;
 		oscillator.frequency.setValueAtTime(from, now);
 		oscillator.frequency.exponentialRampToValueAtTime(to, now + duration);
-		gain.gain.setValueAtTime(kind === 'impact' ? 0.13 : 0.07, now);
+		gain.gain.setValueAtTime(0.07, now);
 		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 		oscillator.connect(gain).connect(audio.destination);
 		oscillator.start(now);
