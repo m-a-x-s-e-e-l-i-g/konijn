@@ -139,8 +139,8 @@ const BEDROOM_MIN_Z = 1.65;
 const BATHROOM_DOOR_Z = (BACK_WALL_Z + BATHROOM_MAX_Z) / 2;
 const STAIRS_DOOR_Z = 0;
 const BEDROOM_DOOR_Z = (BEDROOM_MIN_Z + ROOM_DEPTH / 2) / 2;
-const TOILET_X = -9.05;
-const TOILET_Z = -3.05;
+const TOILET_X = -12.4;
+const TOILET_Z = -4.05;
 const TOILET_POOPS_REQUIRED = 16;
 const TOILET_CATCH_RADIUS = 0.46;
 const TOILET_HOLE_RADIUS = 0.78;
@@ -774,7 +774,7 @@ export class StampKonijnGame {
 			centerZ: number;
 			color: number;
 		}> = [
-			{ room: 'bathroom', label: 'BADKAMER', centerZ: BATHROOM_DOOR_Z, color: 0x76a4ae },
+			{ room: 'bathroom', label: 'WC', centerZ: BATHROOM_DOOR_Z, color: 0x76a4ae },
 			{ room: 'stairs', label: 'TRAP', centerZ: STAIRS_DOOR_Z, color: 0xd1a64d },
 			{ room: 'bedroom', label: 'SLAAPKAMER', centerZ: BEDROOM_DOOR_Z, color: 0xb77875 }
 		];
@@ -892,12 +892,26 @@ export class StampKonijnGame {
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
 
-		const vanity = box([1.5, 0.76, 0.58], [-8.65, 0.38, BACK_WALL_Z + 0.45], 0x6b8e88);
-		const basin = shadowMesh(new THREE.SphereGeometry(0.38, 18, 10), material(0xe6e2d8, 0.42));
-		basin.scale.set(1.25, 0.38, 0.78);
-		basin.position.set(-8.65, 0.82, BACK_WALL_Z + 0.48);
-		const mirror = box([1.05, 0.92, 0.035], [-8.65, 1.82, BACK_WALL_Z + 0.12], 0x88b4bd);
-		this.scene.add(vanity, basin, mirror);
+		const handBasinX = -8.75;
+		const handBasinZ = BACK_WALL_Z + 0.43;
+		const basinSupport = box([0.68, 0.58, 0.38], [handBasinX, 0.34, handBasinZ - 0.08], 0x6b8e88);
+		const basin = shadowMesh(new THREE.SphereGeometry(0.34, 18, 10), material(0xe6e2d8, 0.42));
+		basin.scale.set(1.08, 0.32, 0.7);
+		basin.position.set(handBasinX, 0.72, handBasinZ);
+		const drainPipe = cylinder(0.055, 0.055, 0.48, [handBasinX, 0.25, handBasinZ], 0x777a78, 10);
+		const tapStem = cylinder(
+			0.035,
+			0.035,
+			0.24,
+			[handBasinX, 0.98, handBasinZ - 0.1],
+			0x777a78,
+			10
+		);
+		const tapSpout = cylinder(0.032, 0.032, 0.2, [handBasinX, 1.08, handBasinZ], 0x777a78, 10);
+		tapSpout.rotation.x = Math.PI / 2;
+		const tapHandle = box([0.2, 0.035, 0.055], [handBasinX, 1.12, handBasinZ - 0.1], 0x777a78);
+		const mirror = box([0.74, 0.82, 0.035], [handBasinX, 1.7, BACK_WALL_Z + 0.12], 0x88b4bd);
+		this.scene.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
 
 		for (let index = 0; index < 8; index += 1) {
 			const stepHeight = STAIR_STEP_RISE * (index + 1);
@@ -1827,7 +1841,6 @@ export class StampKonijnGame {
 			1.12,
 			'ceramic'
 		);
-		this.addBreakable('BADKUIP', 520, this.makeBathtub(), [-11.65, 0, -3.45], 1.2, 0.72, 'ceramic');
 		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
 		this.addBreakable(
 			'ANTIEKE SPIEGEL',
@@ -2321,19 +2334,6 @@ export class StampKonijnGame {
 		group.add(this.toiletFillRoot);
 		group.add(box([0.54, 0.6, 0.3], [0, 0.78, -0.25], 0xe1dfd7));
 		group.add(box([0.56, 0.08, 0.32], [0, 1.1, -0.25], 0xefede6));
-		return group;
-	}
-
-	private makeBathtub() {
-		const group = new THREE.Group();
-		group.add(box([2.2, 0.62, 1.02], [0, 0.31, 0], 0xe7e1d6));
-		const water = box([1.84, 0.035, 0.7], [0, 0.635, 0], 0x78b7c3);
-		group.add(water);
-		for (const x of [-0.82, 0.82]) {
-			for (const z of [-0.34, 0.34]) {
-				group.add(cylinder(0.06, 0.075, 0.16, [x, 0.08, z], 0x7a7772, 10));
-			}
-		}
 		return group;
 	}
 
