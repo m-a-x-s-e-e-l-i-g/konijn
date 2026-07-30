@@ -322,6 +322,8 @@ export class StampKonijnGame {
 	private lockedBackDoorHit = 0;
 	private doorOpen = false;
 	private doorOpenAmount = 0;
+	private kitchenRevealMask = new THREE.Group();
+	private leftRoomRevealMasks = new Map<LeftRoomName, THREE.Group>();
 	private playerOutside = false;
 	private playerInKitchen = false;
 	private playerLeftRoom: LeftRoomName | null = null;
@@ -707,10 +709,62 @@ export class StampKonijnGame {
 		this.scene.add(skirting);
 		this.createLeftRooms();
 		this.createKitchen();
+		this.createRoomRevealMasks();
 		this.createBasement();
 		this.createSewer();
 		this.createUpstairs();
 		this.createGarden();
+	}
+
+	private createRoomRevealMasks() {
+		this.kitchenRevealMask = new THREE.Group();
+		this.kitchenRevealMask.add(
+			box(
+				[KITCHEN_WIDTH - 0.08, ROOM_HEIGHT, 0.14],
+				[KITCHEN_CENTER_X, ROOM_HEIGHT / 2, ROOM_DEPTH / 2 + 0.07],
+				0xd8c7b4
+			),
+			box(
+				[KITCHEN_WIDTH - 0.08, 0.14, ROOM_DEPTH - 0.08],
+				[KITCHEN_CENTER_X, ROOM_HEIGHT + 0.07, 0],
+				0xd8c7b4
+			)
+		);
+		this.scene.add(this.kitchenRevealMask);
+
+		this.leftRoomRevealMasks.clear();
+		const roomSections: Array<{
+			room: LeftRoomName;
+			minZ: number;
+			maxZ: number;
+			color: number;
+		}> = [
+			{ room: 'bathroom', minZ: BACK_WALL_Z, maxZ: BATHROOM_MAX_Z, color: 0xd7e2df },
+			{ room: 'stairs', minZ: BATHROOM_MAX_Z, maxZ: BEDROOM_MIN_Z, color: 0xd8c7b4 },
+			{ room: 'bedroom', minZ: BEDROOM_MIN_Z, maxZ: ROOM_DEPTH / 2, color: 0xe2d0c1 }
+		];
+		for (const section of roomSections) {
+			const mask = new THREE.Group();
+			const depth = section.maxZ - section.minZ;
+			mask.add(
+				box(
+					[LEFT_ROOMS_WIDTH - 0.08, 0.14, depth - 0.06],
+					[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT + 0.07, (section.minZ + section.maxZ) / 2],
+					section.color
+				)
+			);
+			if (section.room === 'bedroom') {
+				mask.add(
+					box(
+						[LEFT_ROOMS_WIDTH - 0.08, ROOM_HEIGHT, 0.14],
+						[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, ROOM_DEPTH / 2 + 0.07],
+						section.color
+					)
+				);
+			}
+			this.leftRoomRevealMasks.set(section.room, mask);
+			this.scene.add(mask);
+		}
 	}
 
 	private createLeftRooms() {
@@ -3020,6 +3074,8 @@ export class StampKonijnGame {
 		this.breakContacts(0.16);
 		door.open = true;
 		door.damage.visible = true;
+		const revealMask = this.leftRoomRevealMasks.get(door.room);
+		if (revealMask) revealMask.visible = false;
 		this.setLeftRoomDoorCollisionEnabled(door, false);
 		this.playerOutside = false;
 		this.playerInKitchen = false;
@@ -3094,6 +3150,7 @@ export class StampKonijnGame {
 		this.breakContacts(0.16);
 		this.doorOpen = true;
 		this.doorDamage.visible = true;
+		this.kitchenRevealMask.visible = false;
 		this.setDoorCollisionEnabled(false);
 		this.playerOutside = false;
 		this.playerLeftRoom = null;
@@ -4466,6 +4523,8 @@ export class StampKonijnGame {
 		this.doorLeafRoot.position.y = 0;
 		this.doorLeafRoot.rotation.set(0, 0, 0);
 		this.doorDamage.visible = false;
+		this.kitchenRevealMask.visible = true;
+		for (const mask of this.leftRoomRevealMasks.values()) mask.visible = true;
 		this.lockedBackDoorHit = 0;
 		this.lockedBackDoorLeafRoot.position.x = KITCHEN_BACK_DOOR_X;
 		this.lockedBackDoorLeafRoot.rotation.set(0, 0, 0);
