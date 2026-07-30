@@ -6,7 +6,6 @@
 		phase: 'idle',
 		paused: false,
 		score: 0,
-		time: 90,
 		combo: 1,
 		destroyed: 0,
 		total: 12,
@@ -225,10 +224,6 @@
 			<span class="hud-label">KAPOTWAARDE</span>
 			<strong>€{scoreFormatter.format(hud.score)}</strong>
 		</div>
-		<div class:urgent={hud.time <= 10 && hud.phase === 'playing'} class="hud-stat hud-stat--time">
-			<span class="hud-label">TIJD</span>
-			<strong>{hud.time}</strong>
-		</div>
 		<div class="hud-stat hud-stat--room">
 			<span class="hud-label">KAPOT</span>
 			<strong>{hud.destroyed}/{hud.total}</strong>
@@ -345,8 +340,10 @@
 	</button>
 
 	<p class="sr-only" aria-live="polite">
-		Score {hud.score} euro. Nog {hud.time} seconden. {hud.destroyed} van {hud.total} voorwerpen kapot.
-		Wapen: {hud.weapon === 'poop' ? 'konijnenkeutels' : 'Glock 17'}.
+		Score {hud.score} euro. {hud.destroyed} van {hud.total} voorwerpen kapot. Wapen: {hud.weapon ===
+		'poop'
+			? 'konijnenkeutels'
+			: 'Glock 17'}.
 	</p>
 </section>
 
@@ -514,16 +511,6 @@
 	.hud-stat--score {
 		min-width: 8.8rem;
 		background: var(--orange);
-	}
-
-	.hud-stat--time {
-		align-items: center;
-		min-width: 4.4rem;
-	}
-
-	.hud-stat--time.urgent {
-		background: var(--red);
-		color: var(--cream);
 	}
 
 	.hud-label {

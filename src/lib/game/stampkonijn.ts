@@ -11,7 +11,6 @@ export interface StampHudState {
 	phase: GamePhase;
 	paused: boolean;
 	score: number;
-	time: number;
 	combo: number;
 	destroyed: number;
 	total: number;
@@ -178,7 +177,6 @@ const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = KITCHEN_MAX_X;
 const PLAYER_RADIUS = 0.52;
 const PLAYER_HEIGHT = 1.38;
-const ROUND_SECONDS = 90;
 const FART_PITCH_MIN = 0.5;
 const FART_PITCH_MAX = 1.5;
 const POOP_BOOST_IMPULSE = 4.2;
@@ -361,7 +359,6 @@ export class StampKonijnGame {
 	private weaponCooldown = 0;
 	private weaponHeld = false;
 	private score = 0;
-	private time = ROUND_SECONDS;
 	private combo = 1;
 	private destroyedCount = 0;
 	private lastBreakAt = 0;
@@ -470,7 +467,6 @@ export class StampKonijnGame {
 		this.stampPose.identity();
 		this.resetArmRagdolls();
 		this.score = 0;
-		this.time = ROUND_SECONDS;
 		this.combo = 1;
 		this.destroyedCount = 0;
 		this.lastHit = '';
@@ -2633,16 +2629,7 @@ export class StampKonijnGame {
 	};
 
 	private updateGame(delta: number) {
-		this.time = Math.max(0, this.time - delta);
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
-		if (this.time <= 0) {
-			this.phase = 'finished';
-			this.weaponHeld = false;
-			this.velocity.set(0, 0, 0);
-			this.playSound('finish');
-			this.emitHud(true);
-			return;
-		}
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -2694,7 +2681,7 @@ export class StampKonijnGame {
 			this.velocity.z = 0;
 		}
 		this.resolveRoomCollisions();
-		this.resolveBreakables();
+		this.resolveBreakables(delta);
 		this.updateArmRagdolls(delta);
 
 		this.squash = Math.max(0, this.squash - delta * 4.8);
@@ -3495,13 +3482,31 @@ export class StampKonijnGame {
 		}
 	}
 
-	private resolveBreakables() {
+	private resolveBreakables(delta: number) {
 		for (const breakable of this.breakables) {
 			if (breakable.broken) continue;
 			const dx = this.player.position.x - breakable.group.position.x;
 			const dz = this.player.position.z - breakable.group.position.z;
 			const minimum = PLAYER_RADIUS + breakable.radius;
 			const distance = Math.hypot(dx, dz);
+			const objectTop = breakable.group.position.y + breakable.height;
+			const playerBottom = this.player.position.y;
+			const previousBottom = playerBottom - this.velocity.y * delta;
+			const topContactRadius = breakable.radius + PLAYER_RADIUS * 0.56;
+			const closeToTop = playerBottom >= objectTop - 0.12;
+			const landingOnTop =
+				!this.stomping &&
+				this.velocity.y <= 0 &&
+				distance <= topContactRadius &&
+				previousBottom >= objectTop - 0.08 &&
+				playerBottom <= objectTop + 0.16;
+			if (landingOnTop) {
+				this.player.position.y = objectTop;
+				this.velocity.y = 0;
+				this.squash = Math.max(this.squash, 0.12);
+				continue;
+			}
+			if (!this.stomping && closeToTop) continue;
 			const verticalOverlap = this.hasVerticalOverlap(breakable);
 			const contactLimit = minimum + (this.stomping ? 0.14 : 0);
 			if (!verticalOverlap || distance > contactLimit) continue;
@@ -4053,9 +4058,12 @@ export class StampKonijnGame {
 		this.emitHud(true);
 		if (supportedObject) this.breakObject(supportedObject);
 
-		if (this.destroyedCount === this.breakables.length && this.time > 0) {
-			this.score += Math.ceil(this.time) * 10;
-			this.time = 0;
+		if (this.phase === 'playing' && this.destroyedCount === this.breakables.length) {
+			this.phase = 'finished';
+			this.weaponHeld = false;
+			this.velocity.set(0, 0, 0);
+			this.playSound('finish');
+			this.emitHud(true);
 		}
 	}
 
@@ -5091,7 +5099,6 @@ export class StampKonijnGame {
 			phase: this.phase,
 			paused: this.paused,
 			score: this.score,
-			time: Math.ceil(this.time),
 			combo: this.combo,
 			destroyed: this.destroyedCount,
 			total: this.breakables.length,
