@@ -37,6 +37,11 @@ interface Breakable {
 	color: THREE.Color;
 	material: BreakMaterial;
 	broken: boolean;
+	stampCount: number;
+	stampsRequired: number;
+	lastStampSequence: number;
+	baseQuaternion: THREE.Quaternion;
+	tiltAxis: THREE.Vector3;
 }
 
 interface DebrisPiece {
@@ -210,7 +215,10 @@ export class StampKonijnGame {
 	private stampTargetKind: StampSurfaceKind = 'floor';
 	private stampTargetsWindow = false;
 	private stampPose = new THREE.Quaternion();
+	private breakableTilt = new THREE.Quaternion();
 	private uprightPose = new THREE.Quaternion();
+	private stampSequence = 0;
+	private pendingStampFeedback = '';
 	private stomping = false;
 	private stompWindup = 0;
 	private stompTimeout = 0;
@@ -336,6 +344,8 @@ export class StampKonijnGame {
 		this.stomping = false;
 		this.stompWindup = 0;
 		this.stompTimeout = 0;
+		this.stampSequence = 0;
+		this.pendingStampFeedback = '';
 		this.stampTargetsWindow = false;
 		this.stampPose.identity();
 		this.resetArmRagdolls();
@@ -421,6 +431,8 @@ export class StampKonijnGame {
 			.applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()).invert());
 		this.stampPose.setFromUnitVectors(new THREE.Vector3(0, -1, 0), localStampDirection);
 		this.ensureAudio();
+		this.stampSequence += 1;
+		this.pendingStampFeedback = '';
 		this.stomping = true;
 		this.stompWindup = 0.08;
 		this.stompTimeout = 2.2;
@@ -833,21 +845,13 @@ export class StampKonijnGame {
 		this.addBreakable('ZWEMBAD', 320, this.makePool(), [5.2, 0, -15.1], 2.2, 0.82, 'canvas');
 		this.addBreakable(
 			'APPELBOOM',
-			400,
+			480,
 			this.makeAppleTree(),
 			[-5.4, 0, -16.1],
 			1.45,
 			4.25,
-			'plant'
-		);
-		this.addBreakable(
-			'VOGELHUISJE',
-			80,
-			this.makeBirdhouse(),
-			[-4.75, 2.45, -15.7],
-			0.48,
-			0.82,
-			'wood'
+			'plant',
+			3
 		);
 	}
 
@@ -858,7 +862,8 @@ export class StampKonijnGame {
 		position: [number, number, number],
 		radius: number,
 		height: number,
-		breakMaterial: BreakMaterial
+		breakMaterial: BreakMaterial,
+		stampsRequired = 1
 	) {
 		group.position.set(...position);
 		group.traverse((child) => {
@@ -879,7 +884,12 @@ export class StampKonijnGame {
 			height,
 			color,
 			material: breakMaterial,
-			broken: false
+			broken: false,
+			stampCount: 0,
+			stampsRequired,
+			lastStampSequence: -1,
+			baseQuaternion: group.quaternion.clone(),
+			tiltAxis: new THREE.Vector3()
 		});
 	}
 
@@ -1154,6 +1164,9 @@ export class StampKonijnGame {
 			apple.position.set(x, y, z);
 			group.add(apple);
 		}
+		const birdhouse = this.makeBirdhouse();
+		birdhouse.position.set(0.65, 2.45, 0.4);
+		group.add(birdhouse);
 		return group;
 	}
 
@@ -1540,7 +1553,7 @@ export class StampKonijnGame {
 			if (!verticalOverlap || distance > contactLimit) continue;
 
 			if (this.stomping) {
-				this.breakObject(breakable);
+				this.damageBreakable(breakable, 'stamp');
 				this.velocity.x *= 0.72;
 				this.velocity.z *= 0.72;
 				continue;
@@ -1596,9 +1609,11 @@ export class StampKonijnGame {
 			.add(chaos);
 		this.cancelStamp();
 		this.joltRagdoll(1.15 + quality * 1.5);
-		this.callbacks.onFeedback(
-			quality >= 0.82 ? 'DIKKE KONTSTAMP!' : quality >= 0.48 ? 'KONTSTAMP!' : 'STAMP!'
-		);
+		const feedback =
+			this.pendingStampFeedback ||
+			(quality >= 0.82 ? 'DIKKE KONTSTAMP!' : quality >= 0.48 ? 'KONTSTAMP!' : 'STAMP!');
+		this.pendingStampFeedback = '';
+		this.callbacks.onFeedback(feedback);
 		this.emitHud(true);
 	}
 
@@ -1734,7 +1749,7 @@ export class StampKonijnGame {
 		) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
-			this.breakObject(immediateObjectHit.breakable);
+			this.damageBreakable(immediateObjectHit.breakable, 'bullet');
 		} else if (immediateSurfaceHit) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
@@ -1803,7 +1818,7 @@ export class StampKonijnGame {
 			const dx = this.player.position.x - breakable.group.position.x;
 			const dz = this.player.position.z - breakable.group.position.z;
 			const contactDistance = PLAYER_RADIUS + breakable.radius + extraReach;
-			if (Math.hypot(dx, dz) <= contactDistance) this.breakObject(breakable);
+			if (Math.hypot(dx, dz) <= contactDistance) this.damageBreakable(breakable, 'stamp');
 		}
 	}
 
@@ -1815,14 +1830,49 @@ export class StampKonijnGame {
 		return playerTop >= objectBottom - 0.12 && playerBottom <= objectTop + 0.12;
 	}
 
+	private damageBreakable(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (breakable.broken) return;
+		if (breakable.stampsRequired <= 1) {
+			this.breakObject(breakable);
+			return;
+		}
+
+		if (source === 'bullet') {
+			this.playBulletImpact();
+			this.callbacks.onFeedback('DIE BOOM MOET JE STAMPEN!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.pendingStampFeedback = 'BOOM OM!';
+			this.breakObject(breakable);
+			return;
+		}
+
+		if (breakable.tiltAxis.lengthSq() === 0) {
+			const awayFromRabbit = breakable.group.position.clone().sub(this.player.position).setY(0);
+			if (awayFromRabbit.lengthSq() < 0.001) awayFromRabbit.set(1, 0, 0);
+			awayFromRabbit.normalize();
+			breakable.tiltAxis.set(awayFromRabbit.z, 0, -awayFromRabbit.x).normalize();
+		}
+		const tiltAngle = breakable.stampCount === 1 ? 0.16 : 0.34;
+		this.breakableTilt.setFromAxisAngle(breakable.tiltAxis, tiltAngle);
+		breakable.group.quaternion.copy(breakable.baseQuaternion).premultiply(this.breakableTilt);
+		const stampsLeft = breakable.stampsRequired - breakable.stampCount;
+		this.pendingStampFeedback =
+			stampsLeft === 1 ? 'KRAK! NOG 1 STAMP!' : `KRAK! NOG ${stampsLeft} STAMPEN!`;
+		this.cameraShake = Math.max(this.cameraShake, 0.42);
+	}
+
 	private breakObject(breakable: Breakable) {
 		if (breakable.broken) return;
 		const supportedObject =
 			breakable.label === 'TAFEL'
 				? this.breakables.find((item) => item.label === 'FRUITSCHAAL' && !item.broken)
-				: breakable.label === 'APPELBOOM'
-					? this.breakables.find((item) => item.label === 'VOGELHUISJE' && !item.broken)
-					: undefined;
+				: undefined;
 		breakable.broken = true;
 		breakable.group.visible = false;
 		const now = performance.now();
@@ -1953,7 +2003,7 @@ export class StampKonijnGame {
 					const surfaceHit = this.findSurfaceHit(rayOrigin, direction, collisionDistance);
 					const objectHit = this.findBreakableHit(rayOrigin, direction, collisionDistance);
 					if (objectHit && (!surfaceHit || objectHit.distance < surfaceHit.distance)) {
-						this.breakObject(objectHit.breakable);
+						this.damageBreakable(objectHit.breakable, 'bullet');
 						this.removeWeaponProjectile(index);
 						continue;
 					}
@@ -2269,6 +2319,10 @@ export class StampKonijnGame {
 	private resetBreakables() {
 		for (const breakable of this.breakables) {
 			breakable.broken = false;
+			breakable.stampCount = 0;
+			breakable.lastStampSequence = -1;
+			breakable.group.quaternion.copy(breakable.baseQuaternion);
+			breakable.tiltAxis.set(0, 0, 0);
 			breakable.group.visible = true;
 		}
 		this.windowHits = 0;
