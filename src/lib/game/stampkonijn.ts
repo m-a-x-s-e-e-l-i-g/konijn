@@ -6,6 +6,7 @@ export type WeaponName = 'poop' | 'pistol';
 type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
 type StampSurfaceKind = 'floor' | 'wall';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
+type BiomeName = 'ground' | 'basement' | 'sewer';
 
 export interface StampHudState {
 	phase: GamePhase;
@@ -43,6 +44,7 @@ interface Breakable {
 	basePosition: THREE.Vector3;
 	baseQuaternion: THREE.Quaternion;
 	tiltAxis: THREE.Vector3;
+	biome: BiomeName;
 }
 
 interface DebrisPiece {
@@ -155,15 +157,17 @@ const BASEMENT_MIN_X = -ROOM_WIDTH / 2;
 const BASEMENT_MAX_X = KITCHEN_MAX_X;
 const BASEMENT_CENTER_X = (BASEMENT_MIN_X + BASEMENT_MAX_X) / 2;
 const SEWER_FLOOR_Y = -8.4;
-const SEWER_WIDTH = 28;
 const SEWER_DEPTH = 2.6;
-const SEWER_CENTER_X = -26;
 const SEWER_CENTER_Z = TOILET_Z;
-const SEWER_MIN_X = SEWER_CENTER_X - SEWER_WIDTH / 2;
-const SEWER_MAX_X = SEWER_CENTER_X + SEWER_WIDTH / 2;
+const SEWER_MIN_X = TOILET_X - 3.4;
+const SEWER_MAX_X = 68;
+const SEWER_WIDTH = SEWER_MAX_X - SEWER_MIN_X;
+const SEWER_CENTER_X = (SEWER_MIN_X + SEWER_MAX_X) / 2;
 const SEWER_MIN_Z = SEWER_CENTER_Z - SEWER_DEPTH / 2;
 const SEWER_MAX_Z = SEWER_CENTER_Z + SEWER_DEPTH / 2;
-const SEWER_EXIT_HEIGHT = 2.5;
+const SEWER_HEIGHT = 4.25;
+const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
+const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const STAIR_STEP_RISE = 0.48;
 const UPSTAIRS_FLOOR_Y = ROOM_HEIGHT;
 const UPSTAIRS_MIN_X = LEFT_ROOMS_MIN_X;
@@ -174,7 +178,7 @@ const GARDEN_WIDTH = 28;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
-const WORLD_MAX_X = KITCHEN_MAX_X;
+const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
 const PLAYER_HEIGHT = 1.38;
 const FART_PITCH_MIN = 0.5;
@@ -308,6 +312,12 @@ export class StampKonijnGame {
 	private stompTimeout = 0;
 	private breakables: Breakable[] = [];
 	private breakablesRoot = new THREE.Group();
+	private basementRoot = new THREE.Group();
+	private sewerRoot = new THREE.Group();
+	private activeBiome: BiomeName = 'ground';
+	private groundHemisphere: THREE.HemisphereLight | null = null;
+	private groundSun: THREE.DirectionalLight | null = null;
+	private groundWindowGlow: THREE.PointLight | null = null;
 	private windowBreakaway = new THREE.Group();
 	private windowStampSurfaces: THREE.Object3D[] = [];
 	private windowHits = 0;
@@ -418,6 +428,7 @@ export class StampKonijnGame {
 			this.createRoom();
 			this.scene.add(this.breakablesRoot);
 			this.createBreakables();
+			this.syncBiomeState(true);
 			await this.loadRabbit();
 
 			this.camera.position.copy(CAMERA_HOME);
@@ -596,24 +607,24 @@ export class StampKonijnGame {
 	}
 
 	private createLights() {
-		const hemisphere = new THREE.HemisphereLight(0xf8f2df, 0x6f655f, 2.1);
-		this.scene.add(hemisphere);
+		this.groundHemisphere = new THREE.HemisphereLight(0xf8f2df, 0x6f655f, 2.1);
+		this.scene.add(this.groundHemisphere);
 
-		const sun = new THREE.DirectionalLight(0xfff3dc, 3.2);
-		sun.position.set(7, 13, 5);
-		sun.target.position.set(0, 0, -9);
-		sun.castShadow = true;
-		sun.shadow.mapSize.set(2048, 2048);
-		sun.shadow.camera.left = -18;
-		sun.shadow.camera.right = 18;
-		sun.shadow.camera.top = 16;
-		sun.shadow.camera.bottom = -12;
-		sun.shadow.camera.far = 45;
-		this.scene.add(sun, sun.target);
+		this.groundSun = new THREE.DirectionalLight(0xfff3dc, 3.2);
+		this.groundSun.position.set(7, 13, 5);
+		this.groundSun.target.position.set(0, 0, -9);
+		this.groundSun.castShadow = true;
+		this.groundSun.shadow.mapSize.set(2048, 2048);
+		this.groundSun.shadow.camera.left = -18;
+		this.groundSun.shadow.camera.right = 18;
+		this.groundSun.shadow.camera.top = 16;
+		this.groundSun.shadow.camera.bottom = -12;
+		this.groundSun.shadow.camera.far = 45;
+		this.scene.add(this.groundSun, this.groundSun.target);
 
-		const windowGlow = new THREE.PointLight(0xffb868, 28, 11, 2);
-		windowGlow.position.set(-5, 3.3, 1.5);
-		this.scene.add(windowGlow);
+		this.groundWindowGlow = new THREE.PointLight(0xffb868, 28, 11, 2);
+		this.groundWindowGlow.position.set(-5, 3.3, 1.5);
+		this.scene.add(this.groundWindowGlow);
 	}
 
 	private createRoom() {
@@ -997,15 +1008,18 @@ export class StampKonijnGame {
 	}
 
 	private createBasement() {
+		this.basementRoot = new THREE.Group();
+		this.basementRoot.visible = false;
+		this.scene.add(this.basementRoot);
 		const basementWidth = BASEMENT_MAX_X - BASEMENT_MIN_X;
 		const basementFloor = shadowMesh(
 			new THREE.PlaneGeometry(basementWidth, ROOM_DEPTH),
-			material(0x625d54, 0.98)
+			material(0x63503b, 1)
 		);
 		basementFloor.rotation.x = -Math.PI / 2;
 		basementFloor.position.set(BASEMENT_CENTER_X, BASEMENT_FLOOR_Y, 0);
 		basementFloor.receiveShadow = true;
-		this.scene.add(basementFloor);
+		this.basementRoot.add(basementFloor);
 		this.bulletImpactSurfaces.push(basementFloor);
 		this.stampSurfaceKinds.set(basementFloor, 'floor');
 
@@ -1014,39 +1028,56 @@ export class StampKonijnGame {
 			box(
 				[0.22, basementHeight, ROOM_DEPTH],
 				[BASEMENT_MIN_X, BASEMENT_FLOOR_Y + basementHeight / 2, 0],
-				0x494943
+				0x443a31
 			),
 			box(
 				[0.22, basementHeight, ROOM_DEPTH],
 				[BASEMENT_MAX_X, BASEMENT_FLOOR_Y + basementHeight / 2, 0],
-				0x494943
+				0x443a31
 			),
 			box(
 				[basementWidth, basementHeight, 0.22],
 				[BASEMENT_CENTER_X, BASEMENT_FLOOR_Y + basementHeight / 2, BACK_WALL_Z],
-				0x41433e
+				0x3b332c
 			)
 		];
 		for (const wall of basementWalls) {
-			this.scene.add(wall);
+			this.basementRoot.add(wall);
 			this.bulletImpactSurfaces.push(wall);
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
 
-		for (let x = BASEMENT_MIN_X + 1.1; x < BASEMENT_MAX_X; x += 1.1) {
-			const seam = box(
-				[0.025, 0.012, ROOM_DEPTH - 0.28],
-				[x, BASEMENT_FLOOR_Y + 0.015, 0],
-				0x4b4944
+		for (let index = 0; index < 18; index += 1) {
+			const x = BASEMENT_MIN_X + 0.7 + ((index * 3.17) % (basementWidth - 1.4));
+			const z = BACK_WALL_Z + 0.55 + ((index * 2.41) % (ROOM_DEPTH - 1.1));
+			const mound = shadowMesh(
+				new THREE.SphereGeometry(0.65 + (index % 3) * 0.14, 12, 7),
+				material(index % 2 === 0 ? 0x7a6042 : 0x6e563d, 1)
 			);
-			seam.receiveShadow = false;
-			this.scene.add(seam);
+			mound.scale.set(1.35 + (index % 4) * 0.18, 0.16 + (index % 3) * 0.035, 0.82);
+			mound.position.set(x, BASEMENT_FLOOR_Y - 0.03, z);
+			mound.receiveShadow = true;
+			this.basementRoot.add(mound);
+		}
+
+		for (let index = 0; index < 26; index += 1) {
+			const rock = shadowMesh(
+				new THREE.DodecahedronGeometry(0.07 + (index % 4) * 0.025, 0),
+				material(index % 3 === 0 ? 0x493d32 : 0x796249, 1)
+			);
+			rock.scale.y = 0.55;
+			rock.position.set(
+				BASEMENT_MIN_X + 0.4 + ((index * 4.11) % (basementWidth - 0.8)),
+				BASEMENT_FLOOR_Y + 0.05,
+				BACK_WALL_Z + 0.35 + ((index * 3.07) % (ROOM_DEPTH - 0.7))
+			);
+			this.basementRoot.add(rock);
 		}
 
 		for (const x of [-5.3, 1.9, 9.1]) {
 			const column = box([0.46, 3.82, 0.46], [x, BASEMENT_FLOOR_Y + 1.91, -0.2], 0x55564f);
 			const beam = box([0.62, 0.34, ROOM_DEPTH - 0.35], [x, -0.2, 0], 0x4d4239);
-			this.scene.add(column, beam);
+			this.basementRoot.add(column, beam);
 		}
 
 		const boiler = cylinder(0.68, 0.72, 2.25, [11.8, BASEMENT_FLOOR_Y + 1.13, -3.55], 0x7e6654, 20);
@@ -1058,26 +1089,11 @@ export class StampKonijnGame {
 			0x76503a,
 			12
 		);
-		this.scene.add(boiler, boilerPipe);
-		this.scene.add(
+		this.basementRoot.add(boiler, boilerPipe);
+		this.basementRoot.add(
 			box([1.05, 0.92, 0.82], [-5.2, BASEMENT_FLOOR_Y + 0.46, -3.6], 0x7a573d, 0.16),
 			box([0.86, 0.7, 0.72], [-4.25, BASEMENT_FLOOR_Y + 0.35, -3.35], 0x8b6548, -0.12),
 			box([1.35, 1.72, 0.42], [7.8, BASEMENT_FLOOR_Y + 0.86, -4.45], 0x4e514b)
-		);
-
-		const tunnelMouth = box(
-			[0.05, 1.8, 1.45],
-			[BASEMENT_MIN_X + 0.13, BASEMENT_FLOOR_Y + 0.9, TOILET_Z],
-			0x171a18
-		);
-		this.scene.add(tunnelMouth);
-		for (const z of [TOILET_Z - 0.78, TOILET_Z + 0.78]) {
-			this.scene.add(
-				box([0.24, 2.05, 0.16], [BASEMENT_MIN_X + 0.18, BASEMENT_FLOOR_Y + 1.02, z], 0x6b5542)
-			);
-		}
-		this.scene.add(
-			box([0.24, 0.18, 1.72], [BASEMENT_MIN_X + 0.18, BASEMENT_FLOOR_Y + 1.92, TOILET_Z], 0x6b5542)
 		);
 
 		this.toiletHole = new THREE.Group();
@@ -1117,61 +1133,107 @@ export class StampKonijnGame {
 		this.scene.add(this.kitchenHatchHole);
 
 		this.basementLights = [
-			new THREE.PointLight(0xe4b56d, 0, 12, 2),
-			new THREE.PointLight(0x8eaa92, 0, 11, 2)
+			new THREE.PointLight(0xd69a51, 0, 10, 2),
+			new THREE.PointLight(0x7f8d6b, 0, 9, 2)
 		];
 		this.basementLights[0].position.set(-4, BASEMENT_FLOOR_Y + 2.7, 0.8);
 		this.basementLights[1].position.set(9.5, BASEMENT_FLOOR_Y + 2.55, -1.4);
-		this.scene.add(...this.basementLights);
+		this.basementRoot.add(...this.basementLights);
 	}
 
 	private createSewer() {
+		this.sewerRoot = new THREE.Group();
+		this.sewerRoot.visible = false;
+		this.scene.add(this.sewerRoot);
 		const sewerFloor = shadowMesh(
 			new THREE.PlaneGeometry(SEWER_WIDTH, SEWER_DEPTH),
-			material(0x4d554b, 0.98)
+			material(0x303932, 1)
 		);
 		sewerFloor.rotation.x = -Math.PI / 2;
 		sewerFloor.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
 		sewerFloor.receiveShadow = true;
-		this.scene.add(sewerFloor);
+		this.sewerRoot.add(sewerFloor);
 		this.bulletImpactSurfaces.push(sewerFloor);
 		this.stampSurfaceKinds.set(sewerFloor, 'floor');
 
-		const sewerHeight = 4.25;
 		const sewerWalls = [
 			box(
-				[0.18, sewerHeight, SEWER_DEPTH],
-				[SEWER_MIN_X, SEWER_FLOOR_Y + sewerHeight / 2, SEWER_CENTER_Z],
+				[0.18, SEWER_HEIGHT, SEWER_DEPTH],
+				[SEWER_MIN_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
 				0x343c36
 			),
 			box(
-				[SEWER_WIDTH, sewerHeight, 0.18],
-				[SEWER_CENTER_X, SEWER_FLOOR_Y + sewerHeight / 2, SEWER_MIN_Z],
-				0x3a423b
+				[0.28, SEWER_HEIGHT, SEWER_DEPTH],
+				[SEWER_MAX_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
+				0x5a4b3b
 			),
 			box(
-				[SEWER_WIDTH, 0.18, SEWER_DEPTH],
-				[SEWER_CENTER_X, SEWER_FLOOR_Y + sewerHeight, SEWER_CENTER_Z],
-				0x303730
+				[SEWER_WIDTH, SEWER_HEIGHT, 0.18],
+				[SEWER_CENTER_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
+				0x3a423b
 			)
 		];
 		for (const wall of sewerWalls) {
-			this.scene.add(wall);
+			this.sewerRoot.add(wall);
 			this.bulletImpactSurfaces.push(wall);
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
-		this.scene.add(
-			box(
-				[SEWER_WIDTH, 0.16, 8],
-				[SEWER_CENTER_X, SEWER_FLOOR_Y - 0.02, SEWER_MAX_Z + 4],
-				0x4d554b
-			),
-			box(
-				[SEWER_WIDTH, 0.16, 8],
-				[SEWER_CENTER_X, SEWER_FLOOR_Y + sewerHeight + 0.02, SEWER_MAX_Z + 4],
-				0x303730
-			)
+
+		const shaftMinX = TOILET_X - SEWER_SHAFT_HALF_WIDTH;
+		const shaftMaxX = TOILET_X + SEWER_SHAFT_HALF_WIDTH;
+		for (const [minX, maxX] of [
+			[SEWER_MIN_X, shaftMinX],
+			[shaftMaxX, SEWER_MAX_X]
+		] as Array<[number, number]>) {
+			const width = maxX - minX;
+			const roof = box(
+				[width, 0.18, SEWER_DEPTH],
+				[(minX + maxX) / 2, SEWER_CEILING_Y, SEWER_CENTER_Z],
+				0x252d28
+			);
+			this.sewerRoot.add(roof);
+			this.bulletImpactSurfaces.push(roof);
+			this.stampSurfaceKinds.set(roof, 'wall');
+		}
+
+		this.sewerRoot.add(
+			box([SEWER_WIDTH, 0.16, 8], [SEWER_CENTER_X, SEWER_FLOOR_Y - 0.02, SEWER_MAX_Z + 4], 0x303932)
 		);
+		for (const [minX, maxX] of [
+			[SEWER_MIN_X, shaftMinX],
+			[shaftMaxX, SEWER_MAX_X]
+		] as Array<[number, number]>) {
+			this.sewerRoot.add(
+				box(
+					[maxX - minX, 0.16, 8],
+					[(minX + maxX) / 2, SEWER_CEILING_Y + 0.02, SEWER_MAX_Z + 4],
+					0x252d28
+				)
+			);
+		}
+
+		const shaftHeight = Math.abs(SEWER_CEILING_Y);
+		for (const x of [shaftMinX - 0.08, shaftMaxX + 0.08]) {
+			this.sewerRoot.add(
+				box(
+					[0.16, shaftHeight, SEWER_DEPTH - 0.18],
+					[x, SEWER_CEILING_Y + shaftHeight / 2, SEWER_CENTER_Z],
+					0x3f473f
+				)
+			);
+		}
+		for (const y of [SEWER_CEILING_Y + 0.28, -2.7, -1.3]) {
+			const shaftRing = new THREE.Mesh(
+				new THREE.TorusGeometry(SEWER_SHAFT_HALF_WIDTH + 0.12, 0.07, 8, 24),
+				material(0x76533b, 0.86)
+			);
+			shaftRing.rotation.x = Math.PI / 2;
+			shaftRing.position.set(TOILET_X, y, SEWER_CENTER_Z);
+			this.sewerRoot.add(shaftRing);
+		}
+		const shaftGlow = new THREE.PointLight(0xb9d19b, 5.5, 8, 2);
+		shaftGlow.position.set(TOILET_X, -1.3, SEWER_CENTER_Z + 0.2);
+		this.sewerRoot.add(shaftGlow);
 
 		const water = shadowMesh(
 			new THREE.PlaneGeometry(SEWER_WIDTH - 0.3, 0.58),
@@ -1185,7 +1247,7 @@ export class StampKonijnGame {
 		);
 		water.rotation.x = -Math.PI / 2;
 		water.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y + 0.025, SEWER_CENTER_Z - 0.72);
-		this.scene.add(water);
+		this.sewerRoot.add(water);
 
 		for (let x = SEWER_MIN_X + 2; x < SEWER_MAX_X; x += 5.2) {
 			const pipe = cylinder(
@@ -1197,38 +1259,48 @@ export class StampKonijnGame {
 				14
 			);
 			pipe.rotation.x = Math.PI / 2;
-			this.scene.add(pipe);
+			this.sewerRoot.add(pipe);
 		}
 
-		const obstacleConfigs: Array<[number, number, number, number]> = [
-			[SEWER_MIN_X + 5.2, 1.35, 1.15, 1.35],
-			[SEWER_MIN_X + 9.2, 3.45, 1.55, 1.25],
-			[SEWER_MIN_X + 13.1, 1.05, 1.2, 1.05],
-			[SEWER_MIN_X + 17.2, 3.25, 1.35, 1.55],
-			[SEWER_MIN_X + 21.1, 1.6, 1.5, 1.6]
-		];
-		for (const [x, centerY, width, height] of obstacleConfigs) {
-			this.addSewerObstacle(x, SEWER_FLOOR_Y + centerY, width, height);
+		for (let index = 0; index < 16; index += 1) {
+			const x = TOILET_X + 6.5 + index * 4.55;
+			if (x > SEWER_MAX_X - 5) break;
+			const fromFloor = index % 2 === 0 || index % 5 === 3;
+			const height = fromFloor ? 1.05 + (index % 3) * 0.18 : 1.12 + (index % 4) * 0.13;
+			const centerY = fromFloor ? height / 2 : SEWER_HEIGHT - height / 2;
+			this.addSewerObstacle(x, SEWER_FLOOR_Y + centerY, 0.95 + (index % 3) * 0.17, height);
 		}
 
-		const exitFrameColor = 0x8c7353;
-		for (const y of [SEWER_FLOOR_Y + 0.55, SEWER_FLOOR_Y + 1.18, SEWER_FLOOR_Y + 1.82]) {
-			this.scene.add(
-				box(
-					[0.12, 0.1, SEWER_DEPTH - 0.34],
-					[SEWER_MAX_X - 0.08, y, SEWER_CENTER_Z],
-					exitFrameColor
-				)
+		for (let index = 0; index < 4; index += 1) {
+			const foundation = box(
+				[0.42, 0.48, SEWER_DEPTH - 0.24],
+				[SEWER_MAX_X - 0.25, SEWER_FLOOR_Y + 0.3 + index * 0.76, SEWER_CENTER_Z],
+				index % 2 === 0 ? 0x8d755d : 0x6f5b49
 			);
+			foundation.rotation.z = index % 2 === 0 ? 0.035 : -0.025;
+			this.sewerRoot.add(foundation);
+		}
+		const villaSign = this.makePriceTag('VILLA →');
+		villaSign.scale.set(2.25, 0.78, 1);
+		villaSign.position.set(SEWER_MAX_X - 1.7, SEWER_FLOOR_Y + 2.75, SEWER_MAX_Z + 0.04);
+		this.sewerRoot.add(villaSign);
+		const villaGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
+		villaGlow.position.set(SEWER_MAX_X - 2.2, SEWER_FLOOR_Y + 2.3, SEWER_CENTER_Z + 0.2);
+		this.sewerRoot.add(villaGlow);
+
+		for (let x = TOILET_X + 4; x < SEWER_MAX_X - 5; x += 14) {
+			const tunnelLight = new THREE.PointLight(0x799066, 3.4, 12, 2);
+			tunnelLight.position.set(x, SEWER_FLOOR_Y + 2.9, SEWER_CENTER_Z + 0.25);
+			this.sewerRoot.add(tunnelLight);
 		}
 
-		this.sewerLight.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y + 2.6, SEWER_CENTER_Z + 0.4);
-		this.scene.add(this.sewerLight);
+		this.sewerLight.position.set(TOILET_X + 1.5, SEWER_FLOOR_Y + 2.6, SEWER_CENTER_Z + 0.4);
+		this.sewerRoot.add(this.sewerLight);
 	}
 
 	private addSewerObstacle(x: number, y: number, width: number, height: number) {
 		const obstacle = box([width, height, SEWER_DEPTH - 0.28], [x, y, SEWER_CENTER_Z], 0x59605a);
-		this.scene.add(obstacle);
+		this.sewerRoot.add(obstacle);
 		this.bulletImpactSurfaces.push(obstacle);
 		this.stampSurfaceKinds.set(obstacle, 'wall');
 		this.sewerObstacles.push({
@@ -1846,7 +1918,9 @@ export class StampKonijnGame {
 			[-3.8, BASEMENT_FLOOR_Y, -4.48],
 			0.95,
 			2.55,
-			'canvas'
+			'canvas',
+			1,
+			'basement'
 		);
 		this.addBreakable(
 			'CHESTERFIELD',
@@ -1855,7 +1929,9 @@ export class StampKonijnGame {
 			[2.1, BASEMENT_FLOOR_Y, -3.55],
 			1.65,
 			1.25,
-			'wood'
+			'wood',
+			1,
+			'basement'
 		);
 		this.addBreakable(
 			'OUDE KOFFER',
@@ -1864,7 +1940,9 @@ export class StampKonijnGame {
 			[6.15, BASEMENT_FLOOR_Y, 3.45],
 			0.82,
 			0.72,
-			'wood'
+			'wood',
+			1,
+			'basement'
 		);
 		this.addBreakable(
 			'GRAMMOFOON',
@@ -1873,7 +1951,9 @@ export class StampKonijnGame {
 			[-1.25, BASEMENT_FLOOR_Y, 3.55],
 			0.66,
 			1.5,
-			'metal'
+			'metal',
+			1,
+			'basement'
 		);
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
@@ -1905,7 +1985,8 @@ export class StampKonijnGame {
 		radius: number,
 		height: number,
 		breakMaterial: BreakMaterial,
-		stampsRequired = 1
+		stampsRequired = 1,
+		biome: BiomeName = 'ground'
 	) {
 		group.position.set(...position);
 		group.traverse((child) => {
@@ -1932,7 +2013,8 @@ export class StampKonijnGame {
 			lastStampSequence: -1,
 			basePosition: group.position.clone(),
 			baseQuaternion: group.quaternion.clone(),
-			tiltAxis: new THREE.Vector3()
+			tiltAxis: new THREE.Vector3(),
+			biome
 		};
 		this.breakables.push(breakable);
 		return breakable;
@@ -2706,18 +2788,6 @@ export class StampKonijnGame {
 				this.player.position.x = leftLimit;
 				wallNormal = new THREE.Vector3(1, 0, 0);
 				this.velocity.x *= -0.78;
-			} else if (
-				this.player.position.x > rightLimit &&
-				this.player.position.y < SEWER_FLOOR_Y + SEWER_EXIT_HEIGHT
-			) {
-				this.playerInSewer = false;
-				this.playerInBasement = true;
-				this.sewerLight.intensity = 0;
-				this.setBasementLighting(true);
-				this.player.position.set(BASEMENT_MIN_X + PLAYER_RADIUS + 0.34, BASEMENT_FLOOR_Y, TOILET_Z);
-				this.velocity.set(5.8, 5.2, 0);
-				this.callbacks.onFeedback('TUNNEL UIT. DE KELDER IN!');
-				return;
 			} else if (this.player.position.x > rightLimit) {
 				wallImpactSpeed = Math.abs(this.velocity.x);
 				this.player.position.x = rightLimit;
@@ -3018,23 +3088,23 @@ export class StampKonijnGame {
 			this.playerOutside = false;
 			this.playerInKitchen = false;
 			this.playerLeftRoom = null;
-			this.player.position.set(SEWER_MIN_X + 1.15, SEWER_FLOOR_Y + 0.18, SEWER_CENTER_Z);
-			this.velocity.set(5.4, 2.6, 0);
-			this.sewerLight.intensity = 15;
-			this.callbacks.onFeedback('HET LANGE RIOOL IN!');
+			this.player.position.set(TOILET_X, SEWER_FLOOR_Y + 0.18, SEWER_CENTER_Z);
+			this.velocity.set(4.8, 2.6, 0);
+			this.syncBiomeState();
+			this.callbacks.onFeedback('HET DONKERE RIOOL IN. DE VILLA IS VER WEG!');
 		} else if (topHatchOpening && this.player.position.y < -0.65) {
 			this.playerInBasement = true;
 			this.playerOutside = false;
 			this.playerInKitchen = false;
 			this.playerLeftRoom = null;
-			this.setBasementLighting(true);
+			this.syncBiomeState();
 			this.callbacks.onFeedback('DE KELDER IN!');
 		} else if (this.playerInBasement) {
 			if (this.player.position.y + PLAYER_HEIGHT >= -0.08) {
 				if (basementHatchOpening && this.player.position.y > -0.2) {
 					this.playerInBasement = false;
-					this.setBasementLighting(false);
 					this.playerInKitchen = true;
+					this.syncBiomeState();
 					this.callbacks.onFeedback('TERUG NAAR BOVEN!');
 				} else if (!basementHatchOpening) {
 					this.player.position.y = -PLAYER_HEIGHT - 0.08;
@@ -3044,11 +3114,26 @@ export class StampKonijnGame {
 				}
 			}
 		} else if (this.playerInSewer) {
-			if (this.player.position.y + PLAYER_HEIGHT >= SEWER_FLOOR_Y + 4.18) {
-				this.player.position.y = SEWER_FLOOR_Y + 4.18 - PLAYER_HEIGHT;
+			const inToiletShaft =
+				this.toiletHoleOpen && Math.abs(this.player.position.x - TOILET_X) < SEWER_SHAFT_HALF_WIDTH;
+			if (inToiletShaft && this.player.position.y > -0.28) {
+				this.playerInSewer = false;
+				this.playerLeftRoom = 'bathroom';
+				this.player.position.set(TOILET_X, 0.03, TOILET_Z);
+				this.velocity.y = Math.max(5.2, this.velocity.y);
+				this.syncBiomeState();
+				this.callbacks.onFeedback('DOOR DE WC WEER OMHOOG!');
+			} else if (this.player.position.y + PLAYER_HEIGHT >= SEWER_CEILING_Y && !inToiletShaft) {
+				this.player.position.y = SEWER_CEILING_Y - PLAYER_HEIGHT;
 				this.velocity.y = -Math.abs(this.velocity.y) * 0.68;
 				this.joltRagdoll(1.2);
 				this.squash = Math.max(this.squash, 0.5);
+			} else if (inToiletShaft && this.player.position.y + PLAYER_HEIGHT >= SEWER_CEILING_Y) {
+				this.player.position.x = THREE.MathUtils.clamp(
+					this.player.position.x,
+					TOILET_X - SEWER_SHAFT_HALF_WIDTH + 0.08,
+					TOILET_X + SEWER_SHAFT_HALF_WIDTH - 0.08
+				);
 			}
 		}
 
@@ -3211,11 +3296,66 @@ export class StampKonijnGame {
 		);
 	}
 
-	private setBasementLighting(active: boolean) {
-		const activeIntensities = [18, 14];
-		for (let index = 0; index < this.basementLights.length; index += 1) {
-			this.basementLights[index].intensity = active ? activeIntensities[index] : 0;
+	private getActiveBiome(): BiomeName {
+		if (this.playerInSewer) return 'sewer';
+		if (this.playerInBasement) return 'basement';
+		return 'ground';
+	}
+
+	private isBreakableActive(breakable: Breakable) {
+		return breakable.biome === this.getActiveBiome();
+	}
+
+	private isObjectVisibleInScene(object: THREE.Object3D) {
+		let current: THREE.Object3D | null = object;
+		while (current) {
+			if (!current.visible) return false;
+			current = current.parent;
 		}
+		return true;
+	}
+
+	private syncBiomeState(force = false) {
+		const biome = this.getActiveBiome();
+		if (!force && biome === this.activeBiome) return;
+		this.activeBiome = biome;
+		this.basementRoot.visible = biome === 'basement';
+		this.sewerRoot.visible = biome === 'sewer';
+
+		for (const breakable of this.breakables) {
+			const sinkingToilet = breakable === this.toiletBreakable && this.toiletSinking;
+			breakable.group.visible = breakable.biome === biome && (!breakable.broken || sinkingToilet);
+		}
+
+		const palette =
+			biome === 'ground'
+				? { color: 0xc9d8d1, near: 13, far: 27, exposure: 1.05 }
+				: biome === 'basement'
+					? { color: 0x382d24, near: 6.5, far: 20, exposure: 0.9 }
+					: { color: 0x07100d, near: 3.8, far: 14, exposure: 0.72 };
+		this.scene.background = new THREE.Color(palette.color);
+		if (this.scene.fog instanceof THREE.Fog) {
+			this.scene.fog.color.setHex(palette.color);
+			this.scene.fog.near = palette.near;
+			this.scene.fog.far = palette.far;
+		} else {
+			this.scene.fog = new THREE.Fog(palette.color, palette.near, palette.far);
+		}
+		this.renderer.toneMappingExposure = palette.exposure;
+
+		if (this.groundHemisphere) {
+			this.groundHemisphere.intensity =
+				biome === 'ground' ? 2.1 : biome === 'basement' ? 0.34 : 0.1;
+		}
+		if (this.groundSun) {
+			this.groundSun.intensity = biome === 'ground' ? 3.2 : biome === 'basement' ? 0.1 : 0;
+		}
+		if (this.groundWindowGlow) this.groundWindowGlow.intensity = biome === 'ground' ? 28 : 0;
+		const basementIntensities = biome === 'basement' ? [10, 7] : [0, 0];
+		for (let index = 0; index < this.basementLights.length; index += 1) {
+			this.basementLights[index].intensity = basementIntensities[index];
+		}
+		this.sewerLight.intensity = biome === 'sewer' ? 8.5 : 0;
 	}
 
 	private isInsideLeftDoorTarget(door: LeftRoomDoor) {
@@ -3484,7 +3624,7 @@ export class StampKonijnGame {
 
 	private resolveBreakables(delta: number) {
 		for (const breakable of this.breakables) {
-			if (breakable.broken) continue;
+			if (breakable.broken || !this.isBreakableActive(breakable)) continue;
 			const dx = this.player.position.x - breakable.group.position.x;
 			const dz = this.player.position.z - breakable.group.position.z;
 			const minimum = PLAYER_RADIUS + breakable.radius;
@@ -3910,7 +4050,10 @@ export class StampKonijnGame {
 		this.projectileRaycaster.set(origin, direction);
 		this.projectileRaycaster.near = 0;
 		this.projectileRaycaster.far = distance;
-		const hit = this.projectileRaycaster.intersectObjects(this.bulletImpactSurfaces, false)[0];
+		const hit = this.projectileRaycaster.intersectObjects(
+			this.bulletImpactSurfaces.filter((surface) => this.isObjectVisibleInScene(surface)),
+			false
+		)[0];
 		if (!hit?.face) return null;
 		const normal = hit.face.normal
 			.clone()
@@ -3923,7 +4066,7 @@ export class StampKonijnGame {
 		const ray = new THREE.Ray(origin, direction);
 		let nearest: { breakable: Breakable; point: THREE.Vector3; distance: number } | null = null;
 		for (const breakable of this.breakables) {
-			if (breakable.broken) continue;
+			if (breakable.broken || !this.isBreakableActive(breakable)) continue;
 			const hitBox = new THREE.Box3(
 				new THREE.Vector3(
 					breakable.group.position.x - breakable.radius,
@@ -3947,7 +4090,12 @@ export class StampKonijnGame {
 
 	private breakContacts(extraReach: number) {
 		for (const breakable of this.breakables) {
-			if (breakable.broken || !this.hasVerticalOverlap(breakable)) continue;
+			if (
+				breakable.broken ||
+				!this.isBreakableActive(breakable) ||
+				!this.hasVerticalOverlap(breakable)
+			)
+				continue;
 			const dx = this.player.position.x - breakable.group.position.x;
 			const dz = this.player.position.z - breakable.group.position.z;
 			const contactDistance = PLAYER_RADIUS + breakable.radius + extraReach;
@@ -4697,8 +4845,7 @@ export class StampKonijnGame {
 		this.toiletHole.visible = false;
 		this.kitchenHatchHole.visible = false;
 		this.kitchenHatchDamage.visible = false;
-		this.setBasementLighting(false);
-		this.sewerLight.intensity = 0;
+		this.syncBiomeState(true);
 		for (const poop of [...this.toiletFillRoot.children]) {
 			this.toiletFillRoot.remove(poop);
 			disposeObject(poop);
@@ -4819,7 +4966,10 @@ export class StampKonijnGame {
 	private raycastStampSurface() {
 		this.camera.updateMatrixWorld();
 		this.pointerRaycaster.setFromCamera(this.pointerNdc, this.camera);
-		const hits = this.pointerRaycaster.intersectObjects([...this.stampSurfaceKinds.keys()], false);
+		const hits = this.pointerRaycaster.intersectObjects(
+			[...this.stampSurfaceKinds.keys()].filter((surface) => this.isObjectVisibleInScene(surface)),
+			false
+		);
 		const hit = hits[0];
 		if (!hit?.face) return null;
 		const kind = this.stampSurfaceKinds.get(hit.object);
