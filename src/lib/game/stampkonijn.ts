@@ -4308,9 +4308,12 @@ export class StampKonijnGame {
 				previousBottom >= objectTop - 0.08 &&
 				playerBottom <= objectTop + 0.16;
 			if (landingOnTop) {
+				const impactSpeed = Math.abs(this.velocity.y);
 				this.player.position.y = objectTop;
-				this.velocity.y = 0;
-				this.squash = Math.max(this.squash, 0.12);
+				this.velocity.y = Math.max(5.2, impactSpeed * 0.42);
+				this.squash = Math.max(this.squash, Math.min(0.68, impactSpeed / 18));
+				this.joltArms(0.9 + Math.min(impactSpeed, 12) * 0.07);
+				this.playSound('bounce');
 				continue;
 			}
 			if (!this.stomping && closeToTop) continue;
