@@ -5929,6 +5929,7 @@ export class StampKonijnGame {
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
 		this.spawnGarbagePile(breakable);
+		if (breakable === this.poolBreakable) this.spawnPoolPuddle(breakable);
 		this.callbacks.onImpact(breakable.label, points);
 		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
 		this.playBreakSound(breakable.material, breakable.label);
@@ -6092,6 +6093,50 @@ export class StampKonijnGame {
 		mesh.receiveShadow = true;
 		this.getBreakableSceneRoot(breakable).add(mesh);
 		this.garbagePiles.push({ mesh });
+	}
+
+	private spawnPoolPuddle(pool: Breakable) {
+		const outline = new THREE.Shape();
+		const pointCount = 28;
+		for (let index = 0; index < pointCount; index += 1) {
+			const angle = (index / pointCount) * Math.PI * 2;
+			const wobble = 0.9 + Math.sin(angle * 3 + 0.6) * 0.08 + Math.sin(angle * 7 - 0.35) * 0.045;
+			const x = Math.cos(angle) * POOL_WATER_RADIUS * 1.2 * wobble;
+			const z = Math.sin(angle) * POOL_WATER_RADIUS * 0.92 * wobble;
+			if (index === 0) outline.moveTo(x, z);
+			else outline.lineTo(x, z);
+		}
+		outline.closePath();
+
+		const puddle = new THREE.Mesh(
+			new THREE.ShapeGeometry(outline),
+			new THREE.MeshPhysicalMaterial({
+				color: 0x49bfd2,
+				emissive: 0x073f49,
+				emissiveIntensity: 0.12,
+				roughness: 0.12,
+				metalness: 0.02,
+				clearcoat: 1,
+				clearcoatRoughness: 0.16,
+				transparent: true,
+				opacity: 0.68,
+				depthWrite: false,
+				side: THREE.DoubleSide,
+				polygonOffset: true,
+				polygonOffsetFactor: -2,
+				polygonOffsetUnits: -2
+			})
+		);
+		puddle.name = 'garbage-pool-puddle';
+		puddle.rotation.x = -Math.PI / 2;
+		puddle.position.set(
+			pool.group.position.x,
+			this.getBreakableFloorY(pool) + 0.022,
+			pool.group.position.z
+		);
+		puddle.renderOrder = 1;
+		this.getBreakableSceneRoot(pool).add(puddle);
+		this.garbagePiles.push({ mesh: puddle });
 	}
 
 	private getBreakableFloorY(breakable: Breakable) {
