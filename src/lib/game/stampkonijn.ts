@@ -228,6 +228,8 @@ const POOPIE_MONSTER_RADIUS = 0.86;
 const POOPIE_MONSTER_HEIGHT = 3.2;
 const POOPIE_MONSTER_BULLET_HITS = 3;
 const POOPIE_MONSTER_POOP_HITS = 3;
+const POOPIE_MONSTER_SPEECH_RADIUS = 5.4;
+const POOPIE_MONSTER_SPEECH_REARM_RADIUS = 7;
 const STAIR_STEP_COUNT = 12;
 const STAIR_STEP_RISE = ROOM_HEIGHT / STAIR_STEP_COUNT;
 const STAIR_STEP_RUN = 0.45;
@@ -541,6 +543,9 @@ export class StampKonijnGame {
 	private bulletImpactSamples: Record<BulletImpactMaterial, HTMLAudioElement[]>;
 	private vaseBreakSample: HTMLAudioElement;
 	private chairBreakSample: HTMLAudioElement;
+	private poopieMonsterSpeechSample: HTMLAudioElement;
+	private poopieMonsterSpeechPlaying: HTMLAudioElement | null = null;
+	private poopieMonsterSpeechArmed = true;
 	private activeSamples = new Set<HTMLAudioElement>();
 	private keyDownHandler: (event: KeyboardEvent) => void;
 	private keyUpHandler: (event: KeyboardEvent) => void;
@@ -588,6 +593,8 @@ export class StampKonijnGame {
 		this.vaseBreakSample.preload = 'auto';
 		this.chairBreakSample = new Audio('/audio/chair-break.ogg');
 		this.chairBreakSample.preload = 'auto';
+		this.poopieMonsterSpeechSample = new Audio('/audio/characters/poopiemonster.ogg');
+		this.poopieMonsterSpeechSample.preload = 'auto';
 
 		this.keyDownHandler = (event) => this.handleKey(event, true);
 		this.keyUpHandler = (event) => this.handleKey(event, false);
@@ -5342,6 +5349,7 @@ export class StampKonijnGame {
 
 	private updatePoopieMonster(delta: number) {
 		this.poopieMonsterTime += delta;
+		this.updatePoopieMonsterSpeech();
 		this.poopieMonsterHitFlash = Math.max(0, this.poopieMonsterHitFlash - delta);
 		const flash = this.poopieMonsterHitFlash / 0.2;
 		for (const poopieMaterial of this.poopieMonsterMaterials) {
@@ -5393,6 +5401,8 @@ export class StampKonijnGame {
 	}
 
 	private resetPoopieMonster() {
+		this.stopPoopieMonsterSpeech();
+		this.poopieMonsterSpeechArmed = true;
 		this.poopieMonsterState = 'neutral';
 		this.poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
 		this.poopieMonsterPoopHits = 0;
@@ -7080,6 +7090,47 @@ export class StampKonijnGame {
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
 		void sample.play().catch(cleanup);
+	}
+
+	private updatePoopieMonsterSpeech() {
+		if (!this.playerInSewer || this.poopieMonsterState !== 'neutral') {
+			if (!this.playerInSewer) this.poopieMonsterSpeechArmed = true;
+			return;
+		}
+
+		const distance = Math.abs(this.player.position.x - POOPIE_MONSTER_X);
+		if (distance >= POOPIE_MONSTER_SPEECH_REARM_RADIUS) {
+			this.poopieMonsterSpeechArmed = true;
+		}
+		if (this.muted || !this.poopieMonsterSpeechArmed || distance > POOPIE_MONSTER_SPEECH_RADIUS) {
+			return;
+		}
+
+		this.poopieMonsterSpeechArmed = false;
+		this.playPoopieMonsterSpeech();
+	}
+
+	private playPoopieMonsterSpeech() {
+		if (this.muted || this.poopieMonsterSpeechPlaying) return;
+		const sample = this.poopieMonsterSpeechSample.cloneNode(true) as HTMLAudioElement;
+		sample.volume = 0.9;
+		const cleanup = () => {
+			this.activeSamples.delete(sample);
+			if (this.poopieMonsterSpeechPlaying === sample) this.poopieMonsterSpeechPlaying = null;
+		};
+		sample.addEventListener('ended', cleanup, { once: true });
+		this.poopieMonsterSpeechPlaying = sample;
+		this.activeSamples.add(sample);
+		void sample.play().catch(cleanup);
+	}
+
+	private stopPoopieMonsterSpeech() {
+		const sample = this.poopieMonsterSpeechPlaying;
+		if (!sample) return;
+		sample.pause();
+		sample.currentTime = 0;
+		this.activeSamples.delete(sample);
+		this.poopieMonsterSpeechPlaying = null;
 	}
 
 	private playGunshot(weapon: Exclude<WeaponName, 'poop'>) {
