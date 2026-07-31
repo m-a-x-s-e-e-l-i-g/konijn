@@ -422,6 +422,7 @@ export class StampKonijnGame {
 	private breakableTilt = new THREE.Quaternion();
 	private uprightPose = new THREE.Quaternion();
 	private stampSequence = 0;
+	private lastStampImpactSoundSequence = -1;
 	private pendingStampFeedback = '';
 	private stomping = false;
 	private stompWindup = 0;
@@ -647,6 +648,7 @@ export class StampKonijnGame {
 		this.stompWindup = 0;
 		this.stompTimeout = 0;
 		this.stampSequence = 0;
+		this.lastStampImpactSoundSequence = -1;
 		this.pendingStampFeedback = '';
 		this.stampTargetsWindow = false;
 		this.stampTargetsDoor = false;
@@ -4646,7 +4648,7 @@ export class StampKonijnGame {
 		this.velocity.copy(throughDoor).multiplyScalar(Math.max(8.4, speed * 0.64));
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.9);
-		this.playImpactSample(Math.min(1, speed / 7));
+		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.cancelStamp();
 		this.joltRagdoll(2.5);
 		this.callbacks.onFeedback(
@@ -4695,7 +4697,7 @@ export class StampKonijnGame {
 		this.lockedBackDoorHit = 1;
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 1.02);
-		this.playImpactSample(Math.min(1, speed / 7));
+		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.finishStampRebound(wallNormal, 0.82, speed);
 		this.joltRagdoll(2.6);
 		this.callbacks.onFeedback('VEEL TE VEEL DIKKE SLOTEN!');
@@ -4722,7 +4724,7 @@ export class StampKonijnGame {
 		this.velocity.copy(throughDoor).multiplyScalar(Math.max(8.4, speed * 0.64));
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.9);
-		this.playImpactSample(Math.min(1, speed / 7));
+		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.cancelStamp();
 		this.joltRagdoll(2.5);
 		this.callbacks.onFeedback('DEUR OPEN! KEUKEN IN!');
@@ -4763,7 +4765,7 @@ export class StampKonijnGame {
 		this.spawnSurfaceCrack(wallNormal, speed, true);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.92);
-		this.playImpactSample(Math.min(1, speed / 7));
+		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.windowHits += 1;
 		if (this.windowHits < WINDOW_STAMPS_REQUIRED) return false;
 
@@ -4956,7 +4958,7 @@ export class StampKonijnGame {
 		this.rabbitInPoolWater = false;
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.82);
-		this.playImpactSample(Math.min(1, speed / 20));
+		this.playStampImpactSample(Math.min(1, speed / 20));
 	}
 
 	private resolveBreakables(delta: number) {
@@ -5026,7 +5028,7 @@ export class StampKonijnGame {
 		this.spawnSurfaceCrack(new THREE.Vector3(0, 1, 0), speed);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.9);
-		this.playImpactSample(Math.min(1, speed / 20));
+		this.playStampImpactSample(Math.min(1, speed / 20));
 	}
 
 	private performWallStamp(speed: number, wallNormal: THREE.Vector3) {
@@ -5034,7 +5036,7 @@ export class StampKonijnGame {
 		this.spawnSurfaceCrack(wallNormal, speed);
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.72);
-		this.playImpactSample(Math.min(1, speed / 7));
+		this.playStampImpactSample(Math.min(1, speed / 7));
 	}
 
 	private finishStampRebound(
@@ -5772,6 +5774,9 @@ export class StampKonijnGame {
 
 	private damageBreakable(breakable: Breakable, source: 'stamp' | 'bullet') {
 		if (breakable.broken) return;
+		if (source === 'stamp') {
+			this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
+		}
 		if (breakable === this.kitchenHatchBreakable) {
 			if (source === 'bullet') {
 				this.callbacks.onFeedback('DIT LUIK MOET JE STAMPEN!');
@@ -6921,6 +6926,12 @@ export class StampKonijnGame {
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
 		void sample.play().catch(cleanup);
+	}
+
+	private playStampImpactSample(power: number) {
+		if (this.lastStampImpactSoundSequence === this.stampSequence) return;
+		this.lastStampImpactSoundSequence = this.stampSequence;
+		this.playImpactSample(power);
 	}
 
 	private playVaseBreakSample() {
