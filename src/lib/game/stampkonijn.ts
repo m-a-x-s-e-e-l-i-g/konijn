@@ -6312,14 +6312,7 @@ export class StampKonijnGame {
 			}
 		};
 
-		strokePaths(
-			emphasizeWindow ? 'rgba(246, 250, 244, 0.92)' : 'rgba(246, 237, 220, 0.35)',
-			emphasizeWindow ? 7.2 : 4.4 + strength * 2.4
-		);
-		strokePaths(
-			emphasizeWindow ? 'rgba(37, 42, 43, 0.96)' : 'rgba(37, 31, 27, 0.82)',
-			emphasizeWindow ? 2.15 : 1.25 + strength
-		);
+		strokePaths('rgba(0, 0, 0, 0.9)', emphasizeWindow ? 3.2 : 1.8 + strength * 1.2);
 
 		const texture = new THREE.CanvasTexture(canvas);
 		texture.colorSpace = THREE.SRGBColorSpace;
