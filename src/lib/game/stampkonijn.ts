@@ -5275,13 +5275,13 @@ export class StampKonijnGame {
 				this.poopieMonsterDeathStartY = this.poopieMonsterPose.position.y;
 				this.poopieMonsterDeathStartRotation = this.poopieMonsterPose.rotation.z;
 				this.poopieMonsterDeathStartScale.copy(this.poopieMonsterPose.scale);
-				this.audio.playPoopieMonsterFinalHit();
 				this.audio.playPoopieMonsterDeath();
 				this.cameraShake = Math.max(this.cameraShake, 0.72);
-				this.emitFeedback('POOPIEMONSTER: AUCH!');
+				this.emitFeedback('POOPIEMONSTER VERSLAGEN!');
 			} else {
 				this.audio.playBulletImpact('body');
-				this.emitFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
+				this.audio.playPoopieMonsterHit();
+				this.emitFeedback(`POOPIEMONSTER: AUCH! ${this.poopieMonsterHealth} KOGELS OVER`);
 			}
 			return;
 		}

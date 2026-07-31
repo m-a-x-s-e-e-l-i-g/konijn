@@ -9,6 +9,7 @@ export const AUDIO_PATHS = {
 	poopieMonsterSpeech: '/audio/characters/poopiemonster.ogg',
 	poopieMonsterEat: '/audio/characters/poopiemonster-eat.ogg',
 	poopieMonsterFriend: '/audio/characters/poopiemonster-friend.ogg',
+	poopieMonsterHit: '/audio/characters/poopiemonster-hit.ogg',
 	poopieMonsterDeath: '/audio/characters/poopiemonster-death.ogg',
 	poopieMonsterDeathThud: '/audio/characters/poopiemonster-thud.ogg'
 } as const;
