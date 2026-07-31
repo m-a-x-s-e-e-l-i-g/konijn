@@ -1442,13 +1442,9 @@ export class StampKonijnGame {
 			foundation.rotation.z = index % 2 === 0 ? 0.035 : -0.025;
 			this.sewerRoot.add(foundation);
 		}
-		const villaSign = this.makePriceTag('VILLA →');
-		villaSign.scale.set(2.25, 0.78, 1);
-		villaSign.position.set(SEWER_MAX_X - 1.7, SEWER_FLOOR_Y + 2.75, SEWER_MAX_Z + 0.04);
-		this.sewerRoot.add(villaSign);
-		const villaGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
-		villaGlow.position.set(SEWER_MAX_X - 2.2, SEWER_FLOOR_Y + 2.3, SEWER_CENTER_Z + 0.2);
-		this.sewerRoot.add(villaGlow);
+		const distantGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
+		distantGlow.position.set(SEWER_MAX_X - 2.2, SEWER_FLOOR_Y + 2.3, SEWER_CENTER_Z + 0.2);
+		this.sewerRoot.add(distantGlow);
 
 		for (let x = TOILET_X + 4; x < SEWER_MAX_X - 5; x += 14) {
 			const tunnelLight = new THREE.PointLight(0x799066, 3.4, 12, 2);
@@ -2160,6 +2156,16 @@ export class StampKonijnGame {
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
 		this.addBreakable('HONDENHOK', 140, this.makeDoghouse(), [4.15, 0, -8.45], 1.12, 1.72, 'wood');
+		this.addBreakable(
+			'PICKNICKTAFEL',
+			260,
+			this.makePicnicTable(),
+			[8.75, 0, -10.15],
+			2.25,
+			1.72,
+			'wood',
+			2
+		);
 		const leftGardenChair = this.makeGardenChair(COLORS.orange);
 		leftGardenChair.rotation.y = 0.42;
 		this.addBreakable('TUINSTOEL', 45, leftGardenChair, [-4.2, 0, -9.4], 0.82, 1.15, 'wood');
@@ -2939,6 +2945,119 @@ export class StampKonijnGame {
 		return group;
 	}
 
+	private makePicnicTable() {
+		const group = new THREE.Group();
+		const timber = 0x8a5a36;
+		const timberDark = 0x654027;
+		for (let plank = 0; plank < 4; plank += 1) {
+			group.add(
+				box(
+					[3.72, 0.16, 0.32],
+					[0, 1.04, -0.51 + plank * 0.34],
+					plank % 2 === 0 ? timber : 0x98643b
+				)
+			);
+		}
+		for (const z of [-1.04, 1.04]) {
+			group.add(box([3.55, 0.16, 0.42], [0, 0.58, z], timber));
+		}
+		for (const x of [-1.28, 1.28]) {
+			for (const side of [-1, 1]) {
+				const leg = box([0.18, 1.05, 0.2], [x, 0.5, side * 0.48], timberDark);
+				leg.rotation.x = side * 0.34;
+				group.add(leg);
+			}
+			group.add(box([0.18, 0.18, 2.22], [x, 0.45, 0], timberDark));
+		}
+		group.add(box([3.05, 0.15, 0.18], [0, 0.32, 0], timberDark));
+
+		for (let row = 0; row < 4; row += 1) {
+			for (let column = 0; column < 5; column += 1) {
+				group.add(
+					box(
+						[0.25, 0.018, 0.25],
+						[-0.5 + column * 0.25, 1.138, -0.375 + row * 0.25],
+						(row + column) % 2 === 0 ? 0xeadbc1 : 0xc95646
+					)
+				);
+			}
+		}
+
+		const placeSettingPositions: Array<[number, number]> = [
+			[-1.35, -0.32],
+			[-0.82, 0.35],
+			[0.78, -0.34],
+			[1.38, 0.34]
+		];
+		for (let index = 0; index < placeSettingPositions.length; index += 1) {
+			const [x, z] = placeSettingPositions[index];
+			const plate = cylinder(0.26, 0.28, 0.04, [x, 1.17, z], index % 2 === 0 ? 0xe8e2d4 : 0x83b7c7, 24);
+			group.add(plate);
+			const glass = shadowMesh(
+				new THREE.CylinderGeometry(0.065, 0.08, 0.24, 12),
+				material(0xabcfd0, 0.18, 0.15)
+			);
+			glass.position.set(x + 0.28, 1.29, z - 0.02);
+			group.add(glass);
+			group.add(
+				box(
+					[0.22, 0.025, 0.22],
+					[x - 0.26, 1.17, z + 0.08],
+					index % 2 === 0 ? 0xe87832 : 0xf2d16f,
+					0.12 * (index - 1.5)
+				)
+			);
+		}
+
+		const saladBowl = cylinder(0.3, 0.23, 0.15, [-0.12, 1.21, 0], 0x4e8f78, 20);
+		group.add(saladBowl);
+		for (let leaf = 0; leaf < 6; leaf += 1) {
+			const lettuce = shadowMesh(
+				new THREE.SphereGeometry(0.105, 9, 7),
+				material(leaf % 2 === 0 ? 0x77a94e : 0xa2bd61)
+			);
+			lettuce.scale.y = 0.55;
+			lettuce.position.set(-0.28 + (leaf % 3) * 0.15, 1.34, -0.08 + Math.floor(leaf / 3) * 0.16);
+			group.add(lettuce);
+		}
+
+		const baguette = shadowMesh(new THREE.CapsuleGeometry(0.105, 0.72, 5, 12), material(0xd79b55));
+		baguette.rotation.z = Math.PI / 2;
+		baguette.position.set(0.08, 1.27, 0.43);
+		group.add(baguette);
+		for (const x of [-0.22, 0, 0.22]) {
+			const score = box([0.035, 0.015, 0.16], [x, 1.38, 0.43], 0xf1c67d);
+			score.rotation.z = 0.25;
+			group.add(score);
+		}
+
+		for (const [radius, height, y, color] of [
+			[0.2, 0.08, 1.2, 0xd4934b],
+			[0.18, 0.05, 1.265, 0x6e9a47],
+			[0.2, 0.08, 1.33, 0xd4934b]
+		] as Array<[number, number, number, number]>) {
+			group.add(cylinder(radius, radius, height, [0.8, y, 0.08], color, 18));
+		}
+
+		for (const [x, color] of [
+			[1.05, 0xc84f3f],
+			[1.28, 0xe1b63f]
+		] as Array<[number, number]>) {
+			group.add(cylinder(0.07, 0.09, 0.3, [x, 1.3, -0.18], color, 12));
+			group.add(cylinder(0.035, 0.045, 0.08, [x, 1.49, -0.18], 0xf0e3c9, 10));
+		}
+
+		for (let fruit = 0; fruit < 5; fruit += 1) {
+			const piece = shadowMesh(
+				new THREE.SphereGeometry(0.1, 10, 8),
+				material([0xd4523d, 0xe6ad3e, 0x76a14d][fruit % 3])
+			);
+			piece.position.set(-0.48 + fruit * 0.16, 1.28 + (fruit % 2) * 0.08, -0.42);
+			group.add(piece);
+		}
+		return group;
+	}
+
 	private makePool() {
 		const group = new THREE.Group();
 		group.add(cylinder(2.06, 2.12, 0.68, [0, 0.34, 0], 0x4fa7c7, 32));
@@ -3574,7 +3693,7 @@ export class StampKonijnGame {
 			this.player.position.set(TOILET_X, SEWER_FLOOR_Y + 0.18, SEWER_CENTER_Z);
 			this.velocity.set(4.8, 2.6, 0);
 			this.syncBiomeState();
-			this.callbacks.onFeedback('HET DONKERE RIOOL IN. DE VILLA IS VER WEG!');
+			this.callbacks.onFeedback('HET DONKERE RIOOL IN!');
 		} else if (topHatchOpening && this.player.position.y < -0.65) {
 			this.playerInBasement = true;
 			this.playerOutside = false;
@@ -5766,7 +5885,12 @@ export class StampKonijnGame {
 
 	private playBreakSound(kind: BreakMaterial, label: string) {
 		if (this.muted) return;
-		if (label === 'STOEL' || label === 'TUINSTOEL' || label === 'BOEKENKAST') {
+		if (
+			label === 'STOEL' ||
+			label === 'TUINSTOEL' ||
+			label === 'BOEKENKAST' ||
+			label === 'PICKNICKTAFEL'
+		) {
 			this.playChairBreakSample();
 			return;
 		}
