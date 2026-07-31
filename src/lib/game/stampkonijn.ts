@@ -515,6 +515,7 @@ export class StampKonijnGame {
 	private fartSample: HTMLAudioElement;
 	private pistolSample: HTMLAudioElement;
 	private g36Sample: HTMLAudioElement;
+	private weaponChangeSample: HTMLAudioElement;
 	private bulletImpactSamples: Record<BulletImpactMaterial, HTMLAudioElement[]>;
 	private vaseBreakSample: HTMLAudioElement;
 	private chairBreakSample: HTMLAudioElement;
@@ -544,6 +545,8 @@ export class StampKonijnGame {
 		this.pistolSample.preload = 'auto';
 		this.g36Sample = new Audio('/audio/weapons/g36.ogg');
 		this.g36Sample.preload = 'auto';
+		this.weaponChangeSample = new Audio('/audio/weapons/change.ogg');
+		this.weaponChangeSample.preload = 'auto';
 		this.bulletImpactSamples = {} as Record<BulletImpactMaterial, HTMLAudioElement[]>;
 		for (const [kind, paths] of Object.entries(BULLET_IMPACT_SAMPLE_PATHS) as Array<
 			[BulletImpactMaterial, readonly string[]]
@@ -656,6 +659,7 @@ export class StampKonijnGame {
 		const currentIndex = Math.max(0, weapons.indexOf(this.weapon));
 		this.weapon = weapons[(currentIndex + 1) % weapons.length];
 		this.syncWeaponModel();
+		this.playWeaponChange();
 		this.emitHud(true);
 	}
 
@@ -2349,6 +2353,7 @@ export class StampKonijnGame {
 		this.weaponCooldown = 0;
 		this.weapon = 'g36';
 		this.syncWeaponModel();
+		this.playWeaponChange();
 		this.callbacks.onFeedback('G36 GEVONDEN! HOUD RMB VOOR RATATAT!');
 		this.emitHud(true);
 	}
@@ -6823,6 +6828,16 @@ export class StampKonijnGame {
 		const source = weapon === 'g36' ? this.g36Sample : this.pistolSample;
 		const sample = source.cloneNode(true) as HTMLAudioElement;
 		sample.volume = weapon === 'g36' ? 0.74 : 0.86;
+		const cleanup = () => this.activeSamples.delete(sample);
+		sample.addEventListener('ended', cleanup, { once: true });
+		this.activeSamples.add(sample);
+		void sample.play().catch(cleanup);
+	}
+
+	private playWeaponChange() {
+		if (this.muted) return;
+		const sample = this.weaponChangeSample.cloneNode(true) as HTMLAudioElement;
+		sample.volume = 0.64;
 		const cleanup = () => this.activeSamples.delete(sample);
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
