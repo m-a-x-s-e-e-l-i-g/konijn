@@ -7,6 +7,7 @@ type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'c
 type StampSurfaceKind = 'floor' | 'wall';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
 type BiomeName = 'ground' | 'basement' | 'sewer';
+type PoopieMonsterState = 'neutral' | 'dead' | 'friend';
 
 export interface StampHudState {
 	phase: GamePhase;
@@ -206,6 +207,11 @@ const SEWER_MAX_Z = SEWER_CENTER_Z + SEWER_DEPTH / 2;
 const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
+const POOPIE_MONSTER_X = 10;
+const POOPIE_MONSTER_RADIUS = 0.86;
+const POOPIE_MONSTER_HEIGHT = 3.35;
+const POOPIE_MONSTER_BULLET_HITS = 3;
+const POOPIE_MONSTER_POOP_HITS = 3;
 const STAIR_STEP_COUNT = 12;
 const STAIR_STEP_RISE = ROOM_HEIGHT / STAIR_STEP_COUNT;
 const STAIR_STEP_RUN = 0.62;
@@ -421,6 +427,17 @@ export class StampKonijnGame {
 	private upstairsLights: THREE.PointLight[] = [];
 	private sewerLight = new THREE.PointLight(0xb7cb74, 0, 40, 2);
 	private sewerObstacles: SewerObstacle[] = [];
+	private poopieMonsterRoot = new THREE.Group();
+	private poopieMonsterPose = new THREE.Group();
+	private poopieMonsterHeart: THREE.Mesh<THREE.ShapeGeometry, THREE.MeshStandardMaterial> | null =
+		null;
+	private poopieMonsterArms: THREE.Object3D[] = [];
+	private poopieMonsterMaterials: THREE.MeshStandardMaterial[] = [];
+	private poopieMonsterState: PoopieMonsterState = 'neutral';
+	private poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
+	private poopieMonsterPoopHits = 0;
+	private poopieMonsterTime = 0;
+	private poopieMonsterHitFlash = 0;
 	private debris: DebrisPiece[] = [];
 	private impactRings: ImpactRing[] = [];
 	private waterRipples: WaterRipple[] = [];
@@ -1159,11 +1176,7 @@ export class StampKonijnGame {
 		this.upstairsRoot.add(stairwell, landingRail, landingRailTop);
 
 		for (const x of [-8.6, 0.2, 9]) {
-			const beam = box(
-				[0.08, 0.08, ROOM_DEPTH - 0.5],
-				[x, UPSTAIRS_FLOOR_Y + 4.25, 0],
-				0x171b18
-			);
+			const beam = box([0.08, 0.08, ROOM_DEPTH - 0.5], [x, UPSTAIRS_FLOOR_Y + 4.25, 0], 0x171b18);
 			this.upstairsRoot.add(beam);
 		}
 
@@ -1533,6 +1546,7 @@ export class StampKonijnGame {
 			const centerY = fromFloor ? height / 2 : SEWER_HEIGHT - height / 2;
 			this.addSewerObstacle(x, SEWER_FLOOR_Y + centerY, 0.95 + (index % 3) * 0.17, height);
 		}
+		this.createPoopieMonster();
 
 		for (let index = 0; index < 4; index += 1) {
 			const foundation = box(
@@ -1555,6 +1569,121 @@ export class StampKonijnGame {
 
 		this.sewerLight.position.set(TOILET_X + 1.5, SEWER_FLOOR_Y + 2.6, SEWER_CENTER_Z + 0.4);
 		this.sewerRoot.add(this.sewerLight);
+	}
+
+	private createPoopieMonster() {
+		this.poopieMonsterRoot = new THREE.Group();
+		this.poopieMonsterRoot.position.set(POOPIE_MONSTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
+		this.poopieMonsterPose = new THREE.Group();
+		this.poopieMonsterRoot.add(this.poopieMonsterPose);
+
+		const fur = new THREE.MeshStandardMaterial({
+			color: 0x6b402a,
+			roughness: 1,
+			flatShading: true,
+			emissive: 0x140906,
+			emissiveIntensity: 0.08
+		});
+		const darkFur = new THREE.MeshStandardMaterial({
+			color: 0x4a2b1f,
+			roughness: 1,
+			flatShading: true,
+			emissive: 0x120806,
+			emissiveIntensity: 0.08
+		});
+		this.poopieMonsterMaterials = [fur, darkFur];
+
+		const body = shadowMesh(new THREE.DodecahedronGeometry(0.82, 1), fur);
+		body.scale.set(1.03, 1.28, 0.74);
+		body.position.set(0, 1.12, 0);
+		const head = shadowMesh(new THREE.DodecahedronGeometry(0.68, 1), fur);
+		head.scale.set(1.08, 0.96, 0.82);
+		head.position.set(0, 2.23, 0.04);
+		this.poopieMonsterPose.add(body, head);
+
+		const tuftPositions: Array<[number, number, number, number]> = [
+			[-0.69, 0.78, 0.1, 0.14],
+			[0.69, 0.82, 0.08, 0.13],
+			[-0.72, 1.35, 0.04, 0.15],
+			[0.72, 1.42, 0.02, 0.14],
+			[-0.53, 2.55, 0.1, 0.13],
+			[0.51, 2.58, 0.08, 0.14],
+			[-0.2, 2.85, 0.02, 0.13],
+			[0.16, 2.87, 0, 0.12]
+		];
+		for (const [x, y, z, radius] of tuftPositions) {
+			const tuft = shadowMesh(
+				new THREE.IcosahedronGeometry(radius, 0),
+				Math.random() > 0.35 ? fur : darkFur
+			);
+			tuft.position.set(x, y, z);
+			tuft.rotation.set(Math.random(), Math.random(), Math.random());
+			this.poopieMonsterPose.add(tuft);
+		}
+
+		const eyeMaterial = material(0xe9e4d4, 0.5);
+		const pupilMaterial = material(0x17130f, 0.38);
+		for (const [x, tilt] of [
+			[-0.24, -0.12],
+			[0.24, 0.1]
+		] as Array<[number, number]>) {
+			const eye = shadowMesh(new THREE.SphereGeometry(0.23, 14, 10), eyeMaterial);
+			eye.scale.set(0.9, 1.18, 0.72);
+			eye.position.set(x, 2.58 + Math.abs(x) * 0.1, 0.5);
+			eye.rotation.z = tilt;
+			const pupil = shadowMesh(new THREE.SphereGeometry(0.085, 10, 8), pupilMaterial);
+			pupil.scale.z = 0.58;
+			pupil.position.set(x + tilt * 0.08, 2.55, 0.675);
+			this.poopieMonsterPose.add(eye, pupil);
+		}
+
+		const mouth = shadowMesh(new THREE.SphereGeometry(0.42, 16, 10), material(0x21120f, 0.9));
+		mouth.scale.set(1.2, 0.52, 0.28);
+		mouth.position.set(0, 1.91, 0.59);
+		this.poopieMonsterPose.add(mouth);
+
+		this.poopieMonsterArms = [];
+		for (const side of [-1, 1]) {
+			const armRoot = new THREE.Group();
+			armRoot.position.set(side * 0.73, 1.7, 0.03);
+			armRoot.rotation.z = side * -0.82;
+			const arm = shadowMesh(new THREE.CapsuleGeometry(0.16, 0.68, 5, 9), fur);
+			arm.position.set(0, -0.42, 0);
+			const hand = shadowMesh(new THREE.DodecahedronGeometry(0.23, 0), fur);
+			hand.position.set(0, -0.9, 0.02);
+			armRoot.add(arm, hand);
+			this.poopieMonsterPose.add(armRoot);
+			this.poopieMonsterArms.push(armRoot);
+		}
+		for (const side of [-1, 1]) {
+			const foot = shadowMesh(new THREE.SphereGeometry(0.34, 12, 8), darkFur);
+			foot.scale.set(1.15, 0.52, 0.78);
+			foot.position.set(side * 0.42, 0.19, 0.18);
+			this.poopieMonsterPose.add(foot);
+		}
+
+		const heartShape = new THREE.Shape();
+		heartShape.moveTo(0, -0.26);
+		heartShape.bezierCurveTo(-0.52, -0.02, -0.58, 0.43, -0.25, 0.52);
+		heartShape.bezierCurveTo(-0.08, 0.57, 0, 0.43, 0, 0.33);
+		heartShape.bezierCurveTo(0, 0.43, 0.08, 0.57, 0.25, 0.52);
+		heartShape.bezierCurveTo(0.58, 0.43, 0.52, -0.02, 0, -0.26);
+		this.poopieMonsterHeart = new THREE.Mesh(
+			new THREE.ShapeGeometry(heartShape, 10),
+			new THREE.MeshStandardMaterial({
+				color: 0xe95764,
+				roughness: 0.42,
+				emissive: 0x6d101b,
+				emissiveIntensity: 0.8,
+				side: THREE.DoubleSide
+			})
+		);
+		this.poopieMonsterHeart.position.set(0, 3.58, 0.58);
+		this.poopieMonsterHeart.scale.setScalar(0.55);
+		this.poopieMonsterHeart.visible = false;
+		this.poopieMonsterRoot.add(this.poopieMonsterHeart);
+		this.sewerRoot.add(this.poopieMonsterRoot);
+		this.resetPoopieMonster();
 	}
 
 	private addSewerObstacle(x: number, y: number, width: number, height: number) {
@@ -2176,46 +2305,54 @@ export class StampKonijnGame {
 			'ceramic'
 		);
 		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
-		this.upstairsBreakables.push(this.addBreakable(
-			'KO-9 COMMAND DESK',
-			780,
-			this.makeKo9HackerDesk(),
-			[0.25, UPSTAIRS_FLOOR_Y, -1.45],
-			2.55,
-			2.45,
-			'electronics',
-			2
-		));
-		this.upstairsBreakables.push(this.addBreakable(
-			'GEHEIM ARCHIEF',
-			360,
-			this.makeKo9Archive(),
-			[-10.05, UPSTAIRS_FLOOR_Y, -4.18],
-			1.5,
-			2.52,
-			'metal',
-			2
-		));
-		this.upstairsBreakables.push(this.addBreakable(
-			'WAPENREK',
-			620,
-			this.makeKo9GunRack(),
-			[7.65, UPSTAIRS_FLOOR_Y, -4.72],
-			1.82,
-			2.35,
-			'metal',
-			2
-		));
-		this.upstairsBreakables.push(this.addBreakable(
-			'KO-9 KLUIS',
-			1200,
-			this.makeKo9Safe(),
-			[12.15, UPSTAIRS_FLOOR_Y, -4.08],
-			1.05,
-			2.02,
-			'metal',
-			3
-		));
+		this.upstairsBreakables.push(
+			this.addBreakable(
+				'KO-9 COMMAND DESK',
+				780,
+				this.makeKo9HackerDesk(),
+				[0.25, UPSTAIRS_FLOOR_Y, -1.45],
+				2.55,
+				2.45,
+				'electronics',
+				2
+			)
+		);
+		this.upstairsBreakables.push(
+			this.addBreakable(
+				'GEHEIM ARCHIEF',
+				360,
+				this.makeKo9Archive(),
+				[-10.05, UPSTAIRS_FLOOR_Y, -4.18],
+				1.5,
+				2.52,
+				'metal',
+				2
+			)
+		);
+		this.upstairsBreakables.push(
+			this.addBreakable(
+				'WAPENREK',
+				620,
+				this.makeKo9GunRack(),
+				[7.65, UPSTAIRS_FLOOR_Y, -4.72],
+				1.82,
+				2.35,
+				'metal',
+				2
+			)
+		);
+		this.upstairsBreakables.push(
+			this.addBreakable(
+				'KO-9 KLUIS',
+				1200,
+				this.makeKo9Safe(),
+				[12.15, UPSTAIRS_FLOOR_Y, -4.08],
+				1.05,
+				2.02,
+				'metal',
+				3
+			)
+		);
 		this.addBreakable(
 			'ANTIEKE SPIEGEL',
 			360,
@@ -3127,7 +3264,14 @@ export class StampKonijnGame {
 		];
 		for (let index = 0; index < placeSettingPositions.length; index += 1) {
 			const [x, z] = placeSettingPositions[index];
-			const plate = cylinder(0.26, 0.28, 0.04, [x, 1.17, z], index % 2 === 0 ? 0xe8e2d4 : 0x83b7c7, 24);
+			const plate = cylinder(
+				0.26,
+				0.28,
+				0.04,
+				[x, 1.17, z],
+				index % 2 === 0 ? 0xe8e2d4 : 0x83b7c7,
+				24
+			);
 			group.add(plate);
 			const glass = shadowMesh(
 				new THREE.CylinderGeometry(0.065, 0.08, 0.24, 12),
@@ -3442,6 +3586,7 @@ export class StampKonijnGame {
 			this.updateWeaponProjectiles(delta);
 			this.updateMuzzleEffects(delta);
 			this.updateToilet(delta);
+			this.updatePoopieMonster(delta);
 		}
 		this.updateCamera(delta);
 		this.renderer.render(this.scene, this.camera);
@@ -3973,6 +4118,7 @@ export class StampKonijnGame {
 	}
 
 	private resolveSewerObstacleCollisions() {
+		if (this.resolvePoopieMonsterCollision()) return;
 		for (const obstacle of this.sewerObstacles) {
 			const playerLeft = this.player.position.x - PLAYER_RADIUS;
 			const playerRight = this.player.position.x + PLAYER_RADIUS;
@@ -4017,6 +4163,46 @@ export class StampKonijnGame {
 		}
 	}
 
+	private resolvePoopieMonsterCollision() {
+		if (!this.playerInSewer || this.poopieMonsterState !== 'neutral') return false;
+		const minX = POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS;
+		const maxX = POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS;
+		const minY = SEWER_FLOOR_Y;
+		const maxY = SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT;
+		const playerLeft = this.player.position.x - PLAYER_RADIUS;
+		const playerRight = this.player.position.x + PLAYER_RADIUS;
+		const playerBottom = this.player.position.y;
+		const playerTop = playerBottom + PLAYER_HEIGHT;
+		if (playerRight <= minX || playerLeft >= maxX || playerTop <= minY || playerBottom >= maxY) {
+			return false;
+		}
+
+		const candidates = [
+			{ depth: playerRight - minX, normal: new THREE.Vector3(-1, 0, 0) },
+			{ depth: maxX - playerLeft, normal: new THREE.Vector3(1, 0, 0) },
+			{ depth: playerTop - minY, normal: new THREE.Vector3(0, -1, 0) },
+			{ depth: maxY - playerBottom, normal: new THREE.Vector3(0, 1, 0) }
+		];
+		candidates.sort((a, b) => a.depth - b.depth);
+		const collision = candidates[0];
+		const normal = collision.normal;
+		if (normal.x < 0) this.player.position.x = minX - PLAYER_RADIUS;
+		else if (normal.x > 0) this.player.position.x = maxX + PLAYER_RADIUS;
+		else if (normal.y < 0) this.player.position.y = minY - PLAYER_HEIGHT;
+		else this.player.position.y = maxY;
+
+		const impactSpeed = Math.abs(this.velocity.dot(normal));
+		if (this.isTargetStampSurface(normal) && this.velocity.length() > 2.8) {
+			this.finishStampRebound(normal, 0.66, this.velocity.length());
+		} else {
+			const incomingSpeed = this.velocity.dot(normal);
+			if (incomingSpeed < 0) this.velocity.addScaledVector(normal, -1.68 * incomingSpeed);
+			this.joltRagdoll(0.9 + impactSpeed * 0.06);
+			this.squash = Math.max(this.squash, 0.36);
+		}
+		return true;
+	}
+
 	private updateDoor(delta: number) {
 		const target = this.doorOpen ? 1 : 0;
 		this.doorOpenAmount = this.reducedMotion
@@ -4057,10 +4243,7 @@ export class StampKonijnGame {
 	}
 
 	private shouldEnterUpstairsFromStairs() {
-		return (
-			this.playerLeftRoom === 'stairs' &&
-			this.player.position.y >= UPSTAIRS_FLOOR_Y - 0.08
-		);
+		return this.playerLeftRoom === 'stairs' && this.player.position.y >= UPSTAIRS_FLOOR_Y - 0.08;
 	}
 
 	private getStairFloorHeight() {
@@ -4804,6 +4987,130 @@ export class StampKonijnGame {
 		}
 	}
 
+	private tryHitPoopieMonster(projectile: WeaponProjectile) {
+		if (
+			projectile.kind !== 'poop' ||
+			!this.playerInSewer ||
+			this.poopieMonsterState !== 'neutral'
+		) {
+			return false;
+		}
+
+		const position = projectile.mesh.position;
+		if (
+			Math.abs(position.x - POOPIE_MONSTER_X) > POOPIE_MONSTER_RADIUS + 0.15 ||
+			position.y < SEWER_FLOOR_Y ||
+			position.y > SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT ||
+			Math.abs(position.z - SEWER_CENTER_Z) > 0.95
+		) {
+			return false;
+		}
+
+		this.hitPoopieMonster('poop');
+		return true;
+	}
+
+	private hitPoopieMonster(hitKind: 'bullet' | 'poop') {
+		if (this.poopieMonsterState !== 'neutral') return;
+		this.poopieMonsterHitFlash = 0.2;
+		this.cameraShake = Math.max(this.cameraShake, hitKind === 'bullet' ? 0.25 : 0.14);
+
+		if (hitKind === 'bullet') {
+			this.poopieMonsterHealth -= 1;
+			this.playBulletImpact();
+			if (this.poopieMonsterHealth <= 0) {
+				this.poopieMonsterState = 'dead';
+				this.callbacks.onFeedback('POOPIEMONSTER NEER!');
+			} else {
+				this.callbacks.onFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
+			}
+			return;
+		}
+
+		this.poopieMonsterPoopHits += 1;
+		if (this.poopieMonsterPoopHits >= POOPIE_MONSTER_POOP_HITS) {
+			this.poopieMonsterState = 'friend';
+			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = true;
+			this.callbacks.onFeedback('POOPIEMONSTER IS JE VRIEND! ♥');
+		} else {
+			this.callbacks.onFeedback(
+				`POOPIEMONSTER: MMM... NOG ${POOPIE_MONSTER_POOP_HITS - this.poopieMonsterPoopHits} KEUTELS!`
+			);
+		}
+	}
+
+	private updatePoopieMonster(delta: number) {
+		this.poopieMonsterTime += delta;
+		this.poopieMonsterHitFlash = Math.max(0, this.poopieMonsterHitFlash - delta);
+		const flash = this.poopieMonsterHitFlash / 0.2;
+		for (const [index, poopieMaterial] of this.poopieMonsterMaterials.entries()) {
+			poopieMaterial.emissive.setHex(flash > 0 ? 0x8a2112 : index === 0 ? 0x140906 : 0x120806);
+			poopieMaterial.emissiveIntensity = 0.08 + flash * 1.35;
+		}
+
+		const response = 1 - Math.exp(-7 * delta);
+		if (this.poopieMonsterState === 'dead') {
+			this.poopieMonsterPose.rotation.z = THREE.MathUtils.lerp(
+				this.poopieMonsterPose.rotation.z,
+				-Math.PI / 2,
+				response
+			);
+			this.poopieMonsterPose.position.y = THREE.MathUtils.lerp(
+				this.poopieMonsterPose.position.y,
+				0.28,
+				response
+			);
+			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = false;
+			return;
+		}
+
+		const friendly = this.poopieMonsterState === 'friend';
+		const motion = this.reducedMotion ? 0 : 1;
+		this.poopieMonsterPose.position.y =
+			(friendly
+				? Math.abs(Math.sin(this.poopieMonsterTime * 3.1)) * 0.07
+				: Math.sin(this.poopieMonsterTime * 1.7) * 0.025) * motion;
+		this.poopieMonsterPose.rotation.z =
+			Math.sin(this.poopieMonsterTime * (friendly ? 3.1 : 1.5)) *
+			(friendly ? 0.07 : 0.025) *
+			motion;
+		const armWave =
+			Math.sin(this.poopieMonsterTime * (friendly ? 6.2 : 2.4)) * (friendly ? 0.34 : 0.07) * motion;
+		if (this.poopieMonsterArms[0]) this.poopieMonsterArms[0].rotation.z = 0.82 + armWave;
+		if (this.poopieMonsterArms[1]) this.poopieMonsterArms[1].rotation.z = -0.82 - armWave;
+
+		if (this.poopieMonsterHeart) {
+			this.poopieMonsterHeart.visible = friendly;
+			this.poopieMonsterHeart.position.y =
+				3.58 + Math.sin(this.poopieMonsterTime * 3.8) * 0.1 * motion;
+			const pulse = 0.55 * (1 + Math.sin(this.poopieMonsterTime * 4.8) * 0.08 * motion);
+			this.poopieMonsterHeart.scale.setScalar(pulse);
+		}
+	}
+
+	private resetPoopieMonster() {
+		this.poopieMonsterState = 'neutral';
+		this.poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
+		this.poopieMonsterPoopHits = 0;
+		this.poopieMonsterTime = 0;
+		this.poopieMonsterHitFlash = 0;
+		this.poopieMonsterRoot.position.set(POOPIE_MONSTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
+		this.poopieMonsterPose.position.set(0, 0, 0);
+		this.poopieMonsterPose.rotation.set(0, 0, 0);
+		this.poopieMonsterPose.scale.setScalar(1);
+		if (this.poopieMonsterArms[0]) this.poopieMonsterArms[0].rotation.z = 0.82;
+		if (this.poopieMonsterArms[1]) this.poopieMonsterArms[1].rotation.z = -0.82;
+		if (this.poopieMonsterHeart) {
+			this.poopieMonsterHeart.visible = false;
+			this.poopieMonsterHeart.position.set(0, 3.58, 0.58);
+			this.poopieMonsterHeart.scale.setScalar(0.55);
+		}
+		for (const [index, poopieMaterial] of this.poopieMonsterMaterials.entries()) {
+			poopieMaterial.emissive.setHex(index === 0 ? 0x140906 : 0x120806);
+			poopieMaterial.emissiveIntensity = 0.08;
+		}
+	}
+
 	private firePistol() {
 		const origin = this.pistolMuzzle
 			? this.pistolMuzzle.getWorldPosition(new THREE.Vector3())
@@ -4840,7 +5147,16 @@ export class StampKonijnGame {
 		const probeDistance = barrelLength + BULLET_HALF_LENGTH * 2;
 		const immediateSurfaceHit = this.findSurfaceHit(probeOrigin, direction, probeDistance);
 		const immediateObjectHit = this.findBreakableHit(probeOrigin, direction, probeDistance);
+		const immediateMonsterHit = this.findPoopieMonsterHit(probeOrigin, direction, probeDistance);
 		if (
+			immediateMonsterHit &&
+			(!immediateSurfaceHit || immediateMonsterHit.distance < immediateSurfaceHit.distance) &&
+			(!immediateObjectHit || immediateMonsterHit.distance < immediateObjectHit.distance)
+		) {
+			bullet.geometry.dispose();
+			bullet.material.dispose();
+			this.hitPoopieMonster('bullet');
+		} else if (
 			immediateObjectHit &&
 			(!immediateSurfaceHit || immediateObjectHit.distance < immediateSurfaceHit.distance)
 		) {
@@ -5125,6 +5441,26 @@ export class StampKonijnGame {
 		return nearest;
 	}
 
+	private findPoopieMonsterHit(origin: THREE.Vector3, direction: THREE.Vector3, distance: number) {
+		if (!this.playerInSewer || this.poopieMonsterState !== 'neutral') return null;
+		const hitBox = new THREE.Box3(
+			new THREE.Vector3(
+				POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS,
+				SEWER_FLOOR_Y,
+				SEWER_CENTER_Z - 0.95
+			),
+			new THREE.Vector3(
+				POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS,
+				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT,
+				SEWER_CENTER_Z + 0.95
+			)
+		);
+		const point = new THREE.Ray(origin, direction).intersectBox(hitBox, new THREE.Vector3());
+		if (!point) return null;
+		const hitDistance = origin.distanceTo(point);
+		return hitDistance <= distance ? { point, distance: hitDistance } : null;
+	}
+
 	private breakContacts(extraReach: number) {
 		for (const breakable of this.breakables) {
 			if (
@@ -5355,7 +5691,21 @@ export class StampKonijnGame {
 					const collisionDistance = travelDistance + BULLET_HALF_LENGTH * 2;
 					const surfaceHit = this.findSurfaceHit(rayOrigin, direction, collisionDistance);
 					const objectHit = this.findBreakableHit(rayOrigin, direction, collisionDistance);
-					if (objectHit && (!surfaceHit || objectHit.distance < surfaceHit.distance)) {
+					const monsterHit = this.findPoopieMonsterHit(rayOrigin, direction, collisionDistance);
+					if (
+						monsterHit &&
+						(!surfaceHit || monsterHit.distance < surfaceHit.distance) &&
+						(!objectHit || monsterHit.distance < objectHit.distance)
+					) {
+						this.hitPoopieMonster('bullet');
+						this.removeWeaponProjectile(index);
+						continue;
+					}
+					if (
+						objectHit &&
+						(!surfaceHit || objectHit.distance < surfaceHit.distance) &&
+						(!monsterHit || objectHit.distance < monsterHit.distance)
+					) {
 						this.damageBreakable(objectHit.breakable, 'bullet');
 						this.removeWeaponProjectile(index);
 						continue;
@@ -5374,6 +5724,10 @@ export class StampKonijnGame {
 				projectile.mesh.rotation.x += delta * 5.4;
 				projectile.mesh.rotation.z += delta * 3.7;
 				if (this.tryCatchPoopInToilet(projectile)) {
+					this.removeWeaponProjectile(index);
+					continue;
+				}
+				if (this.tryHitPoopieMonster(projectile)) {
 					this.removeWeaponProjectile(index);
 					continue;
 				}
@@ -6009,6 +6363,7 @@ export class StampKonijnGame {
 		this.toiletSinking = false;
 		this.toiletSinkAmount = 0;
 		this.toiletPoopCount = 0;
+		this.resetPoopieMonster();
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
 		this.poolWaveEnergy = 0;
