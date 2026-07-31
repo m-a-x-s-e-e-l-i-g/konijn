@@ -248,6 +248,13 @@ const POOL_WATER_Y = 0.62;
 const POOL_BOTTOM_Y = 0.09;
 const POOL_WATER_RADIUS = 1.86;
 const POOL_ENTRY_RADIUS = 1.56;
+const SWIM_SAMPLE_PATHS = [
+	'/audio/pool/swim-1.ogg',
+	'/audio/pool/swim-2.ogg',
+	'/audio/pool/swim-3.ogg',
+	'/audio/pool/swim-4.ogg'
+] as const;
+const SWIM_SAMPLE_DURATIONS = [0.97, 1.32, 1.96, 0.93] as const;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
@@ -452,6 +459,8 @@ export class StampKonijnGame {
 	private poolWaveEnergy = 0;
 	private rabbitInPoolWater = false;
 	private poolSplashCooldown = 0;
+	private swimSoundCooldown = 0;
+	private lastSwimSampleIndex = -1;
 	private toiletFillRoot = new THREE.Group();
 	private toiletPoopCount = 0;
 	private toiletSinking = false;
@@ -516,6 +525,7 @@ export class StampKonijnGame {
 	private pistolSample: HTMLAudioElement;
 	private g36Sample: HTMLAudioElement;
 	private weaponChangeSample: HTMLAudioElement;
+	private swimSamples: HTMLAudioElement[];
 	private bulletImpactSamples: Record<BulletImpactMaterial, HTMLAudioElement[]>;
 	private vaseBreakSample: HTMLAudioElement;
 	private chairBreakSample: HTMLAudioElement;
@@ -547,6 +557,11 @@ export class StampKonijnGame {
 		this.g36Sample.preload = 'auto';
 		this.weaponChangeSample = new Audio('/audio/weapons/change.ogg');
 		this.weaponChangeSample.preload = 'auto';
+		this.swimSamples = SWIM_SAMPLE_PATHS.map((path) => {
+			const sample = new Audio(path);
+			sample.preload = 'auto';
+			return sample;
+		});
 		this.bulletImpactSamples = {} as Record<BulletImpactMaterial, HTMLAudioElement[]>;
 		for (const [kind, paths] of Object.entries(BULLET_IMPACT_SAMPLE_PATHS) as Array<
 			[BulletImpactMaterial, readonly string[]]
@@ -3740,6 +3755,7 @@ export class StampKonijnGame {
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
 		this.poolSplashCooldown = Math.max(0, this.poolSplashCooldown - delta);
+		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
 		for (let index = 0; index < this.upstairsLights.length; index += 1) {
 			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
 			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
@@ -4891,6 +4907,7 @@ export class StampKonijnGame {
 		this.velocity.z *= horizontalDrag;
 		this.velocity.y *= Math.exp(-(0.45 + submersion * 0.7) * delta);
 		this.velocity.y += submersion * 3.8 * delta;
+		this.playSwimmingSound(submersion);
 		return true;
 	}
 
@@ -6604,6 +6621,8 @@ export class StampKonijnGame {
 		this.g36Pickup.visible = false;
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
+		this.swimSoundCooldown = 0;
+		this.lastSwimSampleIndex = -1;
 		this.poolWaveEnergy = 0;
 		this.toiletHole.visible = false;
 		this.kitchenHatchHole.visible = false;
@@ -7009,6 +7028,29 @@ export class StampKonijnGame {
 		oscillator.connect(gain).connect(audio.destination);
 		oscillator.start(now);
 		oscillator.stop(now + duration);
+	}
+
+	private playSwimmingSound(submersion: number) {
+		if (this.muted || this.swimSoundCooldown > 0) return;
+		const movementSpeed = Math.hypot(this.velocity.x, this.velocity.z, this.velocity.y * 0.35);
+		if (movementSpeed < 0.65) return;
+
+		let index = Math.floor(Math.random() * this.swimSamples.length);
+		if (index === this.lastSwimSampleIndex) {
+			index =
+				(index + 1 + Math.floor(Math.random() * (this.swimSamples.length - 1))) %
+				this.swimSamples.length;
+		}
+		this.lastSwimSampleIndex = index;
+		this.swimSoundCooldown = SWIM_SAMPLE_DURATIONS[index] * (0.78 + Math.random() * 0.16);
+
+		const sample = this.swimSamples[index].cloneNode(true) as HTMLAudioElement;
+		const movementVolume = THREE.MathUtils.clamp(0.22 + movementSpeed * 0.045, 0.24, 0.5);
+		sample.volume = movementVolume * THREE.MathUtils.lerp(0.62, 1, submersion);
+		const cleanup = () => this.activeSamples.delete(sample);
+		sample.addEventListener('ended', cleanup, { once: true });
+		this.activeSamples.add(sample);
+		void sample.play().catch(cleanup);
 	}
 
 	private playWaterSplash(impactSpeed: number) {
