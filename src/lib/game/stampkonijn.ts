@@ -5,6 +5,15 @@ export type GamePhase = 'idle' | 'playing' | 'finished';
 export type WeaponName = 'poop' | 'pistol' | 'g36';
 type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
 type StampSurfaceKind = 'floor' | 'wall';
+type BulletImpactMaterial =
+	| 'land'
+	| 'metal'
+	| 'water'
+	| 'wood'
+	| 'body'
+	| 'concrete'
+	| 'glass'
+	| 'grass';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
 type BiomeName = 'ground' | 'basement' | 'sewer';
 type PoopieMonsterState = 'neutral' | 'dead' | 'friend';
@@ -263,6 +272,30 @@ const WEAPON_COOLDOWNS: Record<WeaponName, number> = {
 	pistol: 0.25,
 	g36: 0.095
 };
+const BULLET_IMPACT_SAMPLE_PATHS: Record<BulletImpactMaterial, readonly string[]> = {
+	land: ['/audio/impacts/land-1.ogg', '/audio/impacts/land-2.ogg', '/audio/impacts/land-3.ogg'],
+	metal: ['/audio/impacts/metal-1.ogg', '/audio/impacts/metal-2.ogg', '/audio/impacts/metal-3.ogg'],
+	water: ['/audio/impacts/water-1.ogg', '/audio/impacts/water-2.ogg', '/audio/impacts/water-3.ogg'],
+	wood: ['/audio/impacts/wood-1.ogg', '/audio/impacts/wood-2.ogg', '/audio/impacts/wood-3.ogg'],
+	body: ['/audio/impacts/body-1.ogg', '/audio/impacts/body-2.ogg', '/audio/impacts/body-3.ogg'],
+	concrete: [
+		'/audio/impacts/concrete-1.ogg',
+		'/audio/impacts/concrete-2.ogg',
+		'/audio/impacts/concrete-3.ogg'
+	],
+	glass: ['/audio/impacts/glass-1.ogg', '/audio/impacts/glass-2.ogg', '/audio/impacts/glass-3.ogg'],
+	grass: ['/audio/impacts/grass-1.ogg', '/audio/impacts/grass-2.ogg', '/audio/impacts/grass-3.ogg']
+};
+const BULLET_IMPACT_VOLUMES: Record<BulletImpactMaterial, number> = {
+	land: 0.48,
+	metal: 0.5,
+	water: 0.58,
+	wood: 0.52,
+	body: 0.56,
+	concrete: 0.5,
+	glass: 0.54,
+	grass: 0.48
+};
 
 const COLORS = {
 	wall: 0xd7decf,
@@ -369,6 +402,7 @@ export class StampKonijnGame {
 	private pointerActive = false;
 	private stampSurfaceKinds = new Map<THREE.Object3D, StampSurfaceKind>();
 	private bulletImpactSurfaces: THREE.Object3D[] = [];
+	private bulletImpactSurfaceMaterials = new Map<THREE.Object3D, BulletImpactMaterial>();
 	private stampDirection = new THREE.Vector3(0, -1, 0);
 	private stampTargetNormal = new THREE.Vector3(0, 1, 0);
 	private stampTargetKind: StampSurfaceKind = 'floor';
@@ -481,6 +515,7 @@ export class StampKonijnGame {
 	private fartSample: HTMLAudioElement;
 	private pistolSample: HTMLAudioElement;
 	private g36Sample: HTMLAudioElement;
+	private bulletImpactSamples: Record<BulletImpactMaterial, HTMLAudioElement[]>;
 	private vaseBreakSample: HTMLAudioElement;
 	private chairBreakSample: HTMLAudioElement;
 	private activeSamples = new Set<HTMLAudioElement>();
@@ -509,6 +544,16 @@ export class StampKonijnGame {
 		this.pistolSample.preload = 'auto';
 		this.g36Sample = new Audio('/audio/weapons/g36.ogg');
 		this.g36Sample.preload = 'auto';
+		this.bulletImpactSamples = {} as Record<BulletImpactMaterial, HTMLAudioElement[]>;
+		for (const [kind, paths] of Object.entries(BULLET_IMPACT_SAMPLE_PATHS) as Array<
+			[BulletImpactMaterial, readonly string[]]
+		>) {
+			this.bulletImpactSamples[kind] = paths.map((path) => {
+				const sample = new Audio(path);
+				sample.preload = 'auto';
+				return sample;
+			});
+		}
 		this.vaseBreakSample = new Audio('/audio/vase-break.ogg');
 		this.vaseBreakSample.preload = 'auto';
 		this.chairBreakSample = new Audio('/audio/chair-break.ogg');
@@ -752,6 +797,7 @@ export class StampKonijnGame {
 		floor.receiveShadow = true;
 		this.scene.add(floor);
 		this.bulletImpactSurfaces.push(floor);
+		this.bulletImpactSurfaceMaterials.set(floor, 'wood');
 		this.stampSurfaceKinds.set(floor, 'floor');
 
 		const rug = shadowMesh(new THREE.CircleGeometry(2.8, 64), material(COLORS.rug, 0.95));
@@ -921,6 +967,7 @@ export class StampKonijnGame {
 			floor.receiveShadow = true;
 			this.leftRoomInteriorRoots.get(room.room)?.add(floor);
 			this.bulletImpactSurfaces.push(floor);
+			this.bulletImpactSurfaceMaterials.set(floor, room.room === 'bathroom' ? 'concrete' : 'wood');
 			this.stampSurfaceKinds.set(floor, 'floor');
 		}
 
@@ -1037,6 +1084,8 @@ export class StampKonijnGame {
 			);
 			staircase.add(tread, riser);
 			this.bulletImpactSurfaces.push(tread, riser);
+			this.bulletImpactSurfaceMaterials.set(tread, 'wood');
+			this.bulletImpactSurfaceMaterials.set(riser, 'wood');
 			this.stampSurfaceKinds.set(tread, 'floor');
 			this.stampSurfaceKinds.set(riser, 'wall');
 		}
@@ -1097,6 +1146,7 @@ export class StampKonijnGame {
 		floor.receiveShadow = true;
 		this.upstairsRoot.add(floor);
 		this.bulletImpactSurfaces.push(floor);
+		this.bulletImpactSurfaceMaterials.set(floor, 'metal');
 		this.stampSurfaceKinds.set(floor, 'floor');
 
 		for (let x = UPSTAIRS_MIN_X + 0.9; x < UPSTAIRS_MAX_X; x += 0.9) {
@@ -1203,6 +1253,7 @@ export class StampKonijnGame {
 		basementFloor.receiveShadow = true;
 		this.basementRoot.add(basementFloor);
 		this.bulletImpactSurfaces.push(basementFloor);
+		this.bulletImpactSurfaceMaterials.set(basementFloor, 'land');
 		this.stampSurfaceKinds.set(basementFloor, 'floor');
 
 		const basementHeight = Math.abs(BASEMENT_FLOOR_Y) + 0.1;
@@ -1226,6 +1277,7 @@ export class StampKonijnGame {
 		for (const wall of basementWalls) {
 			this.basementRoot.add(wall);
 			this.bulletImpactSurfaces.push(wall);
+			this.bulletImpactSurfaceMaterials.set(wall, 'land');
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
 		this.createBasementStairs();
@@ -1348,6 +1400,8 @@ export class StampKonijnGame {
 			);
 			this.basementRoot.add(tread, riser);
 			this.bulletImpactSurfaces.push(tread, riser);
+			this.bulletImpactSurfaceMaterials.set(tread, 'wood');
+			this.bulletImpactSurfaceMaterials.set(riser, 'wood');
 			this.stampSurfaceKinds.set(tread, 'floor');
 			this.stampSurfaceKinds.set(riser, 'wall');
 		}
@@ -1939,6 +1993,7 @@ export class StampKonijnGame {
 		);
 		this.lockedBackDoorLeafRoot.add(leaf);
 		this.bulletImpactSurfaces.push(leaf);
+		this.bulletImpactSurfaceMaterials.set(leaf, 'wood');
 		const lockwork = new THREE.Group();
 		this.lockedBackDoorLeafRoot.add(lockwork);
 
@@ -2022,6 +2077,7 @@ export class StampKonijnGame {
 		lawn.receiveShadow = true;
 		this.scene.add(lawn);
 		this.bulletImpactSurfaces.push(lawn);
+		this.bulletImpactSurfaceMaterials.set(lawn, 'grass');
 		this.stampSurfaceKinds.set(lawn, 'floor');
 
 		const patio = shadowMesh(new THREE.CircleGeometry(3.4, 36), material(0xc9b89c, 0.94));
@@ -2062,6 +2118,7 @@ export class StampKonijnGame {
 		for (const hedge of [leftHedge, rightHedge, backHedge]) {
 			this.scene.add(hedge);
 			this.bulletImpactSurfaces.push(hedge);
+			this.bulletImpactSurfaceMaterials.set(hedge, 'grass');
 			this.stampSurfaceKinds.set(hedge, 'wall');
 		}
 
@@ -4544,6 +4601,7 @@ export class StampKonijnGame {
 		for (const surface of door.surfaces) {
 			if (enabled) {
 				this.stampSurfaceKinds.set(surface, 'wall');
+				this.bulletImpactSurfaceMaterials.set(surface, 'wood');
 				if (!this.bulletImpactSurfaces.includes(surface)) this.bulletImpactSurfaces.push(surface);
 			} else {
 				this.stampSurfaceKinds.delete(surface);
@@ -4617,6 +4675,7 @@ export class StampKonijnGame {
 		for (const surface of this.doorStampSurfaces) {
 			if (enabled) {
 				this.stampSurfaceKinds.set(surface, 'wall');
+				this.bulletImpactSurfaceMaterials.set(surface, 'wood');
 				if (!this.bulletImpactSurfaces.includes(surface)) this.bulletImpactSurfaces.push(surface);
 			} else {
 				this.stampSurfaceKinds.delete(surface);
@@ -4679,6 +4738,7 @@ export class StampKonijnGame {
 		for (const surface of this.windowStampSurfaces) {
 			if (enabled) {
 				this.stampSurfaceKinds.set(surface, 'wall');
+				this.bulletImpactSurfaceMaterials.set(surface, 'glass');
 				if (!this.bulletImpactSurfaces.includes(surface)) this.bulletImpactSurfaces.push(surface);
 			} else {
 				this.stampSurfaceKinds.delete(surface);
@@ -5140,7 +5200,7 @@ export class StampKonijnGame {
 
 		if (hitKind === 'bullet') {
 			this.poopieMonsterHealth -= 1;
-			this.playBulletImpact();
+			this.playBulletImpact('body');
 			if (this.poopieMonsterHealth <= 0) {
 				this.poopieMonsterState = 'dead';
 				this.callbacks.onFeedback('POOPIEMONSTER NEER!');
@@ -5287,12 +5347,21 @@ export class StampKonijnGame {
 		) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
+			this.playBulletImpact(
+				this.getBreakableBulletImpactMaterial(
+					immediateObjectHit.breakable,
+					immediateObjectHit.point,
+					direction
+				)
+			);
 			this.damageBreakable(immediateObjectHit.breakable, 'bullet');
 		} else if (immediateSurfaceHit) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
 			this.spawnBulletHole(immediateSurfaceHit.point, immediateSurfaceHit.normal);
-			this.playBulletImpact();
+			this.playBulletImpact(
+				this.bulletImpactSurfaceMaterials.get(immediateSurfaceHit.object) ?? 'concrete'
+			);
 		} else {
 			this.scene.add(bullet);
 			this.weaponProjectiles.push({
@@ -5541,7 +5610,36 @@ export class StampKonijnGame {
 			.clone()
 			.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld))
 			.normalize();
-		return { point: hit.point.clone(), normal, distance: hit.distance };
+		return { point: hit.point.clone(), normal, distance: hit.distance, object: hit.object };
+	}
+
+	private getBreakableBulletImpactMaterial(
+		breakable: Breakable,
+		point: THREE.Vector3,
+		direction: THREE.Vector3
+	): BulletImpactMaterial {
+		if (
+			breakable === this.poolBreakable &&
+			direction.y < -0.15 &&
+			Math.hypot(point.x - breakable.group.position.x, point.z - breakable.group.position.z) <=
+				POOL_WATER_RADIUS + 0.12
+		) {
+			return 'water';
+		}
+
+		switch (breakable.material) {
+			case 'ceramic':
+				return 'glass';
+			case 'wood':
+				return 'wood';
+			case 'metal':
+			case 'electronics':
+				return 'metal';
+			case 'plant':
+				return 'grass';
+			case 'canvas':
+				return 'land';
+		}
 	}
 
 	private findBreakableHit(origin: THREE.Vector3, direction: THREE.Vector3, distance: number) {
@@ -5617,7 +5715,6 @@ export class StampKonijnGame {
 		if (breakable.broken) return;
 		if (breakable === this.kitchenHatchBreakable) {
 			if (source === 'bullet') {
-				this.playBulletImpact();
 				this.callbacks.onFeedback('DIT LUIK MOET JE STAMPEN!');
 				return;
 			}
@@ -5644,7 +5741,6 @@ export class StampKonijnGame {
 				this.pendingStampFeedback = 'DE WC WIL KEUTELS!';
 				this.cameraShake = Math.max(this.cameraShake, 0.35);
 			} else {
-				this.playBulletImpact();
 				this.callbacks.onFeedback('NIET SCHIETEN. SCHIJTEN!');
 			}
 			return;
@@ -5655,7 +5751,6 @@ export class StampKonijnGame {
 		}
 
 		if (source === 'bullet') {
-			this.playBulletImpact();
 			this.callbacks.onFeedback(`${breakable.label} MOET JE STAMPEN!`);
 			return;
 		}
@@ -5835,13 +5930,18 @@ export class StampKonijnGame {
 						(!surfaceHit || objectHit.distance < surfaceHit.distance) &&
 						(!monsterHit || objectHit.distance < monsterHit.distance)
 					) {
+						this.playBulletImpact(
+							this.getBreakableBulletImpactMaterial(objectHit.breakable, objectHit.point, direction)
+						);
 						this.damageBreakable(objectHit.breakable, 'bullet');
 						this.removeWeaponProjectile(index);
 						continue;
 					}
 					if (surfaceHit) {
 						this.spawnBulletHole(surfaceHit.point, surfaceHit.normal);
-						this.playBulletImpact();
+						this.playBulletImpact(
+							this.bulletImpactSurfaceMaterials.get(surfaceHit.object) ?? 'concrete'
+						);
 						this.removeWeaponProjectile(index);
 						continue;
 					}
@@ -6729,45 +6829,16 @@ export class StampKonijnGame {
 		void sample.play().catch(cleanup);
 	}
 
-	private playBulletImpact() {
+	private playBulletImpact(kind: BulletImpactMaterial) {
 		if (this.muted) return;
-		this.ensureAudio();
-		const audio = this.audioContext;
-		if (!audio) return;
-
-		const now = audio.currentTime;
-		const duration = 0.055;
-		const sampleCount = Math.max(1, Math.floor(audio.sampleRate * duration));
-		const buffer = audio.createBuffer(1, sampleCount, audio.sampleRate);
-		const data = buffer.getChannelData(0);
-		for (let index = 0; index < sampleCount; index += 1) {
-			const envelope = 1 - index / sampleCount;
-			data[index] = (Math.random() * 2 - 1) * envelope * envelope;
-		}
-
-		const noise = audio.createBufferSource();
-		const filter = audio.createBiquadFilter();
-		const gain = audio.createGain();
-		noise.buffer = buffer;
-		noise.playbackRate.value = 0.92 + Math.random() * 0.18;
-		filter.type = 'highpass';
-		filter.frequency.value = 850 + Math.random() * 350;
-		gain.gain.setValueAtTime(0.065, now);
-		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		noise.connect(filter).connect(gain).connect(audio.destination);
-		noise.start(now);
-		noise.stop(now + duration);
-
-		const click = audio.createOscillator();
-		const clickGain = audio.createGain();
-		click.type = 'square';
-		click.frequency.setValueAtTime(950 + Math.random() * 260, now);
-		click.frequency.exponentialRampToValueAtTime(220, now + 0.04);
-		clickGain.gain.setValueAtTime(0.025, now);
-		clickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
-		click.connect(clickGain).connect(audio.destination);
-		click.start(now);
-		click.stop(now + 0.04);
+		const options = this.bulletImpactSamples[kind];
+		const source = options[Math.floor(Math.random() * options.length)];
+		const sample = source.cloneNode(true) as HTMLAudioElement;
+		sample.volume = BULLET_IMPACT_VOLUMES[kind];
+		const cleanup = () => this.activeSamples.delete(sample);
+		sample.addEventListener('ended', cleanup, { once: true });
+		this.activeSamples.add(sample);
+		void sample.play().catch(cleanup);
 	}
 
 	private playImpactSample(power: number) {
