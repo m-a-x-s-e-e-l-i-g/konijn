@@ -194,9 +194,10 @@ const STAIR_TURN_STEP_ONE_Z = -0.2;
 const STAIR_TURN_STEP_TWO_Z = -0.7;
 const UPSTAIRS_FLOOR_Y = ROOM_HEIGHT;
 const UPSTAIRS_MIN_X = LEFT_ROOMS_MIN_X;
-const UPSTAIRS_MAX_X = LEFT_ROOMS_MAX_X;
+const UPSTAIRS_MAX_X = KITCHEN_MAX_X;
 const UPSTAIRS_CENTER_X = (UPSTAIRS_MIN_X + UPSTAIRS_MAX_X) / 2;
 const UPSTAIRS_STAIRWELL_X = -12.25;
+const UPSTAIRS_LIGHT_INTENSITIES = [13, 9, 7];
 const GARDEN_WIDTH = 28;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
@@ -369,6 +370,8 @@ export class StampKonijnGame {
 	private playerInBasement = false;
 	private playerInSewer = false;
 	private playerUpstairs = false;
+	private upstairsRoot = new THREE.Group();
+	private upstairsBreakables: Breakable[] = [];
 	private toiletHole = new THREE.Group();
 	private kitchenHatchBreakable: Breakable | null = null;
 	private kitchenHatchDamage = new THREE.Group();
@@ -376,6 +379,7 @@ export class StampKonijnGame {
 	private kitchenHatchHole = new THREE.Group();
 	private basementEntryCooldown = 0;
 	private basementLights: THREE.PointLight[] = [];
+	private upstairsLights: THREE.PointLight[] = [];
 	private sewerLight = new THREE.PointLight(0xb7cb74, 0, 40, 2);
 	private sewerObstacles: SewerObstacle[] = [];
 	private debris: DebrisPiece[] = [];
@@ -454,6 +458,7 @@ export class StampKonijnGame {
 			this.createRoom();
 			this.scene.add(this.breakablesRoot);
 			this.createBreakables();
+			this.syncUpstairsVisibility();
 			this.syncBiomeState(true);
 			await this.loadRabbit();
 
@@ -991,21 +996,22 @@ export class StampKonijnGame {
 	}
 
 	private createUpstairs() {
+		this.upstairsRoot.visible = false;
+		this.scene.add(this.upstairsRoot);
 		const upstairsWidth = UPSTAIRS_MAX_X - UPSTAIRS_MIN_X;
 		const floor = shadowMesh(
-			new THREE.PlaneGeometry(upstairsWidth, ROOM_DEPTH),
-			material(0x8d684f, 0.96)
+			new THREE.BoxGeometry(upstairsWidth, 0.08, ROOM_DEPTH),
+			material(0x30342f, 0.9)
 		);
-		floor.rotation.x = -Math.PI / 2;
-		floor.position.set(UPSTAIRS_CENTER_X, UPSTAIRS_FLOOR_Y, 0);
+		floor.position.set(UPSTAIRS_CENTER_X, UPSTAIRS_FLOOR_Y - 0.02, 0);
 		floor.receiveShadow = true;
-		this.scene.add(floor);
+		this.upstairsRoot.add(floor);
 		this.bulletImpactSurfaces.push(floor);
 		this.stampSurfaceKinds.set(floor, 'floor');
 
 		for (let x = UPSTAIRS_MIN_X + 0.9; x < UPSTAIRS_MAX_X; x += 0.9) {
-			this.scene.add(
-				box([0.025, 0.012, ROOM_DEPTH - 0.24], [x, UPSTAIRS_FLOOR_Y + 0.015, 0], 0x674735)
+			this.upstairsRoot.add(
+				box([0.025, 0.012, ROOM_DEPTH - 0.24], [x, UPSTAIRS_FLOOR_Y + 0.026, 0], 0x20241f)
 			);
 		}
 
@@ -1014,22 +1020,22 @@ export class StampKonijnGame {
 			box(
 				[0.2, upstairsHeight, ROOM_DEPTH],
 				[UPSTAIRS_MIN_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, 0],
-				0xd0bda8
+				0x454942
 			),
 			box(
 				[0.2, upstairsHeight, ROOM_DEPTH],
 				[UPSTAIRS_MAX_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, 0],
-				0xd0bda8
+				0x454942
 			),
 			box(
 				[upstairsWidth, upstairsHeight, 0.2],
 				[UPSTAIRS_CENTER_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, BACK_WALL_Z],
-				0xd8c8b7
+				0x383d38
 			)
 		];
 		for (const wall of walls) {
 			wall.receiveShadow = true;
-			this.scene.add(wall);
+			this.upstairsRoot.add(wall);
 			this.bulletImpactSurfaces.push(wall);
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
@@ -1042,13 +1048,59 @@ export class StampKonijnGame {
 		const landingRail = box(
 			[0.12, 0.92, 1.58],
 			[UPSTAIRS_STAIRWELL_X + 0.94, UPSTAIRS_FLOOR_Y + 0.46, -0.62],
-			0x4d3528
+			0x1c211e
 		);
-		this.scene.add(stairwell, landingRail);
+		const landingRailTop = box(
+			[1.92, 0.1, 0.12],
+			[UPSTAIRS_STAIRWELL_X, UPSTAIRS_FLOOR_Y + 0.92, 0.08],
+			0x1c211e
+		);
+		this.upstairsRoot.add(stairwell, landingRail, landingRailTop);
 
-		const landingLight = new THREE.PointLight(0xffd6a0, 19, 11, 2);
-		landingLight.position.set(-7.8, UPSTAIRS_FLOOR_Y + 3.4, 0.5);
-		this.scene.add(landingLight);
+		for (const x of [-8.6, 0.2, 9]) {
+			const beam = box(
+				[0.08, 0.08, ROOM_DEPTH - 0.5],
+				[x, UPSTAIRS_FLOOR_Y + 4.25, 0],
+				0x171b18
+			);
+			this.upstairsRoot.add(beam);
+		}
+
+		this.createKo9HideoutDecor();
+
+		const monitorGlow = new THREE.PointLight(0x58c8b5, 0, 6.5, 2);
+		monitorGlow.position.set(0.45, UPSTAIRS_FLOOR_Y + 2.2, -1.15);
+		const archiveLight = new THREE.PointLight(0xf0a85c, 0, 5.6, 2);
+		archiveLight.position.set(-7.8, UPSTAIRS_FLOOR_Y + 3.25, -2.15);
+		const armoryLight = new THREE.PointLight(0xe66045, 0, 5.4, 2);
+		armoryLight.position.set(9.2, UPSTAIRS_FLOOR_Y + 3.15, -2.5);
+		this.upstairsLights.push(monitorGlow, archiveLight, armoryLight);
+		this.upstairsRoot.add(...this.upstairsLights);
+	}
+
+	private createKo9HideoutDecor() {
+		const brand = this.makeKo9WallPanel(5.2, 0.82, 'brand');
+		brand.position.set(0.3, UPSTAIRS_FLOOR_Y + 3.82, BACK_WALL_Z + 0.12);
+		this.upstairsRoot.add(brand);
+
+		const targets = this.makeKo9WallPanel(3.9, 2.05, 'targets');
+		targets.position.set(-7.1, UPSTAIRS_FLOOR_Y + 2.62, BACK_WALL_Z + 0.125);
+		this.upstairsRoot.add(targets);
+
+		const network = this.makeKo9WallPanel(5.2, 2.25, 'network');
+		network.position.set(0.2, UPSTAIRS_FLOOR_Y + 2.45, BACK_WALL_Z + 0.125);
+		this.upstairsRoot.add(network);
+
+		const restricted = this.makeKo9WallPanel(2.55, 0.8, 'restricted');
+		restricted.position.set(10.7, UPSTAIRS_FLOOR_Y + 3.66, BACK_WALL_Z + 0.125);
+		this.upstairsRoot.add(restricted);
+
+		const cableTray = box(
+			[17.8, 0.1, 0.12],
+			[1.6, UPSTAIRS_FLOOR_Y + 0.36, BACK_WALL_Z + 0.18],
+			0x181c19
+		);
+		this.upstairsRoot.add(cableTray);
 	}
 
 	private createBasement() {
@@ -2021,6 +2073,46 @@ export class StampKonijnGame {
 			'ceramic'
 		);
 		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
+		this.upstairsBreakables.push(this.addBreakable(
+			'KO-9 COMMAND DESK',
+			780,
+			this.makeKo9HackerDesk(),
+			[0.25, UPSTAIRS_FLOOR_Y, -1.45],
+			2.55,
+			2.45,
+			'electronics',
+			2
+		));
+		this.upstairsBreakables.push(this.addBreakable(
+			'GEHEIM ARCHIEF',
+			360,
+			this.makeKo9Archive(),
+			[-10.05, UPSTAIRS_FLOOR_Y, -4.18],
+			1.5,
+			2.52,
+			'metal',
+			2
+		));
+		this.upstairsBreakables.push(this.addBreakable(
+			'WAPENREK',
+			620,
+			this.makeKo9GunRack(),
+			[7.65, UPSTAIRS_FLOOR_Y, -4.72],
+			1.82,
+			2.35,
+			'metal',
+			2
+		));
+		this.upstairsBreakables.push(this.addBreakable(
+			'KO-9 KLUIS',
+			1200,
+			this.makeKo9Safe(),
+			[12.15, UPSTAIRS_FLOOR_Y, -4.08],
+			1.05,
+			2.02,
+			'metal',
+			3
+		));
 		this.addBreakable(
 			'ANTIEKE SPIEGEL',
 			360,
@@ -2197,6 +2289,264 @@ export class StampKonijnGame {
 		group.add(box([1.58, 0.88, 0.06], [0, 1.2, 0.17], 0x83b7c7));
 		group.add(box([0.16, 0.65, 0.16], [0, 0.48, 0], COLORS.ink));
 		group.add(box([1.1, 0.14, 0.58], [0, 0.1, 0], COLORS.ink));
+		return group;
+	}
+
+	private makeKo9WallPanel(
+		width: number,
+		height: number,
+		variant: 'brand' | 'targets' | 'network' | 'restricted'
+	) {
+		const group = new THREE.Group();
+		group.add(box([width, height, 0.08], [0, 0, 0], 0x111513));
+		const canvas = document.createElement('canvas');
+		canvas.width = 1024;
+		canvas.height = Math.max(256, Math.round((height / width) * canvas.width));
+		const context = canvas.getContext('2d');
+		if (context) {
+			const w = canvas.width;
+			const h = canvas.height;
+			context.fillStyle = '#171d1a';
+			context.fillRect(0, 0, w, h);
+			context.strokeStyle = 'rgba(96, 133, 116, 0.16)';
+			context.lineWidth = 2;
+			for (let x = 0; x < w; x += 48) {
+				context.beginPath();
+				context.moveTo(x, 0);
+				context.lineTo(x, h);
+				context.stroke();
+			}
+			for (let y = 0; y < h; y += 48) {
+				context.beginPath();
+				context.moveTo(0, y);
+				context.lineTo(w, y);
+				context.stroke();
+			}
+
+			if (variant === 'brand') {
+				context.fillStyle = '#e87832';
+				context.fillRect(0, 0, 34, h);
+				context.fillStyle = '#f1ead7';
+				context.font = `900 ${Math.round(h * 0.5)}px system-ui, sans-serif`;
+				context.textBaseline = 'middle';
+				context.fillText('KO-9', 76, h * 0.51);
+				context.fillStyle = '#77d2bd';
+				context.font = `800 ${Math.round(h * 0.16)}px system-ui, sans-serif`;
+				context.fillText('// COVERT OPERATIONS', w * 0.48, h * 0.52);
+			} else if (variant === 'restricted') {
+				context.strokeStyle = '#dc5c45';
+				context.lineWidth = 12;
+				context.strokeRect(18, 18, w - 36, h - 36);
+				context.fillStyle = '#dc5c45';
+				context.font = `900 ${Math.round(h * 0.25)}px system-ui, sans-serif`;
+				context.textAlign = 'center';
+				context.fillText('KO-9 ONLY', w / 2, h * 0.45);
+				context.fillStyle = '#eee5d1';
+				context.font = `800 ${Math.round(h * 0.12)}px system-ui, sans-serif`;
+				context.fillText('GEHEIM  //  STAMP CLEARANCE', w / 2, h * 0.69);
+			} else if (variant === 'targets') {
+				context.fillStyle = '#e87832';
+				context.fillRect(0, 0, w, Math.round(h * 0.18));
+				context.fillStyle = '#171d1a';
+				context.font = `900 ${Math.round(h * 0.09)}px system-ui, sans-serif`;
+				context.fillText('TARGET LIST // PRIORITEIT', 38, h * 0.115);
+				const names = ['DE VOSSENBAAS', 'M. HAVIK', 'DE MOL', 'PROF. KRAAI'];
+				for (let index = 0; index < names.length; index += 1) {
+					const y = h * (0.27 + index * 0.17);
+					context.fillStyle = index === 0 ? '#dc5c45' : '#32413a';
+					context.fillRect(35, y - h * 0.055, h * 0.11, h * 0.11);
+					context.fillStyle = '#efe5d0';
+					context.font = `800 ${Math.round(h * 0.052)}px system-ui, sans-serif`;
+					context.fillText(`${String(index + 1).padStart(2, '0')}  ${names[index]}`, h * 0.18, y);
+					context.fillStyle = index < 2 ? '#e87832' : '#76aa99';
+					context.fillRect(w * 0.73, y - 7, w * (0.18 - index * 0.025), 14);
+				}
+			} else {
+				context.fillStyle = '#77d2bd';
+				context.font = `900 ${Math.round(h * 0.07)}px system-ui, sans-serif`;
+				context.fillText('CRIMINAL CONNECTION BOARD', 34, h * 0.1);
+				const nodes = [
+					{ x: 0.18, y: 0.34, name: 'VOS' },
+					{ x: 0.5, y: 0.25, name: 'HAVIK' },
+					{ x: 0.78, y: 0.39, name: 'KRAAI' },
+					{ x: 0.35, y: 0.72, name: 'MOL' },
+					{ x: 0.68, y: 0.73, name: '???' }
+				];
+				context.lineWidth = 8;
+				for (const [from, to] of [
+					[0, 1],
+					[1, 2],
+					[0, 3],
+					[3, 4],
+					[2, 4],
+					[1, 4]
+				] as Array<[number, number]>) {
+					context.strokeStyle = (from + to) % 2 === 0 ? '#dc5c45' : '#e5a34f';
+					context.beginPath();
+					context.moveTo(nodes[from].x * w, nodes[from].y * h);
+					context.lineTo(nodes[to].x * w, nodes[to].y * h);
+					context.stroke();
+				}
+				for (let index = 0; index < nodes.length; index += 1) {
+					const node = nodes[index];
+					const cardW = w * 0.14;
+					const cardH = h * 0.18;
+					context.fillStyle = index === 4 ? '#49362f' : '#d8cfb9';
+					context.fillRect(node.x * w - cardW / 2, node.y * h - cardH / 2, cardW, cardH);
+					context.fillStyle = '#222824';
+					context.beginPath();
+					context.arc(node.x * w, node.y * h - cardH * 0.08, cardH * 0.18, 0, Math.PI * 2);
+					context.fill();
+					context.fillStyle = '#171d1a';
+					context.font = `900 ${Math.round(h * 0.035)}px system-ui, sans-serif`;
+					context.textAlign = 'center';
+					context.fillText(node.name, node.x * w, node.y * h + cardH * 0.34);
+				}
+			}
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const face = new THREE.Mesh(
+			new THREE.PlaneGeometry(width - 0.1, height - 0.1),
+			new THREE.MeshBasicMaterial({ map: texture })
+		);
+		face.position.z = 0.045;
+		group.add(face);
+		return group;
+	}
+
+	private makeKo9HackerDesk() {
+		const group = new THREE.Group();
+		const darkMetal = 0x171d1a;
+		group.add(box([4.75, 0.18, 1.35], [0, 0.88, 0], 0x28312c));
+		for (const x of [-2.1, 2.1]) {
+			group.add(box([0.16, 0.86, 1.05], [x, 0.43, 0], darkMetal));
+		}
+		for (let index = 0; index < 3; index += 1) {
+			const monitor = new THREE.Group();
+			monitor.add(box([1.36, 0.88, 0.13], [0, 0, 0], 0x101412));
+			monitor.add(this.makeKo9MonitorFace(1.2, 0.72, index));
+			monitor.add(box([0.08, 0.45, 0.08], [0, -0.62, -0.02], darkMetal));
+			monitor.add(box([0.58, 0.06, 0.42], [0, -0.84, 0], darkMetal));
+			monitor.position.set(-1.48 + index * 1.48, 1.68, -0.28);
+			monitor.rotation.y = (1 - index) * 0.14;
+			group.add(monitor);
+		}
+		group.add(box([1.32, 0.055, 0.43], [0, 1.01, 0.39], 0x111613));
+		for (let row = 0; row < 3; row += 1) {
+			for (let key = 0; key < 10; key += 1) {
+				group.add(
+					box(
+						[0.085, 0.018, 0.065],
+						[-0.43 + key * 0.095, 1.045, 0.28 + row * 0.085],
+						(row + key) % 7 === 0 ? 0xe87832 : 0x6b8276
+					)
+				);
+			}
+		}
+		for (const x of [-1.82, 1.82]) {
+			group.add(box([0.48, 0.74, 0.82], [x, 0.38, -0.04], 0x121815));
+			for (let light = 0; light < 3; light += 1) {
+				group.add(box([0.045, 0.045, 0.02], [x - 0.12 + light * 0.12, 0.58, 0.38], 0x58c8b5));
+			}
+		}
+		return group;
+	}
+
+	private makeKo9MonitorFace(width: number, height: number, index: number) {
+		const canvas = document.createElement('canvas');
+		canvas.width = 512;
+		canvas.height = 320;
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.fillStyle = '#07110d';
+			context.fillRect(0, 0, canvas.width, canvas.height);
+			context.fillStyle = index === 1 ? '#ef8b3b' : '#61d6b8';
+			context.font = '900 28px monospace';
+			context.fillText(index === 1 ? 'KO-9 // LIVE OPS' : 'ROOT@KO-9:~$', 22, 40);
+			context.font = '700 18px monospace';
+			for (let line = 0; line < 9; line += 1) {
+				const offset = (line * 43 + index * 71) % 250;
+				context.globalAlpha = 0.45 + (line % 3) * 0.18;
+				context.fillRect(24, 66 + line * 25, 120 + offset, 8);
+			}
+			context.globalAlpha = 1;
+			context.strokeStyle = '#345c4f';
+			context.lineWidth = 2;
+			context.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const face = new THREE.Mesh(
+			new THREE.PlaneGeometry(width, height),
+			new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })
+		);
+		face.position.z = 0.071;
+		return face;
+	}
+
+	private makeKo9Archive() {
+		const group = new THREE.Group();
+		for (let cabinet = 0; cabinet < 3; cabinet += 1) {
+			const x = -0.88 + cabinet * 0.88;
+			group.add(box([0.8, 2.35, 0.62], [x, 1.175, 0], 0x3f4a43));
+			for (let drawer = 0; drawer < 4; drawer += 1) {
+				const y = 0.36 + drawer * 0.55;
+				group.add(box([0.67, 0.44, 0.035], [x, y, 0.33], 0x556158));
+				group.add(box([0.24, 0.055, 0.035], [x, y, 0.36], 0x171d1a));
+				group.add(box([0.25, 0.11, 0.018], [x, y + 0.11, 0.37], 0xd8cfae));
+			}
+		}
+		group.add(box([2.8, 0.11, 0.78], [0, 2.4, 0], 0x171d1a));
+		return group;
+	}
+
+	private makeKo9GunRack() {
+		const group = new THREE.Group();
+		group.add(box([3.25, 2.2, 0.18], [0, 1.1, 0], 0x232925));
+		for (const x of [-1.38, 1.38]) {
+			group.add(box([0.11, 2.05, 0.2], [x, 1.1, 0.12], 0x111513));
+		}
+		for (let index = 0; index < 3; index += 1) {
+			const weapon = new THREE.Group();
+			weapon.add(box([1.75, 0.1, 0.11], [0.25, 0, 0.18], 0x121614));
+			weapon.add(box([0.8, 0.22, 0.18], [-0.52, -0.04, 0.18], 0x343d37));
+			weapon.add(box([0.42, 0.32, 0.18], [-1.02, -0.05, 0.18], 0x503d2d));
+			const grip = box([0.18, 0.42, 0.16], [-0.25, -0.25, 0.18], 0x1a201d);
+			grip.rotation.z = -0.22;
+			weapon.add(grip);
+			weapon.position.set(0, 1.7 - index * 0.66, 0);
+			weapon.rotation.z = index % 2 === 0 ? -0.07 : 0.08;
+			group.add(weapon);
+		}
+		group.add(box([2.9, 0.09, 0.22], [0, 0.18, 0.18], 0xe87832));
+		return group;
+	}
+
+	private makeKo9Safe() {
+		const group = new THREE.Group();
+		group.add(box([1.72, 1.85, 1.18], [0, 0.925, 0], 0x272e2a));
+		group.add(box([1.48, 1.6, 0.12], [0, 0.98, 0.65], 0x3f4a43));
+		const wheel = cylinder(0.29, 0.29, 0.12, [0, 1.08, 0.76], 0x151a17, 18);
+		wheel.rotation.x = Math.PI / 2;
+		group.add(wheel);
+		for (let index = 0; index < 4; index += 1) {
+			const spoke = box([0.055, 0.72, 0.055], [0, 1.08, 0.84], 0xaab1a7);
+			spoke.rotation.z = (index * Math.PI) / 4;
+			group.add(spoke);
+		}
+		group.add(box([0.34, 0.46, 0.07], [0.48, 1.34, 0.75], 0x101512));
+		for (let row = 0; row < 3; row += 1) {
+			for (let column = 0; column < 3; column += 1) {
+				group.add(
+					box(
+						[0.055, 0.055, 0.02],
+						[0.39 + column * 0.09, 1.22 + row * 0.1, 0.795],
+						(row + column) % 2 === 0 ? 0xe87832 : 0x76b6a4
+					)
+				);
+			}
+		}
 		return group;
 	}
 
@@ -2821,8 +3171,17 @@ export class StampKonijnGame {
 	};
 
 	private updateGame(delta: number) {
+		this.syncUpstairsVisibility();
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
+		for (let index = 0; index < this.upstairsLights.length; index += 1) {
+			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
+			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
+				this.upstairsLights[index].intensity,
+				target,
+				1 - Math.exp(-4.5 * delta)
+			);
+		}
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -2886,6 +3245,13 @@ export class StampKonijnGame {
 		);
 		this.rabbitSquash.position.y = -PLAYER_HEIGHT / 2 + squashEase * 0.03;
 		this.emitHud();
+	}
+
+	private syncUpstairsVisibility() {
+		this.upstairsRoot.visible = this.playerUpstairs;
+		for (const breakable of this.upstairsBreakables) {
+			breakable.group.visible = this.playerUpstairs && !breakable.broken;
+		}
 	}
 
 	private resolveRoomCollisions() {
@@ -5007,7 +5373,7 @@ export class StampKonijnGame {
 			);
 		} else if (this.playerUpstairs) {
 			this.cameraDesiredPosition.set(
-				this.player.position.x * 0.58 + UPSTAIRS_CENTER_X * 0.42,
+				this.player.position.x * 0.74 + UPSTAIRS_CENTER_X * 0.26,
 				UPSTAIRS_FLOOR_Y + 6.1,
 				11.2 + this.player.position.z * 0.06
 			);
@@ -5115,6 +5481,7 @@ export class StampKonijnGame {
 		this.kitchenHatchHole.visible = false;
 		this.kitchenHatchDamage.visible = false;
 		this.syncBiomeState(true);
+		this.syncUpstairsVisibility();
 		for (const poop of [...this.toiletFillRoot.children]) {
 			this.toiletFillRoot.remove(poop);
 			disposeObject(poop);
