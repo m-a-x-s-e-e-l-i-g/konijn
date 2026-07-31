@@ -5261,7 +5261,8 @@ export class StampKonijnGame {
 			this.audio.playBulletImpact('body');
 			if (this.poopieMonsterHealth <= 0) {
 				this.poopieMonsterState = 'dead';
-				this.emitFeedback('POOPIEMONSTER NEER!');
+				this.audio.playPoopieMonsterDeath();
+				this.emitFeedback('POOPIEMONSTER: AUCH!');
 			} else {
 				this.emitFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
 			}
@@ -5269,12 +5270,14 @@ export class StampKonijnGame {
 		}
 
 		this.poopieMonsterPoopHits += 1;
+		this.audio.playPoopieMonsterEat();
 		if (this.poopieMonsterPoopHits >= POOPIE_MONSTER_POOP_HITS) {
 			this.poopieMonsterState = 'friend';
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = true;
-			this.emitFeedback('POOPIEMONSTER: THANKS, YOU CAN PASS. ♥');
+			this.audio.playPoopieMonsterFriend();
+			this.emitFeedback('POOPIEMONSTER: AIGHT, THANKS. YOU PASS. ♥');
 		} else {
-			this.emitFeedback('POOPIEMONSTER: HMMMM... POOPIES.');
+			this.emitFeedback('POOPIEMONSTER: NOM NOM NOM... POOPIES!');
 		}
 	}
 

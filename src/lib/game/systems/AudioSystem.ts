@@ -21,6 +21,8 @@ export class AudioSystem {
 	private gunshotBuffers: Partial<Record<GunWeapon, AudioBuffer>> = {};
 	private activeSamples = new Set<HTMLAudioElement>();
 	private speechPlaying: HTMLAudioElement | null = null;
+	private poopieMonsterVoicePlaying: HTMLAudioElement | null = null;
+	private poopieMonsterVoiceQueue: HTMLAudioElement[] = [];
 	private swimSoundCooldown = 0;
 	private lastSwimSampleIndex = -1;
 
@@ -32,12 +34,16 @@ export class AudioSystem {
 	private readonly vaseBreakSample = this.createSample(AUDIO_PATHS.vaseBreak);
 	private readonly chairBreakSample = this.createSample(AUDIO_PATHS.chairBreak);
 	private readonly poopieMonsterSpeechSample = this.createSample(AUDIO_PATHS.poopieMonsterSpeech);
+	private readonly poopieMonsterEatSample = this.createSample(AUDIO_PATHS.poopieMonsterEat);
+	private readonly poopieMonsterFriendSample = this.createSample(AUDIO_PATHS.poopieMonsterFriend);
+	private readonly poopieMonsterDeathSample = this.createSample(AUDIO_PATHS.poopieMonsterDeath);
 	private readonly swimSamples = SWIM_SAMPLE_PATHS.map((path) => this.createSample(path));
 	private readonly bulletImpactSamples = this.createBulletImpactSamples();
 
 	setMuted(muted: boolean) {
 		this.muted = muted;
 		for (const sample of this.activeSamples) sample.muted = muted;
+		if (!muted) this.playNextPoopieMonsterVoice();
 	}
 
 	ensure() {
@@ -72,12 +78,15 @@ export class AudioSystem {
 		this.swimSoundCooldown = 0;
 		this.lastSwimSampleIndex = -1;
 		this.stopPoopieMonsterSpeech();
+		this.stopPoopieMonsterVoiceQueue();
 	}
 
 	destroy() {
 		for (const sample of this.activeSamples) sample.pause();
 		this.activeSamples.clear();
 		this.speechPlaying = null;
+		this.poopieMonsterVoicePlaying = null;
+		this.poopieMonsterVoiceQueue = [];
 		this.gunshotBuffers = {};
 		void this.context?.close();
 		this.context = null;
@@ -92,7 +101,7 @@ export class AudioSystem {
 	}
 
 	playPoopieMonsterSpeech() {
-		if (this.muted || this.speechPlaying) return;
+		if (this.muted || this.speechPlaying || this.poopieMonsterVoicePlaying) return;
 		const sample = this.poopieMonsterSpeechSample.cloneNode(true) as HTMLAudioElement;
 		sample.volume = 0.9;
 		const cleanup = () => {
@@ -112,6 +121,18 @@ export class AudioSystem {
 		sample.currentTime = 0;
 		this.activeSamples.delete(sample);
 		this.speechPlaying = null;
+	}
+
+	playPoopieMonsterEat() {
+		this.queuePoopieMonsterVoice(this.poopieMonsterEatSample);
+	}
+
+	playPoopieMonsterFriend() {
+		this.queuePoopieMonsterVoice(this.poopieMonsterFriendSample);
+	}
+
+	playPoopieMonsterDeath() {
+		this.queuePoopieMonsterVoice(this.poopieMonsterDeathSample, true);
 	}
 
 	playGunshot(weapon: GunWeapon) {
@@ -289,6 +310,42 @@ export class AudioSystem {
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
 		void sample.play().catch(cleanup);
+	}
+
+	private queuePoopieMonsterVoice(source: HTMLAudioElement, interrupt = false) {
+		if (this.muted) return;
+		this.stopPoopieMonsterSpeech();
+		if (interrupt) this.stopPoopieMonsterVoiceQueue();
+		this.poopieMonsterVoiceQueue.push(source);
+		this.playNextPoopieMonsterVoice();
+	}
+
+	private playNextPoopieMonsterVoice() {
+		if (this.muted || this.poopieMonsterVoicePlaying) return;
+		const source = this.poopieMonsterVoiceQueue.shift();
+		if (!source) return;
+
+		const sample = source.cloneNode(true) as HTMLAudioElement;
+		sample.volume = 0.9;
+		const cleanup = () => {
+			this.activeSamples.delete(sample);
+			if (this.poopieMonsterVoicePlaying === sample) this.poopieMonsterVoicePlaying = null;
+			this.playNextPoopieMonsterVoice();
+		};
+		sample.addEventListener('ended', cleanup, { once: true });
+		this.poopieMonsterVoicePlaying = sample;
+		this.activeSamples.add(sample);
+		void sample.play().catch(cleanup);
+	}
+
+	private stopPoopieMonsterVoiceQueue() {
+		this.poopieMonsterVoiceQueue = [];
+		const sample = this.poopieMonsterVoicePlaying;
+		if (!sample) return;
+		sample.pause();
+		sample.currentTime = 0;
+		this.activeSamples.delete(sample);
+		this.poopieMonsterVoicePlaying = null;
 	}
 
 	private playSynthesizedBreak(kind: SynthesizedBreakMaterial) {
