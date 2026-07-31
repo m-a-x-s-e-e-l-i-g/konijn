@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export type GamePhase = 'idle' | 'playing' | 'finished';
-export type WeaponName = 'poop' | 'pistol';
+export type WeaponName = 'poop' | 'pistol' | 'g36';
 type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
 type StampSurfaceKind = 'floor' | 'wall';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
@@ -102,6 +102,7 @@ interface MuzzleEffect {
 	opacity: number;
 	delay: number;
 	followMuzzleUntilVisible: boolean;
+	muzzle?: THREE.Object3D;
 }
 
 interface MuzzleLightEffect {
@@ -259,7 +260,8 @@ const CAMERA_HOME = new THREE.Vector3(0, 6.4, 11.4);
 const CAMERA_TARGET = new THREE.Vector3(0, 1.55, 0);
 const WEAPON_COOLDOWNS: Record<WeaponName, number> = {
 	poop: 0.2,
-	pistol: 0.25
+	pistol: 0.25,
+	g36: 0.095
 };
 
 const COLORS = {
@@ -343,7 +345,16 @@ export class StampKonijnGame {
 	private armRotation = new THREE.Quaternion();
 	private pistolPivot: THREE.Group | null = null;
 	private pistolMuzzle: THREE.Object3D | null = null;
-	private pistolMuzzleWorldPosition = new THREE.Vector3();
+	private muzzleWorldPosition = new THREE.Vector3();
+	private g36Pivot: THREE.Group | null = null;
+	private g36Muzzle: THREE.Object3D | null = null;
+	private g36Unlocked = false;
+	private g36PickupAvailable = false;
+	private g36Pickup = new THREE.Group();
+	private g36PickupRing: THREE.Mesh<THREE.TorusGeometry, THREE.MeshStandardMaterial> | null = null;
+	private g36PickupTime = 0;
+	private gunRackBreakable: Breakable | null = null;
+	private gunRackDisplayRoot = new THREE.Group();
 	private cameraDesiredPosition = CAMERA_HOME.clone();
 	private cameraDesiredTarget = CAMERA_TARGET.clone();
 	private cameraLookTarget = CAMERA_TARGET.clone();
@@ -593,7 +604,9 @@ export class StampKonijnGame {
 
 	cycleWeapon() {
 		this.weaponHeld = false;
-		this.weapon = this.weapon === 'poop' ? 'pistol' : 'poop';
+		const weapons: WeaponName[] = this.g36Unlocked ? ['poop', 'pistol', 'g36'] : ['poop', 'pistol'];
+		const currentIndex = Math.max(0, weapons.indexOf(this.weapon));
+		this.weapon = weapons[(currentIndex + 1) % weapons.length];
 		this.syncWeaponModel();
 		this.emitHud(true);
 	}
@@ -613,7 +626,7 @@ export class StampKonijnGame {
 		this.ensureAudio();
 		this.weaponCooldown = WEAPON_COOLDOWNS[this.weapon];
 		if (this.weapon === 'poop') this.firePoopBoost();
-		else this.firePistol();
+		else this.fireGun(this.weapon);
 		this.emitHud(true);
 	}
 
@@ -2071,9 +2084,10 @@ export class StampKonijnGame {
 	}
 
 	private async loadRabbit() {
-		const [rabbitGltf, pistolGltf] = await Promise.all([
+		const [rabbitGltf, pistolGltf, g36Gltf] = await Promise.all([
 			this.loader.loadAsync('/models/konijn-v18.glb'),
-			this.loader.loadAsync('/models/low-poly-g17.glb')
+			this.loader.loadAsync('/models/low-poly-g17.glb'),
+			this.loader.loadAsync('/models/g36.glb')
 		]);
 		const model = rabbitGltf.scene;
 		model.updateMatrixWorld(true);
@@ -2091,6 +2105,9 @@ export class StampKonijnGame {
 			child.receiveShadow = true;
 		});
 		this.attachPistol(model, pistolGltf.scene);
+		this.attachG36(model, g36Gltf.scene);
+		this.populateGunRack(g36Gltf.scene);
+		this.createG36Pickup(g36Gltf.scene);
 		this.setupArmRagdolls(model);
 
 		this.rabbitSquash.add(model);
@@ -2159,8 +2176,121 @@ export class StampKonijnGame {
 		this.syncWeaponModel();
 	}
 
+	private makeG36Clone(source: THREE.Group) {
+		const root = new THREE.Group();
+		const model = source.clone(true);
+		model.updateMatrixWorld(true);
+		const modelBounds = new THREE.Box3().setFromObject(model);
+		const center = modelBounds.getCenter(new THREE.Vector3());
+		model.position.sub(center);
+		model.traverse((child) => {
+			if (!(child instanceof THREE.Mesh)) return;
+			child.castShadow = true;
+			child.receiveShadow = true;
+		});
+		root.add(model);
+		return root;
+	}
+
+	private attachG36(model: THREE.Group, g36Model: THREE.Group) {
+		const rightArm = model.getObjectByName('right_arm');
+		if (!rightArm) return;
+
+		const pivot = new THREE.Group();
+		pivot.name = 'held_g36_grip';
+		pivot.position.set(-0.02, -0.1, 0.075);
+		pivot.rotation.set(0.12, -0.14, 0.12);
+
+		const gun = this.makeG36Clone(g36Model);
+		gun.name = 'g36';
+		gun.rotation.y = -Math.PI / 2;
+		gun.scale.setScalar(1.02);
+		pivot.add(gun);
+
+		const muzzle = new THREE.Object3D();
+		muzzle.name = 'held_g36_muzzle';
+		muzzle.position.set(0, 0.035, 0.535);
+		pivot.add(muzzle);
+		rightArm.add(pivot);
+
+		this.g36Pivot = pivot;
+		this.g36Muzzle = muzzle;
+		this.syncWeaponModel();
+	}
+
+	private populateGunRack(g36Model: THREE.Group) {
+		this.gunRackDisplayRoot.clear();
+		for (let index = 0; index < 2; index += 1) {
+			const rifle = this.makeG36Clone(g36Model);
+			rifle.scale.setScalar(2.32);
+			rifle.position.set(0, 1.6 - index * 0.9, 0.28);
+			rifle.rotation.z = index === 0 ? -0.035 : 0.045;
+			this.gunRackDisplayRoot.add(rifle);
+		}
+	}
+
+	private createG36Pickup(g36Model: THREE.Group) {
+		this.g36Pickup.clear();
+		const rifle = this.makeG36Clone(g36Model);
+		rifle.scale.setScalar(1.18);
+		rifle.rotation.set(0, 0.16, -0.08);
+		this.g36Pickup.add(rifle);
+
+		const ringMaterial = new THREE.MeshStandardMaterial({
+			color: COLORS.orange,
+			roughness: 0.38,
+			emissive: 0x8e2b0c,
+			emissiveIntensity: 1.4
+		});
+		this.g36PickupRing = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.035, 8, 40), ringMaterial);
+		this.g36PickupRing.rotation.x = Math.PI / 2;
+		this.g36PickupRing.position.y = -0.12;
+		this.g36Pickup.add(this.g36PickupRing);
+		this.g36Pickup.position.set(7.65, UPSTAIRS_FLOOR_Y + 0.23, -3.55);
+		this.g36Pickup.visible = false;
+		this.upstairsRoot.add(this.g36Pickup);
+	}
+
 	private syncWeaponModel() {
 		if (this.pistolPivot) this.pistolPivot.visible = this.weapon === 'pistol';
+		if (this.g36Pivot) this.g36Pivot.visible = this.weapon === 'g36' && this.g36Unlocked;
+	}
+
+	private dropG36Pickup() {
+		if (this.g36Unlocked || !this.g36Pickup.children.length) return;
+		this.g36PickupAvailable = true;
+		this.g36PickupTime = 0;
+		this.g36Pickup.position.set(7.65, UPSTAIRS_FLOOR_Y + 0.23, -3.55);
+		this.g36Pickup.visible = true;
+		this.callbacks.onFeedback('G36 UIT HET REK! RAAK HEM AAN!');
+	}
+
+	private updateG36Pickup(delta: number) {
+		if (!this.g36PickupAvailable || this.g36Unlocked) return;
+		this.g36PickupTime += delta;
+		if (this.g36PickupRing) {
+			this.g36PickupRing.rotation.z += delta * 1.8;
+			this.g36PickupRing.material.emissiveIntensity =
+				1.25 + Math.sin(this.g36PickupTime * 4.2) * 0.3;
+		}
+		if (!this.playerUpstairs) return;
+		const dx = this.player.position.x - this.g36Pickup.position.x;
+		const dz = this.player.position.z - this.g36Pickup.position.z;
+		const closeEnough = Math.hypot(dx, dz) <= PLAYER_RADIUS + 0.82;
+		const verticallyClose =
+			this.player.position.y <= this.g36Pickup.position.y + 1.1 &&
+			this.player.position.y + PLAYER_HEIGHT >= this.g36Pickup.position.y - 0.2;
+		if (!closeEnough || !verticallyClose) return;
+
+		this.g36Unlocked = true;
+		this.g36PickupAvailable = false;
+		this.g36Pickup.visible = false;
+		this.weaponHeld = false;
+		this.weaponCooldown = 0;
+		this.weapon = 'g36';
+		this.syncWeaponModel();
+		this.callbacks.onFeedback('G36 GEVONDEN! HOUD RMB VOOR RATATAT!');
+		this.emitHud(true);
 	}
 
 	private createBreakables() {
@@ -2288,18 +2418,17 @@ export class StampKonijnGame {
 				2
 			)
 		);
-		this.upstairsBreakables.push(
-			this.addBreakable(
-				'WAPENREK',
-				620,
-				this.makeKo9GunRack(),
-				[7.65, UPSTAIRS_FLOOR_Y, -4.72],
-				1.82,
-				2.35,
-				'metal',
-				2
-			)
+		this.gunRackBreakable = this.addBreakable(
+			'WAPENREK',
+			620,
+			this.makeKo9GunRack(),
+			[7.65, UPSTAIRS_FLOOR_Y, -4.72],
+			1.82,
+			2.35,
+			'metal',
+			2
 		);
+		this.upstairsBreakables.push(this.gunRackBreakable);
 		this.upstairsBreakables.push(
 			this.addBreakable(
 				'KO-9 KLUIS',
@@ -2732,18 +2861,8 @@ export class StampKonijnGame {
 		for (const x of [-1.38, 1.38]) {
 			group.add(box([0.11, 2.05, 0.2], [x, 1.1, 0.12], 0x111513));
 		}
-		for (let index = 0; index < 3; index += 1) {
-			const weapon = new THREE.Group();
-			weapon.add(box([1.75, 0.1, 0.11], [0.25, 0, 0.18], 0x121614));
-			weapon.add(box([0.8, 0.22, 0.18], [-0.52, -0.04, 0.18], 0x343d37));
-			weapon.add(box([0.42, 0.32, 0.18], [-1.02, -0.05, 0.18], 0x503d2d));
-			const grip = box([0.18, 0.42, 0.16], [-0.25, -0.25, 0.18], 0x1a201d);
-			grip.rotation.z = -0.22;
-			weapon.add(grip);
-			weapon.position.set(0, 1.7 - index * 0.66, 0);
-			weapon.rotation.z = index % 2 === 0 ? -0.07 : 0.08;
-			group.add(weapon);
-		}
+		this.gunRackDisplayRoot = new THREE.Group();
+		group.add(this.gunRackDisplayRoot);
 		group.add(box([2.9, 0.09, 0.22], [0, 0.18, 0.18], 0xe87832));
 		return group;
 	}
@@ -3616,6 +3735,7 @@ export class StampKonijnGame {
 		}
 		this.resolveRoomCollisions();
 		this.resolveBreakables(delta);
+		this.updateG36Pickup(delta);
 		this.updateArmRagdolls(delta);
 
 		this.squash = Math.max(0, this.squash - delta * 4.8);
@@ -5111,18 +5231,20 @@ export class StampKonijnGame {
 		}
 	}
 
-	private firePistol() {
-		const origin = this.pistolMuzzle
-			? this.pistolMuzzle.getWorldPosition(new THREE.Vector3())
+	private fireGun(weapon: Exclude<WeaponName, 'poop'>) {
+		const muzzle = weapon === 'g36' ? this.g36Muzzle : this.pistolMuzzle;
+		const pivot = weapon === 'g36' ? this.g36Pivot : this.pistolPivot;
+		const origin = muzzle
+			? muzzle.getWorldPosition(new THREE.Vector3())
 			: this.player.position.clone().add(new THREE.Vector3(0, 0.82, 0));
-		const direction = this.pistolMuzzle
+		const direction = muzzle
 			? new THREE.Vector3(0, 0, 1)
-					.applyQuaternion(this.pistolMuzzle.getWorldQuaternion(new THREE.Quaternion()))
+					.applyQuaternion(muzzle.getWorldQuaternion(new THREE.Quaternion()))
 					.normalize()
 			: new THREE.Vector3(0, 0, 1).applyQuaternion(
 					this.player.getWorldQuaternion(new THREE.Quaternion())
 				);
-		this.spawnMuzzleEffects(origin, direction);
+		this.spawnMuzzleEffects(origin, direction, muzzle ?? undefined);
 
 		const bullet = shadowMesh(
 			new THREE.LatheGeometry(
@@ -5140,8 +5262,8 @@ export class StampKonijnGame {
 		bullet.position.copy(origin).addScaledVector(direction, BULLET_HALF_LENGTH);
 		bullet.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
 
-		const barrelLength = this.pistolPivot
-			? this.pistolPivot.getWorldPosition(new THREE.Vector3()).distanceTo(origin)
+		const barrelLength = pivot
+			? pivot.getWorldPosition(new THREE.Vector3()).distanceTo(origin)
 			: BULLET_HALF_LENGTH * 2;
 		const probeOrigin = origin.clone().addScaledVector(direction, -barrelLength);
 		const probeDistance = barrelLength + BULLET_HALF_LENGTH * 2;
@@ -5174,19 +5296,24 @@ export class StampKonijnGame {
 				mesh: bullet,
 				velocity: direction.clone().multiplyScalar(BULLET_SPEED),
 				life: BULLET_LIFETIME,
-				kind: 'pistol',
-				spawnDelay: PISTOL_SPAWN_DELAY
+				kind: weapon,
+				spawnDelay: weapon === 'g36' ? 0.01 : PISTOL_SPAWN_DELAY
 			});
 		}
 
-		this.velocity.addScaledVector(direction, -5.8);
+		const recoil = weapon === 'g36' ? 2.15 : 5.8;
+		this.velocity.addScaledVector(direction, -recoil);
 		this.velocity.clampLength(0, 17);
-		this.joltRagdoll(5.8);
-		this.cameraShake = Math.max(this.cameraShake, 0.52);
-		this.playGunshot();
+		this.joltRagdoll(weapon === 'g36' ? 3.2 : 5.8);
+		this.cameraShake = Math.max(this.cameraShake, weapon === 'g36' ? 0.34 : 0.52);
+		this.playGunshot(weapon);
 	}
 
-	private spawnMuzzleEffects(origin: THREE.Vector3, direction: THREE.Vector3) {
+	private spawnMuzzleEffects(
+		origin: THREE.Vector3,
+		direction: THREE.Vector3,
+		muzzle?: THREE.Object3D
+	) {
 		const flashMaterial = new THREE.MeshBasicMaterial({
 			color: 0xffd98a,
 			transparent: true,
@@ -5314,7 +5441,8 @@ export class StampKonijnGame {
 				growth: 0.12,
 				opacity: 0.16 - index * 0.006,
 				delay,
-				followMuzzleUntilVisible: delay > 0
+				followMuzzleUntilVisible: delay > 0,
+				muzzle
 			});
 		}
 	}
@@ -5375,11 +5503,9 @@ export class StampKonijnGame {
 			const effect = this.muzzleEffects[index];
 			if (effect.delay > 0) {
 				effect.delay -= delta;
-				if (effect.followMuzzleUntilVisible && this.pistolMuzzle) {
-					this.pistolMuzzle.updateWorldMatrix(true, false);
-					effect.mesh.position.copy(
-						this.pistolMuzzle.getWorldPosition(this.pistolMuzzleWorldPosition)
-					);
+				if (effect.followMuzzleUntilVisible && effect.muzzle) {
+					effect.muzzle.updateWorldMatrix(true, false);
+					effect.mesh.position.copy(effect.muzzle.getWorldPosition(this.muzzleWorldPosition));
 				}
 				if (effect.delay > 0) continue;
 				effect.mesh.visible = true;
@@ -5570,6 +5696,7 @@ export class StampKonijnGame {
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
 		this.callbacks.onImpact(breakable.label, points);
+		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
 		this.playBreakSound(breakable.material, breakable.label);
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
 		this.emitHud(true);
@@ -5675,7 +5802,7 @@ export class StampKonijnGame {
 		for (let index = this.weaponProjectiles.length - 1; index >= 0; index -= 1) {
 			const projectile = this.weaponProjectiles[index];
 			projectile.life -= delta;
-			if (projectile.kind === 'pistol') {
+			if (projectile.kind !== 'poop') {
 				if (projectile.spawnDelay > 0) {
 					projectile.spawnDelay = Math.max(0, projectile.spawnDelay - delta);
 					continue;
@@ -6363,6 +6490,10 @@ export class StampKonijnGame {
 		this.toiletSinkAmount = 0;
 		this.toiletPoopCount = 0;
 		this.resetPoopieMonster();
+		this.g36Unlocked = false;
+		this.g36PickupAvailable = false;
+		this.g36PickupTime = 0;
+		this.g36Pickup.visible = false;
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
 		this.poolWaveEnergy = 0;
@@ -6584,10 +6715,14 @@ export class StampKonijnGame {
 		void sample.play().catch(cleanup);
 	}
 
-	private playGunshot() {
+	private playGunshot(weapon: Exclude<WeaponName, 'poop'>) {
 		if (this.muted) return;
 		const sample = this.pistolSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.86;
+		sample.volume = weapon === 'g36' ? 0.74 : 0.86;
+		if (weapon === 'g36') {
+			sample.preservesPitch = false;
+			sample.playbackRate = 1.08 + Math.random() * 0.08;
+		}
 		const cleanup = () => this.activeSamples.delete(sample);
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);

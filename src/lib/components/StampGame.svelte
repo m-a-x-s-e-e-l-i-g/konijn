@@ -1,6 +1,33 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { StampKonijnGame, type StampHudState } from '$lib/game/stampkonijn';
+	import { StampKonijnGame, type StampHudState, type WeaponName } from '$lib/game/stampkonijn';
+
+	const weaponUi: Record<
+		WeaponName,
+		{ name: string; shortName: string; icon: string; action: string; actionIcon: string }
+	> = {
+		poop: {
+			name: 'konijnenkeutels',
+			shortName: 'KEUTELS',
+			icon: '●●',
+			action: 'Houd ingedrukt om konijnenkeutels te gebruiken',
+			actionIcon: '💨'
+		},
+		pistol: {
+			name: 'Glock 17',
+			shortName: 'GLOCK 17',
+			icon: '↗',
+			action: 'Houd ingedrukt om met de Glock 17 te schieten',
+			actionIcon: '💥'
+		},
+		g36: {
+			name: 'G36',
+			shortName: 'G36',
+			icon: '▰',
+			action: 'Houd ingedrukt om met de G36 automatisch te schieten',
+			actionIcon: '🔥'
+		}
+	};
 
 	const initialHud: StampHudState = {
 		phase: 'idle',
@@ -297,12 +324,11 @@
 				type="button"
 				onclick={cycleWeapon}
 				disabled={hud.paused}
-				aria-label={`Kies wapen. Nu geselecteerd: ${hud.weapon === 'poop' ? 'konijnenkeutels' : 'Glock 17'}`}
+				aria-label={`Kies wapen. Nu geselecteerd: ${weaponUi[hud.weapon].name}`}
 			>
-				<span class="weapon-icon" aria-hidden="true">{hud.weapon === 'poop' ? '●●' : '↗'}</span>
+				<span class="weapon-icon" aria-hidden="true">{weaponUi[hud.weapon].icon}</span>
 				<span class="weapon-copy"
-					><small>WAPEN</small><strong>{hud.weapon === 'poop' ? 'KEUTELS' : 'GLOCK 17'}</strong
-					></span
+					><small>WAPEN</small><strong>{weaponUi[hud.weapon].shortName}</strong></span
 				>
 			</button>
 			<button
@@ -314,11 +340,9 @@
 				onlostpointercapture={useWeaponEnd}
 				onclick={useWeaponKeyboard}
 				disabled={hud.paused}
-				aria-label={hud.weapon === 'poop'
-					? 'Houd ingedrukt om konijnenkeutels te gebruiken'
-					: 'Houd ingedrukt om met de Glock 17 te schieten'}
+				aria-label={weaponUi[hud.weapon].action}
 			>
-				<span aria-hidden="true">{hud.weapon === 'poop' ? '💨' : '💥'}</span>
+				<span aria-hidden="true">{weaponUi[hud.weapon].actionIcon}</span>
 				<strong
 					>{hud.weapon === 'poop' ? 'HOUD SCHEET' : hud.weaponReady ? 'HOUD VUUR' : 'LADEN'}</strong
 				>
@@ -336,10 +360,9 @@
 	</button>
 
 	<p class="sr-only" aria-live="polite">
-		Score {hud.score} euro. {hud.destroyed} van {hud.total} voorwerpen kapot. Wapen: {hud.weapon ===
-		'poop'
-			? 'konijnenkeutels'
-			: 'Glock 17'}.
+		Score {hud.score} euro. {hud.destroyed} van {hud.total} voorwerpen kapot. Wapen: {weaponUi[
+			hud.weapon
+		].name}.
 	</p>
 </section>
 
