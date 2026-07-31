@@ -201,6 +201,8 @@ const UPSTAIRS_LIGHT_INTENSITIES = [13, 9, 7];
 const GARDEN_WIDTH = 28;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
+const DOGHOUSE_X = 9;
+const DOGHOUSE_Z = GARDEN_BACK_Z + 1.45;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
@@ -1861,11 +1863,17 @@ export class StampKonijnGame {
 		}
 
 		for (let x = -9; x <= 9; x += 3) {
+			if (Math.abs(x - DOGHOUSE_X) < 1.4) continue;
 			const shrub = shadowMesh(new THREE.DodecahedronGeometry(0.75, 1), material(0x648a49, 0.95));
 			shrub.scale.set(1.3, 1, 0.75);
 			shrub.position.set(x, 0.65, GARDEN_BACK_Z + 0.55);
 			this.scene.add(shrub);
 		}
+
+		const dogBone = this.makeDogBone();
+		dogBone.position.set(DOGHOUSE_X - 0.15, 0.055, DOGHOUSE_Z + 1.78);
+		dogBone.rotation.y = -0.32;
+		this.scene.add(dogBone);
 
 		const exteriorTrim = box(
 			[ROOM_WIDTH - 0.2, 0.22, 0.16],
@@ -2155,7 +2163,15 @@ export class StampKonijnGame {
 		);
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
-		this.addBreakable('HONDENHOK', 140, this.makeDoghouse(), [4.15, 0, -8.45], 1.12, 1.72, 'wood');
+		this.addBreakable(
+			'HONDENHOK',
+			140,
+			this.makeDoghouse(),
+			[DOGHOUSE_X, 0, DOGHOUSE_Z],
+			1.12,
+			1.72,
+			'wood'
+		);
 		this.addBreakable(
 			'PICKNICKTAFEL',
 			260,
@@ -2898,9 +2914,9 @@ export class StampKonijnGame {
 		group.add(box([1.56, 1.06, 1.5], [0, 0.6, 0], 0xc76c45));
 
 		const leftRoof = box([1.08, 0.14, 1.92], [-0.42, 1.38, 0], 0x5e4438);
-		leftRoof.rotation.z = -0.58;
+		leftRoof.rotation.z = 0.58;
 		const rightRoof = box([1.08, 0.14, 1.92], [0.42, 1.38, 0], 0x5e4438);
-		rightRoof.rotation.z = 0.58;
+		rightRoof.rotation.z = -0.58;
 		group.add(leftRoof, rightRoof);
 
 		const doorwayShape = new THREE.Shape();
@@ -2925,6 +2941,19 @@ export class StampKonijnGame {
 		}
 		bone.position.set(0, 1.12, 0.82);
 		group.add(bone);
+		return group;
+	}
+
+	private makeDogBone() {
+		const group = new THREE.Group();
+		group.add(box([0.62, 0.12, 0.15], [0, 0.1, 0], 0xe7dfcd));
+		for (const x of [-0.36, 0.36]) {
+			for (const z of [-0.08, 0.08]) {
+				const end = shadowMesh(new THREE.SphereGeometry(0.13, 10, 8), material(0xe7dfcd));
+				end.position.set(x, 0.1, z);
+				group.add(end);
+			}
+		}
 		return group;
 	}
 
