@@ -1,44 +1,24 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GameEvents } from './core/GameEvents';
+import { AudioSystem } from './systems/AudioSystem';
+import type {
+	BreakMaterial,
+	BulletImpactMaterial,
+	GameCallbacks,
+	GamePhase,
+	GunWeapon,
+	StampHudState,
+	WeaponName
+} from './types';
 
-export type GamePhase = 'idle' | 'playing' | 'finished';
-export type WeaponName = 'poop' | 'pistol' | 'g36';
-type GunWeapon = Exclude<WeaponName, 'poop'>;
-type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
+export type { GamePhase, StampHudState, WeaponName } from './types';
+
 type StampSurfaceKind = 'floor' | 'wall';
-type BulletImpactMaterial =
-	| 'land'
-	| 'metal'
-	| 'water'
-	| 'wood'
-	| 'body'
-	| 'concrete'
-	| 'glass'
-	| 'grass';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
 type BiomeName = 'ground' | 'basement' | 'sewer';
 type PoopieMonsterState = 'neutral' | 'dead' | 'friend';
-
-export interface StampHudState {
-	phase: GamePhase;
-	paused: boolean;
-	score: number;
-	destroyed: number;
-	total: number;
-	lastHit: string;
-	lastValue: number;
-	weapon: WeaponName;
-	weaponReady: boolean;
-}
-
-interface GameCallbacks {
-	onHud: (state: StampHudState) => void;
-	onImpact: (label: string, value: number) => void;
-	onFeedback: (message: string) => void;
-	onReady: () => void;
-	onError: (message: string) => void;
-}
 
 interface Breakable {
 	group: THREE.Group;
@@ -261,19 +241,10 @@ const POOL_WATER_Y = 0.62;
 const POOL_BOTTOM_Y = 0.09;
 const POOL_WATER_RADIUS = 1.86;
 const POOL_ENTRY_RADIUS = 1.56;
-const SWIM_SAMPLE_PATHS = [
-	'/audio/pool/swim-1.ogg',
-	'/audio/pool/swim-2.ogg',
-	'/audio/pool/swim-3.ogg',
-	'/audio/pool/swim-4.ogg'
-] as const;
-const SWIM_SAMPLE_DURATIONS = [0.97, 1.32, 1.96, 0.93] as const;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
 const PLAYER_HEIGHT = 1.38;
-const FART_PITCH_MIN = 0.5;
-const FART_PITCH_MAX = 1.5;
 const POOP_BOOST_IMPULSE = 4.2;
 const POOP_BOOST_MAX_SPEED = 22;
 const BULLET_HALF_LENGTH = 0.06;
@@ -291,30 +262,6 @@ const WEAPON_COOLDOWNS: Record<WeaponName, number> = {
 	poop: 0.2,
 	pistol: 0.25,
 	g36: 0.095
-};
-const BULLET_IMPACT_SAMPLE_PATHS: Record<BulletImpactMaterial, readonly string[]> = {
-	land: ['/audio/impacts/land-1.ogg', '/audio/impacts/land-2.ogg', '/audio/impacts/land-3.ogg'],
-	metal: ['/audio/impacts/metal-1.ogg', '/audio/impacts/metal-2.ogg', '/audio/impacts/metal-3.ogg'],
-	water: ['/audio/impacts/water-1.ogg', '/audio/impacts/water-2.ogg', '/audio/impacts/water-3.ogg'],
-	wood: ['/audio/impacts/wood-1.ogg', '/audio/impacts/wood-2.ogg', '/audio/impacts/wood-3.ogg'],
-	body: ['/audio/impacts/body-1.ogg', '/audio/impacts/body-2.ogg', '/audio/impacts/body-3.ogg'],
-	concrete: [
-		'/audio/impacts/concrete-1.ogg',
-		'/audio/impacts/concrete-2.ogg',
-		'/audio/impacts/concrete-3.ogg'
-	],
-	glass: ['/audio/impacts/glass-1.ogg', '/audio/impacts/glass-2.ogg', '/audio/impacts/glass-3.ogg'],
-	grass: ['/audio/impacts/grass-1.ogg', '/audio/impacts/grass-2.ogg', '/audio/impacts/grass-3.ogg']
-};
-const BULLET_IMPACT_VOLUMES: Record<BulletImpactMaterial, number> = {
-	land: 0.48,
-	metal: 0.5,
-	water: 0.58,
-	wood: 0.52,
-	body: 0.56,
-	concrete: 0.5,
-	glass: 0.54,
-	grass: 0.48
 };
 
 const COLORS = {
@@ -385,7 +332,7 @@ function disposeObject(object: THREE.Object3D) {
 
 export class StampKonijnGame {
 	private canvas: HTMLCanvasElement;
-	private callbacks: GameCallbacks;
+	private events = new GameEvents();
 	private scene = new THREE.Scene();
 	private camera = new THREE.PerspectiveCamera(46, 1, 0.1, 80);
 	private renderer: THREE.WebGLRenderer;
@@ -473,8 +420,6 @@ export class StampKonijnGame {
 	private poolWaveEnergy = 0;
 	private rabbitInPoolWater = false;
 	private poolSplashCooldown = 0;
-	private swimSoundCooldown = 0;
-	private lastSwimSampleIndex = -1;
 	private toiletFillRoot = new THREE.Group();
 	private toiletPoopCount = 0;
 	private toiletSinking = false;
@@ -538,28 +483,20 @@ export class StampKonijnGame {
 	private lastHudSignature = '';
 	private squash = 0;
 	private cameraShake = 0;
-	private audioContext: AudioContext | null = null;
-	private gunshotBuffers: Partial<Record<GunWeapon, AudioBuffer>> = {};
-	private impactSample: HTMLAudioElement;
-	private fartSample: HTMLAudioElement;
-	private pistolSample: HTMLAudioElement;
-	private g36Sample: HTMLAudioElement;
-	private weaponChangeSample: HTMLAudioElement;
-	private swimSamples: HTMLAudioElement[];
-	private bulletImpactSamples: Record<BulletImpactMaterial, HTMLAudioElement[]>;
-	private vaseBreakSample: HTMLAudioElement;
-	private chairBreakSample: HTMLAudioElement;
-	private poopieMonsterSpeechSample: HTMLAudioElement;
-	private poopieMonsterSpeechPlaying: HTMLAudioElement | null = null;
 	private poopieMonsterSpeechArmed = true;
-	private activeSamples = new Set<HTMLAudioElement>();
+	private audio: AudioSystem;
 	private keyDownHandler: (event: KeyboardEvent) => void;
 	private keyUpHandler: (event: KeyboardEvent) => void;
 	private blurHandler: () => void;
 
 	constructor(canvas: HTMLCanvasElement, callbacks: GameCallbacks) {
 		this.canvas = canvas;
-		this.callbacks = callbacks;
+		this.events.on('hud', callbacks.onHud);
+		this.events.on('impact', ({ label, value }) => callbacks.onImpact(label, value));
+		this.events.on('feedback', ({ message }) => callbacks.onFeedback(message));
+		this.events.on('ready', callbacks.onReady);
+		this.events.on('error', ({ message }) => callbacks.onError(message));
+		this.audio = new AudioSystem();
 		this.renderer = new THREE.WebGLRenderer({
 			canvas,
 			antialias: true,
@@ -570,37 +507,6 @@ export class StampKonijnGame {
 		this.renderer.toneMappingExposure = 1.05;
 		this.renderer.shadowMap.enabled = true;
 		this.renderer.shadowMap.type = THREE.PCFShadowMap;
-		this.impactSample = new Audio('/audio/bounce.ogg');
-		this.impactSample.preload = 'auto';
-		this.fartSample = new Audio('/audio/weapons/fart.ogg');
-		this.fartSample.preload = 'auto';
-		this.pistolSample = new Audio('/audio/weapons/pistol.ogg');
-		this.pistolSample.preload = 'auto';
-		this.g36Sample = new Audio('/audio/weapons/g36.ogg');
-		this.g36Sample.preload = 'auto';
-		this.weaponChangeSample = new Audio('/audio/weapons/change.ogg');
-		this.weaponChangeSample.preload = 'auto';
-		this.swimSamples = SWIM_SAMPLE_PATHS.map((path) => {
-			const sample = new Audio(path);
-			sample.preload = 'auto';
-			return sample;
-		});
-		this.bulletImpactSamples = {} as Record<BulletImpactMaterial, HTMLAudioElement[]>;
-		for (const [kind, paths] of Object.entries(BULLET_IMPACT_SAMPLE_PATHS) as Array<
-			[BulletImpactMaterial, readonly string[]]
-		>) {
-			this.bulletImpactSamples[kind] = paths.map((path) => {
-				const sample = new Audio(path);
-				sample.preload = 'auto';
-				return sample;
-			});
-		}
-		this.vaseBreakSample = new Audio('/audio/vase-break.ogg');
-		this.vaseBreakSample.preload = 'auto';
-		this.chairBreakSample = new Audio('/audio/chair-break.ogg');
-		this.chairBreakSample.preload = 'auto';
-		this.poopieMonsterSpeechSample = new Audio('/audio/characters/poopiemonster.ogg');
-		this.poopieMonsterSpeechSample.preload = 'auto';
 
 		this.keyDownHandler = (event) => this.handleKey(event, true);
 		this.keyUpHandler = (event) => this.handleKey(event, false);
@@ -620,7 +526,7 @@ export class StampKonijnGame {
 			this.createBreakables();
 			this.syncUpstairsVisibility();
 			this.syncBiomeState(true);
-			await Promise.all([this.loadModels(), this.preloadGunshotBuffers()]);
+			await Promise.all([this.loadModels(), this.audio.preloadGunshotBuffers()]);
 
 			this.camera.position.copy(CAMERA_HOME);
 			this.camera.lookAt(CAMERA_TARGET);
@@ -635,16 +541,17 @@ export class StampKonijnGame {
 			this.timer.reset();
 			this.animate();
 			this.emitHud(true);
-			this.callbacks.onReady();
+			this.events.emit('ready', undefined);
 		} catch (error) {
 			console.error(error);
-			this.callbacks.onError(
-				'Het konijn kon de kamer niet binnenkomen. Probeer de pagina opnieuw.'
-			);
+			this.events.emit('error', {
+				message: 'Het konijn kon de kamer niet binnenkomen. Probeer de pagina opnieuw.'
+			});
 		}
 	}
 
 	start() {
+		this.audio.reset();
 		this.clearDebris();
 		this.clearWaterEffects();
 		this.clearSurfaceCracks();
@@ -687,7 +594,7 @@ export class StampKonijnGame {
 		this.velocity.y = 6.4;
 		this.joltArms(1.1);
 		this.timer.reset();
-		this.playSound('start');
+		this.audio.playCue('start');
 		this.emitHud(true);
 	}
 
@@ -697,7 +604,7 @@ export class StampKonijnGame {
 		const currentIndex = Math.max(0, weapons.indexOf(this.weapon));
 		this.weapon = weapons[(currentIndex + 1) % weapons.length];
 		this.syncWeaponModel();
-		this.playWeaponChange();
+		this.audio.playWeaponChange();
 		this.emitHud(true);
 	}
 
@@ -713,7 +620,7 @@ export class StampKonijnGame {
 
 	useWeapon() {
 		if (this.phase !== 'playing' || this.paused || this.weaponCooldown > 0) return;
-		this.ensureAudio();
+		this.audio.ensure();
 		this.weaponCooldown = WEAPON_COOLDOWNS[this.weapon];
 		if (this.weapon === 'poop') this.firePoopBoost();
 		else this.fireGun(this.weapon);
@@ -758,7 +665,7 @@ export class StampKonijnGame {
 			.clone()
 			.applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()).invert());
 		this.stampPose.setFromUnitVectors(new THREE.Vector3(0, -1, 0), localStampDirection);
-		this.ensureAudio();
+		this.audio.ensure();
 		this.stampSequence += 1;
 		this.pendingStampFeedback = '';
 		this.stomping = true;
@@ -777,7 +684,7 @@ export class StampKonijnGame {
 
 	setMuted(muted: boolean) {
 		this.muted = muted;
-		for (const sample of this.activeSamples) sample.muted = muted;
+		this.audio.setMuted(muted);
 	}
 
 	setReducedMotion(reduced: boolean) {
@@ -787,13 +694,13 @@ export class StampKonijnGame {
 
 	destroy() {
 		cancelAnimationFrame(this.frame);
+		this.events.clear();
 		this.timer.dispose();
 		this.resizeObserver?.disconnect();
 		window.removeEventListener('keydown', this.keyDownHandler);
 		window.removeEventListener('keyup', this.keyUpHandler);
 		window.removeEventListener('blur', this.blurHandler);
-		for (const sample of this.activeSamples) sample.pause();
-		this.activeSamples.clear();
+		this.audio.destroy();
 		this.clearDebris();
 		this.clearWaterEffects();
 		this.clearSurfaceCracks();
@@ -805,10 +712,8 @@ export class StampKonijnGame {
 		this.muzzleSmokeTexture?.dispose();
 		this.muzzleSmokeTexture = null;
 		this.clearBulletHoles();
-		this.gunshotBuffers = {};
 		disposeObject(this.scene);
 		this.renderer.dispose();
-		void this.audioContext?.close();
 	}
 
 	private createLights() {
@@ -2396,7 +2301,7 @@ export class StampKonijnGame {
 		this.g36PickupTime = 0;
 		this.g36Pickup.position.set(7.65, UPSTAIRS_FLOOR_Y + 0.23, -3.55);
 		this.g36Pickup.visible = true;
-		this.callbacks.onFeedback('G36 UIT HET REK! RAAK HEM AAN!');
+		this.emitFeedback('G36 UIT HET REK! RAAK HEM AAN!');
 	}
 
 	private updateG36Pickup(delta: number) {
@@ -2423,8 +2328,8 @@ export class StampKonijnGame {
 		this.weaponCooldown = 0;
 		this.weapon = 'g36';
 		this.syncWeaponModel();
-		this.playWeaponChange();
-		this.callbacks.onFeedback('G36 GEVONDEN! HOUD RMB VOOR RATATAT!');
+		this.audio.playWeaponChange();
+		this.emitFeedback('G36 GEVONDEN! HOUD RMB VOOR RATATAT!');
 		this.emitHud(true);
 	}
 
@@ -3810,7 +3715,7 @@ export class StampKonijnGame {
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
 		this.poolSplashCooldown = Math.max(0, this.poolSplashCooldown - delta);
-		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
+		this.audio.update(delta);
 		for (let index = 0; index < this.upstairsLights.length; index += 1) {
 			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
 			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
@@ -3980,7 +3885,7 @@ export class StampKonijnGame {
 					this.velocity.z * 0.24
 				);
 				this.syncUpstairsVisibility();
-				this.callbacks.onFeedback('TERUG DE TRAP AF!');
+				this.emitFeedback('TERUG DE TRAP AF!');
 				return;
 			} else if (this.player.position.x < leftLimit) {
 				wallImpactSpeed = Math.abs(this.velocity.x);
@@ -4020,7 +3925,7 @@ export class StampKonijnGame {
 					this.velocity.z * 0.55
 				);
 				this.syncUpstairsVisibility();
-				this.callbacks.onFeedback('BOVENVERDIEPING!');
+				this.emitFeedback('BOVENVERDIEPING!');
 				return;
 			} else if (this.player.position.x < leftLimit) {
 				wallImpactSpeed = Math.max(wallImpactSpeed, Math.abs(this.velocity.x));
@@ -4231,7 +4136,7 @@ export class StampKonijnGame {
 				const brokeThrough = this.performWindowStamp(wallImpactSpeed, wallNormal);
 				if (brokeThrough) return;
 				this.finishStampRebound(wallNormal, 0.86, wallImpactSpeed);
-				this.callbacks.onFeedback('RAAM BARST! NOG 1 GOEDE STAMP!');
+				this.emitFeedback('RAAM BARST! NOG 1 GOEDE STAMP!');
 			} else if (this.isTargetStampSurface(wallNormal) && wallImpactSpeed > 2.8) {
 				this.performWallStamp(wallImpactSpeed, wallNormal);
 				this.finishStampRebound(wallNormal, 0.86, wallImpactSpeed);
@@ -4261,7 +4166,7 @@ export class StampKonijnGame {
 			this.player.position.set(TOILET_X, SEWER_FLOOR_Y + 0.18, SEWER_CENTER_Z);
 			this.velocity.set(4.8, 2.6, 0);
 			this.syncBiomeState();
-			this.callbacks.onFeedback('HET DONKERE RIOOL IN!');
+			this.emitFeedback('HET DONKERE RIOOL IN!');
 		} else if (topHatchOpening && this.player.position.y < -0.65) {
 			this.playerInBasement = true;
 			this.playerOutside = false;
@@ -4270,7 +4175,7 @@ export class StampKonijnGame {
 			this.basementEntryCooldown = 0.85;
 			this.velocity.x = Math.min(this.velocity.x, -2.4);
 			this.syncBiomeState();
-			this.callbacks.onFeedback('DE KELDER IN!');
+			this.emitFeedback('DE KELDER IN!');
 		} else if (this.playerInBasement) {
 			if (this.player.position.y + PLAYER_HEIGHT >= -0.08) {
 				if (
@@ -4281,7 +4186,7 @@ export class StampKonijnGame {
 					this.playerInBasement = false;
 					this.playerInKitchen = true;
 					this.syncBiomeState();
-					this.callbacks.onFeedback('TERUG NAAR BOVEN!');
+					this.emitFeedback('TERUG NAAR BOVEN!');
 				} else if (
 					basementHatchOpening &&
 					this.basementEntryCooldown > 0 &&
@@ -4305,7 +4210,7 @@ export class StampKonijnGame {
 				this.player.position.set(TOILET_X, 0.03, TOILET_Z);
 				this.velocity.y = Math.max(5.2, this.velocity.y);
 				this.syncBiomeState();
-				this.callbacks.onFeedback('DOOR DE WC WEER OMHOOG!');
+				this.emitFeedback('DOOR DE WC WEER OMHOOG!');
 			} else if (this.player.position.y + PLAYER_HEIGHT >= SEWER_CEILING_Y && !inToiletShaft) {
 				this.player.position.y = SEWER_CEILING_Y - PLAYER_HEIGHT;
 				this.velocity.y = -Math.abs(this.velocity.y) * 0.68;
@@ -4333,7 +4238,7 @@ export class StampKonijnGame {
 			this.joltRagdoll(1.5);
 			this.cameraShake = Math.max(this.cameraShake, 0.3);
 			this.squash = 0.72;
-			this.playSound('wall');
+			this.audio.playCue('wall');
 		}
 		if (
 			this.playerUpstairs &&
@@ -4373,7 +4278,7 @@ export class StampKonijnGame {
 				this.velocity.y = Math.max(5.2, impactSpeed * 0.38);
 				this.squash = Math.min(0.82, impactSpeed / 17);
 				this.joltArms(1.05 + Math.min(impactSpeed, 12) * 0.08);
-				this.playSound('bounce');
+				this.audio.playCue('bounce');
 			}
 		}
 	}
@@ -4692,7 +4597,7 @@ export class StampKonijnGame {
 		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.cancelStamp();
 		this.joltRagdoll(2.5);
-		this.callbacks.onFeedback(
+		this.emitFeedback(
 			door.room === 'stairs' ? 'DEUR OPEN! TRAP OMHOOG!' : `DEUR OPEN! ${door.label} IN!`
 		);
 		this.emitHud(true);
@@ -4741,7 +4646,7 @@ export class StampKonijnGame {
 		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.finishStampRebound(wallNormal, 0.82, speed);
 		this.joltRagdoll(2.6);
-		this.callbacks.onFeedback('VEEL TE VEEL DIKKE SLOTEN!');
+		this.emitFeedback('VEEL TE VEEL DIKKE SLOTEN!');
 	}
 
 	private performDoorStamp(speed: number) {
@@ -4768,7 +4673,7 @@ export class StampKonijnGame {
 		this.playStampImpactSample(Math.min(1, speed / 7));
 		this.cancelStamp();
 		this.joltRagdoll(2.5);
-		this.callbacks.onFeedback('DEUR OPEN! KEUKEN IN!');
+		this.emitFeedback('DEUR OPEN! KEUKEN IN!');
 		this.emitHud(true);
 	}
 
@@ -4817,7 +4722,7 @@ export class StampKonijnGame {
 		this.clearWindowBulletHoles();
 		this.spawnWindowDebris();
 		this.spawnWindowGarbagePile();
-		this.playVaseBreakSample();
+		this.audio.playVaseBreak();
 		this.player.position.x = THREE.MathUtils.clamp(
 			this.player.position.x,
 			WINDOW_CENTER_X - 0.72,
@@ -4831,7 +4736,7 @@ export class StampKonijnGame {
 		this.velocity.copy(throughWindow).multiplyScalar(Math.max(9.5, speed * 0.68));
 		this.cancelStamp();
 		this.joltRagdoll(2.8);
-		this.callbacks.onFeedback('RAAM ERAF! DE TUIN IN!');
+		this.emitFeedback('RAAM ERAF! DE TUIN IN!');
 		this.emitHud(true);
 		return true;
 	}
@@ -5026,7 +4931,10 @@ export class StampKonijnGame {
 		this.velocity.z *= horizontalDrag;
 		this.velocity.y *= Math.exp(-(0.45 + submersion * 0.7) * delta);
 		this.velocity.y += submersion * 3.8 * delta;
-		this.playSwimmingSound(submersion);
+		this.audio.playSwimming(
+			submersion,
+			Math.hypot(this.velocity.x, this.velocity.z, this.velocity.y * 0.35)
+		);
 		return true;
 	}
 
@@ -5072,7 +4980,7 @@ export class StampKonijnGame {
 				this.velocity.y = Math.max(5.2, impactSpeed * 0.42);
 				this.squash = Math.max(this.squash, Math.min(0.68, impactSpeed / 18));
 				this.joltArms(0.9 + Math.min(impactSpeed, 12) * 0.07);
-				this.playSound('bounce');
+				this.audio.playCue('bounce');
 				continue;
 			}
 			if (!this.stomping && closeToTop) continue;
@@ -5143,7 +5051,7 @@ export class StampKonijnGame {
 		this.joltRagdoll(1.15 + quality * 1.5);
 		const feedback = this.pendingStampFeedback;
 		this.pendingStampFeedback = '';
-		if (feedback) this.callbacks.onFeedback(feedback);
+		if (feedback) this.emitFeedback(feedback);
 		this.emitHud(true);
 	}
 
@@ -5235,7 +5143,7 @@ export class StampKonijnGame {
 		this.velocity.clampLength(0, POOP_BOOST_MAX_SPEED);
 		this.joltRagdoll(1.6);
 		this.cameraShake = Math.max(this.cameraShake, 0.18);
-		this.playFartSound();
+		this.audio.playFart();
 	}
 
 	private tryCatchPoopInToilet(projectile: WeaponProjectile) {
@@ -5262,7 +5170,7 @@ export class StampKonijnGame {
 			this.openToiletHole();
 		} else if (this.toiletPoopCount % 4 === 0) {
 			const remaining = TOILET_POOPS_REQUIRED - this.toiletPoopCount;
-			this.callbacks.onFeedback(
+			this.emitFeedback(
 				remaining <= 4
 					? 'WC BIJNA VOL! NOG EVEN SCHIJTEN!'
 					: `WC VULT ZICH! ${this.toiletPoopCount}/${TOILET_POOPS_REQUIRED}`
@@ -5297,7 +5205,7 @@ export class StampKonijnGame {
 		this.toiletHole.visible = true;
 		this.breakObject(this.toiletBreakable, 'sink');
 		this.cameraShake = Math.max(this.cameraShake, 1.05);
-		this.callbacks.onFeedback('WC TE VOL! HET RIOOL GAAT OPEN!');
+		this.emitFeedback('WC TE VOL! HET RIOOL GAAT OPEN!');
 	}
 
 	private updateToilet(delta: number) {
@@ -5342,12 +5250,12 @@ export class StampKonijnGame {
 
 		if (hitKind === 'bullet') {
 			this.poopieMonsterHealth -= 1;
-			this.playBulletImpact('body');
+			this.audio.playBulletImpact('body');
 			if (this.poopieMonsterHealth <= 0) {
 				this.poopieMonsterState = 'dead';
-				this.callbacks.onFeedback('POOPIEMONSTER NEER!');
+				this.emitFeedback('POOPIEMONSTER NEER!');
 			} else {
-				this.callbacks.onFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
+				this.emitFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
 			}
 			return;
 		}
@@ -5356,9 +5264,9 @@ export class StampKonijnGame {
 		if (this.poopieMonsterPoopHits >= POOPIE_MONSTER_POOP_HITS) {
 			this.poopieMonsterState = 'friend';
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = true;
-			this.callbacks.onFeedback('POOPIEMONSTER IS JE VRIEND! ♥');
+			this.emitFeedback('POOPIEMONSTER IS JE VRIEND! ♥');
 		} else {
-			this.callbacks.onFeedback(
+			this.emitFeedback(
 				`POOPIEMONSTER: MMM... NOG ${POOPIE_MONSTER_POOP_HITS - this.poopieMonsterPoopHits} KEUTELS!`
 			);
 		}
@@ -5429,7 +5337,7 @@ export class StampKonijnGame {
 	}
 
 	private resetPoopieMonster() {
-		this.stopPoopieMonsterSpeech();
+		this.audio.stopPoopieMonsterSpeech();
 		this.poopieMonsterSpeechArmed = true;
 		this.poopieMonsterState = 'neutral';
 		this.poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
@@ -5507,7 +5415,7 @@ export class StampKonijnGame {
 		) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
-			this.playBulletImpact(
+			this.audio.playBulletImpact(
 				this.getBreakableBulletImpactMaterial(
 					immediateObjectHit.breakable,
 					immediateObjectHit.point,
@@ -5519,7 +5427,7 @@ export class StampKonijnGame {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
 			this.spawnBulletHole(immediateSurfaceHit.point, immediateSurfaceHit.normal);
-			this.playBulletImpact(
+			this.audio.playBulletImpact(
 				this.bulletImpactSurfaceMaterials.get(immediateSurfaceHit.object) ?? 'concrete'
 			);
 		} else {
@@ -5538,7 +5446,7 @@ export class StampKonijnGame {
 		this.velocity.clampLength(0, 17);
 		this.joltRagdoll(weapon === 'g36' ? 3.2 : 5.8);
 		this.cameraShake = Math.max(this.cameraShake, weapon === 'g36' ? 0.34 : 0.52);
-		this.playGunshot(weapon);
+		this.audio.playGunshot(weapon);
 	}
 
 	private spawnMuzzleEffects(
@@ -5960,7 +5868,7 @@ export class StampKonijnGame {
 		}
 		if (breakable === this.kitchenHatchBreakable) {
 			if (source === 'bullet') {
-				this.callbacks.onFeedback('DIT LUIK MOET JE STAMPEN!');
+				this.emitFeedback('DIT LUIK MOET JE STAMPEN!');
 				return;
 			}
 			if (breakable.lastStampSequence === this.stampSequence) return;
@@ -5986,7 +5894,7 @@ export class StampKonijnGame {
 				this.pendingStampFeedback = 'DE WC WIL KEUTELS!';
 				this.cameraShake = Math.max(this.cameraShake, 0.35);
 			} else {
-				this.callbacks.onFeedback('NIET SCHIETEN. SCHIJTEN!');
+				this.emitFeedback('NIET SCHIETEN. SCHIJTEN!');
 			}
 			return;
 		}
@@ -5996,7 +5904,7 @@ export class StampKonijnGame {
 		}
 
 		if (source === 'bullet') {
-			this.callbacks.onFeedback(`${breakable.label} MOET JE STAMPEN!`);
+			this.emitFeedback(`${breakable.label} MOET JE STAMPEN!`);
 			return;
 		}
 		if (breakable.lastStampSequence === this.stampSequence) return;
@@ -6040,9 +5948,9 @@ export class StampKonijnGame {
 		if (effect === 'smash') this.spawnDebris(breakable);
 		this.spawnGarbagePile(breakable);
 		if (breakable === this.poolBreakable) this.spawnPoolPuddle(breakable);
-		this.callbacks.onImpact(breakable.label, points);
+		this.events.emit('impact', { label: breakable.label, value: points });
 		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
-		this.playBreakSound(breakable.material, breakable.label);
+		this.audio.playBreak(breakable.material, breakable.label);
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
 		this.emitHud(true);
 		if (supportedObject) this.breakObject(supportedObject);
@@ -6051,7 +5959,7 @@ export class StampKonijnGame {
 			this.phase = 'finished';
 			this.weaponHeld = false;
 			this.velocity.set(0, 0, 0);
-			this.playSound('finish');
+			this.audio.playCue('finish');
 			this.emitHud(true);
 		}
 	}
@@ -6358,7 +6266,7 @@ export class StampKonijnGame {
 						(!surfaceHit || objectHit.distance < surfaceHit.distance) &&
 						(!monsterHit || objectHit.distance < monsterHit.distance)
 					) {
-						this.playBulletImpact(
+						this.audio.playBulletImpact(
 							this.getBreakableBulletImpactMaterial(objectHit.breakable, objectHit.point, direction)
 						);
 						this.damageBreakable(objectHit.breakable, 'bullet');
@@ -6367,7 +6275,7 @@ export class StampKonijnGame {
 					}
 					if (surfaceHit) {
 						this.spawnBulletHole(surfaceHit.point, surfaceHit.normal);
-						this.playBulletImpact(
+						this.audio.playBulletImpact(
 							this.bulletImpactSurfaceMaterials.get(surfaceHit.object) ?? 'concrete'
 						);
 						this.removeWeaponProjectile(index);
@@ -6566,7 +6474,7 @@ export class StampKonijnGame {
 
 		this.poolWaveEnergy = Math.max(this.poolWaveEnergy, intensity);
 		this.poolSplashCooldown = 0.11;
-		this.playWaterSplash(impactSpeed * strengthScale);
+		this.audio.playWaterSplash(impactSpeed * strengthScale);
 	}
 
 	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number, emphasizeWindow = false) {
@@ -7020,8 +6928,6 @@ export class StampKonijnGame {
 		this.g36Pickup.visible = false;
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
-		this.swimSoundCooldown = 0;
-		this.lastSwimSampleIndex = -1;
 		this.poolWaveEnergy = 0;
 		this.toiletHole.visible = false;
 		this.kitchenHatchHole.visible = false;
@@ -7234,44 +7140,6 @@ export class StampKonijnGame {
 		}
 	}
 
-	private ensureAudio() {
-		if (this.muted) return;
-		this.audioContext ??= new AudioContext();
-		if (this.audioContext.state === 'suspended') void this.audioContext.resume();
-	}
-
-	private async preloadGunshotBuffers() {
-		try {
-			this.audioContext ??= new AudioContext();
-			const audio = this.audioContext;
-			const gunshots = [
-				['pistol', '/audio/weapons/pistol.ogg'],
-				['g36', '/audio/weapons/g36.ogg']
-			] as const;
-			await Promise.all(
-				gunshots.map(async ([weapon, path]) => {
-					const response = await fetch(path);
-					if (!response.ok) throw new Error(`Could not preload ${path}: ${response.status}`);
-					this.gunshotBuffers[weapon] = await audio.decodeAudioData(await response.arrayBuffer());
-				})
-			);
-		} catch (error) {
-			console.warn('Gunshot audio warmup failed; falling back to media audio.', error);
-		}
-	}
-
-	private playFartSound() {
-		if (this.muted) return;
-		const sample = this.fartSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.82;
-		sample.preservesPitch = false;
-		sample.playbackRate = THREE.MathUtils.lerp(FART_PITCH_MIN, FART_PITCH_MAX, Math.random());
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
 	private updatePoopieMonsterSpeech() {
 		if (!this.playerInSewer || this.poopieMonsterState !== 'neutral') {
 			if (!this.playerInSewer) this.poopieMonsterSpeechArmed = true;
@@ -7287,306 +7155,17 @@ export class StampKonijnGame {
 		}
 
 		this.poopieMonsterSpeechArmed = false;
-		this.playPoopieMonsterSpeech();
-	}
-
-	private playPoopieMonsterSpeech() {
-		if (this.muted || this.poopieMonsterSpeechPlaying) return;
-		const sample = this.poopieMonsterSpeechSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.9;
-		const cleanup = () => {
-			this.activeSamples.delete(sample);
-			if (this.poopieMonsterSpeechPlaying === sample) this.poopieMonsterSpeechPlaying = null;
-		};
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.poopieMonsterSpeechPlaying = sample;
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private stopPoopieMonsterSpeech() {
-		const sample = this.poopieMonsterSpeechPlaying;
-		if (!sample) return;
-		sample.pause();
-		sample.currentTime = 0;
-		this.activeSamples.delete(sample);
-		this.poopieMonsterSpeechPlaying = null;
-	}
-
-	private playGunshot(weapon: GunWeapon) {
-		if (this.muted) return;
-		const buffer = this.gunshotBuffers[weapon];
-		const audio = this.audioContext;
-		if (buffer && audio) {
-			const source = audio.createBufferSource();
-			const gain = audio.createGain();
-			source.buffer = buffer;
-			gain.gain.value = weapon === 'g36' ? 0.74 : 0.86;
-			source.connect(gain).connect(audio.destination);
-			source.addEventListener(
-				'ended',
-				() => {
-					source.disconnect();
-					gain.disconnect();
-				},
-				{ once: true }
-			);
-			source.start();
-			return;
-		}
-		const source = weapon === 'g36' ? this.g36Sample : this.pistolSample;
-		const sample = source.cloneNode(true) as HTMLAudioElement;
-		sample.volume = weapon === 'g36' ? 0.74 : 0.86;
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playWeaponChange() {
-		if (this.muted) return;
-		const sample = this.weaponChangeSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.64;
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playBulletImpact(kind: BulletImpactMaterial) {
-		if (this.muted) return;
-		const options = this.bulletImpactSamples[kind];
-		const source = options[Math.floor(Math.random() * options.length)];
-		const sample = source.cloneNode(true) as HTMLAudioElement;
-		sample.volume = BULLET_IMPACT_VOLUMES[kind];
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playImpactSample(power: number) {
-		if (this.muted) return;
-		const sample = this.impactSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = THREE.MathUtils.lerp(0.5, 0.88, power);
-		sample.playbackRate = THREE.MathUtils.lerp(0.86, 1.04, power);
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
+		this.audio.playPoopieMonsterSpeech();
 	}
 
 	private playStampImpactSample(power: number) {
 		if (this.lastStampImpactSoundSequence === this.stampSequence) return;
 		this.lastStampImpactSoundSequence = this.stampSequence;
-		this.playImpactSample(power);
+		this.audio.playImpact(power);
 	}
 
-	private playVaseBreakSample() {
-		if (this.muted) return;
-		const sample = this.vaseBreakSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.82;
-		sample.playbackRate = 0.94 + Math.random() * 0.1;
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playChairBreakSample() {
-		if (this.muted) return;
-		const sample = this.chairBreakSample.cloneNode(true) as HTMLAudioElement;
-		sample.volume = 0.72;
-		sample.playbackRate = 0.97 + Math.random() * 0.06;
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playBreakSound(kind: BreakMaterial, label: string) {
-		if (this.muted) return;
-		if (
-			label === 'STOEL' ||
-			label === 'TUINSTOEL' ||
-			label === 'BOEKENKAST' ||
-			label === 'PICKNICKTAFEL'
-		) {
-			this.playChairBreakSample();
-			return;
-		}
-		if (kind === 'ceramic') {
-			this.playVaseBreakSample();
-			return;
-		}
-		this.ensureAudio();
-		const audio = this.audioContext;
-		if (!audio) return;
-		const profiles = {
-			wood: {
-				duration: 0.3,
-				filter: 720,
-				gain: 0.15,
-				tones: [105, 168],
-				wave: 'triangle'
-			},
-			metal: {
-				duration: 0.7,
-				filter: 2100,
-				gain: 0.13,
-				tones: [410, 735, 1260],
-				wave: 'triangle'
-			},
-			plant: {
-				duration: 0.25,
-				filter: 1250,
-				gain: 0.1,
-				tones: [92],
-				wave: 'sine'
-			},
-			electronics: {
-				duration: 0.42,
-				filter: 2600,
-				gain: 0.14,
-				tones: [920, 460, 118],
-				wave: 'square'
-			},
-			canvas: {
-				duration: 0.34,
-				filter: 880,
-				gain: 0.11,
-				tones: [135],
-				wave: 'sawtooth'
-			}
-		} as const;
-		const profile = profiles[kind];
-		const now = audio.currentTime;
-		const buffer = audio.createBuffer(
-			1,
-			Math.ceil(audio.sampleRate * profile.duration),
-			audio.sampleRate
-		);
-		const noise = buffer.getChannelData(0);
-		for (let index = 0; index < noise.length; index += 1) {
-			const envelope = Math.pow(1 - index / noise.length, 1.2);
-			noise[index] = (Math.random() * 2 - 1) * envelope;
-		}
-		const source = audio.createBufferSource();
-		const filter = audio.createBiquadFilter();
-		const noiseGain = audio.createGain();
-		source.buffer = buffer;
-		filter.type = kind === 'wood' || kind === 'plant' || kind === 'canvas' ? 'lowpass' : 'bandpass';
-		filter.frequency.setValueAtTime(profile.filter, now);
-		filter.Q.setValueAtTime(1.4, now);
-		noiseGain.gain.setValueAtTime(profile.gain, now);
-		noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + profile.duration);
-		source.connect(filter).connect(noiseGain).connect(audio.destination);
-		source.start(now);
-
-		profile.tones.forEach((frequency, index) => {
-			const oscillator = audio.createOscillator();
-			const toneGain = audio.createGain();
-			const start = now + index * 0.008;
-			oscillator.type = profile.wave;
-			oscillator.frequency.setValueAtTime(frequency, start);
-			oscillator.frequency.exponentialRampToValueAtTime(
-				Math.max(55, frequency * (kind === 'metal' ? 0.92 : 0.42)),
-				start + profile.duration
-			);
-			toneGain.gain.setValueAtTime(profile.gain / Math.max(2, profile.tones.length), start);
-			toneGain.gain.exponentialRampToValueAtTime(0.0001, start + profile.duration);
-			oscillator.connect(toneGain).connect(audio.destination);
-			oscillator.start(start);
-			oscillator.stop(start + profile.duration);
-		});
-	}
-
-	private playSound(kind: 'start' | 'bounce' | 'wall' | 'finish') {
-		if (this.muted) return;
-		this.ensureAudio();
-		const audio = this.audioContext;
-		if (!audio) return;
-		const oscillator = audio.createOscillator();
-		const gain = audio.createGain();
-		const now = audio.currentTime;
-		const settings = {
-			start: [260, 520, 0.12, 'sine'],
-			bounce: [170, 300, 0.1, 'sine'],
-			wall: [115, 78, 0.08, 'triangle'],
-			finish: [180, 600, 0.4, 'sine']
-		} as const;
-		const [from, to, duration, type] = settings[kind];
-		oscillator.type = type;
-		oscillator.frequency.setValueAtTime(from, now);
-		oscillator.frequency.exponentialRampToValueAtTime(to, now + duration);
-		gain.gain.setValueAtTime(0.07, now);
-		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		oscillator.connect(gain).connect(audio.destination);
-		oscillator.start(now);
-		oscillator.stop(now + duration);
-	}
-
-	private playSwimmingSound(submersion: number) {
-		if (this.muted || this.swimSoundCooldown > 0) return;
-		const movementSpeed = Math.hypot(this.velocity.x, this.velocity.z, this.velocity.y * 0.35);
-		if (movementSpeed < 0.65) return;
-
-		let index = Math.floor(Math.random() * this.swimSamples.length);
-		if (index === this.lastSwimSampleIndex) {
-			index =
-				(index + 1 + Math.floor(Math.random() * (this.swimSamples.length - 1))) %
-				this.swimSamples.length;
-		}
-		this.lastSwimSampleIndex = index;
-		this.swimSoundCooldown = SWIM_SAMPLE_DURATIONS[index] * (0.78 + Math.random() * 0.16);
-
-		const sample = this.swimSamples[index].cloneNode(true) as HTMLAudioElement;
-		const movementVolume = THREE.MathUtils.clamp(0.22 + movementSpeed * 0.045, 0.24, 0.5);
-		sample.volume = movementVolume * THREE.MathUtils.lerp(0.62, 1, submersion);
-		const cleanup = () => this.activeSamples.delete(sample);
-		sample.addEventListener('ended', cleanup, { once: true });
-		this.activeSamples.add(sample);
-		void sample.play().catch(cleanup);
-	}
-
-	private playWaterSplash(impactSpeed: number) {
-		if (this.muted) return;
-		this.ensureAudio();
-		const audio = this.audioContext;
-		if (!audio) return;
-		const strength = THREE.MathUtils.clamp(impactSpeed / 12, 0.3, 1);
-		const now = audio.currentTime;
-		const duration = 0.13 + strength * 0.13;
-		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
-		const noise = buffer.getChannelData(0);
-		for (let index = 0; index < noise.length; index += 1) {
-			const progress = index / noise.length;
-			const envelope = Math.pow(1 - progress, 2.1) * Math.min(1, progress * 18);
-			noise[index] = (Math.random() * 2 - 1) * envelope;
-		}
-		const source = audio.createBufferSource();
-		const filter = audio.createBiquadFilter();
-		const gain = audio.createGain();
-		source.buffer = buffer;
-		filter.type = 'bandpass';
-		filter.frequency.setValueAtTime(620 + strength * 480, now);
-		filter.frequency.exponentialRampToValueAtTime(240, now + duration);
-		filter.Q.setValueAtTime(0.7, now);
-		gain.gain.setValueAtTime(0.035 + strength * 0.055, now);
-		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		source.connect(filter).connect(gain).connect(audio.destination);
-		source.start(now);
-
-		const plop = audio.createOscillator();
-		const plopGain = audio.createGain();
-		plop.type = 'sine';
-		plop.frequency.setValueAtTime(150 + strength * 55, now);
-		plop.frequency.exponentialRampToValueAtTime(72, now + duration * 0.8);
-		plopGain.gain.setValueAtTime(0.025 + strength * 0.025, now);
-		plopGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		plop.connect(plopGain).connect(audio.destination);
-		plop.start(now);
-		plop.stop(now + duration);
+	private emitFeedback(message: string) {
+		this.events.emit('feedback', { message });
 	}
 
 	private emitHud(force = false) {
@@ -7604,6 +7183,6 @@ export class StampKonijnGame {
 		const signature = JSON.stringify(state);
 		if (!force && signature === this.lastHudSignature) return;
 		this.lastHudSignature = signature;
-		this.callbacks.onHud(state);
+		this.events.emit('hud', state);
 	}
 }

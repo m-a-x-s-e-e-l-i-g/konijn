@@ -25,3 +25,9 @@ npm run build
 ```
 
 You can preview the production build with `npm run preview`.
+
+## Stampkonijn development
+
+The game is being split into focused TypeScript systems while preserving the existing Svelte API. See [the architecture notes](docs/stampkonijn-architecture.md) for module ownership and the migration order.
+
+Room geometry can be authored in Blender and exported as a GLB plus a validated level manifest. See [the Blender level workflow](art/levels/README.md) for naming, custom properties and the export command.
