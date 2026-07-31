@@ -58,6 +58,20 @@ interface ImpactRing {
 	life: number;
 }
 
+interface WaterRipple {
+	mesh: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+	life: number;
+	maxLife: number;
+	expansion: number;
+}
+
+interface WaterDroplet {
+	mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
+	velocity: THREE.Vector3;
+	life: number;
+	maxLife: number;
+}
+
 interface SurfaceCrack {
 	mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 	texture: THREE.CanvasTexture;
@@ -203,6 +217,12 @@ const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
 const DOGHOUSE_X = 9;
 const DOGHOUSE_Z = GARDEN_BACK_Z + 1.45;
+const POOL_X = 5.2;
+const POOL_Z = -15.1;
+const POOL_WATER_Y = 0.62;
+const POOL_BOTTOM_Y = 0.09;
+const POOL_WATER_RADIUS = 1.86;
+const POOL_ENTRY_RADIUS = 1.56;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
@@ -364,6 +384,13 @@ export class StampKonijnGame {
 	private playerLeftRoom: LeftRoomName | null = null;
 	private leftRoomDoors: LeftRoomDoor[] = [];
 	private toiletBreakable: Breakable | null = null;
+	private poolBreakable: Breakable | null = null;
+	private poolWater: THREE.Mesh<THREE.CircleGeometry, THREE.MeshPhysicalMaterial> | null = null;
+	private poolWaterBasePositions: Float32Array | null = null;
+	private poolWaterTime = 0;
+	private poolWaveEnergy = 0;
+	private rabbitInPoolWater = false;
+	private poolSplashCooldown = 0;
 	private toiletFillRoot = new THREE.Group();
 	private toiletPoopCount = 0;
 	private toiletSinking = false;
@@ -386,6 +413,8 @@ export class StampKonijnGame {
 	private sewerObstacles: SewerObstacle[] = [];
 	private debris: DebrisPiece[] = [];
 	private impactRings: ImpactRing[] = [];
+	private waterRipples: WaterRipple[] = [];
+	private waterDroplets: WaterDroplet[] = [];
 	private surfaceCracks: SurfaceCrack[] = [];
 	private weaponProjectiles: WeaponProjectile[] = [];
 	private muzzleEffects: MuzzleEffect[] = [];
@@ -487,6 +516,7 @@ export class StampKonijnGame {
 
 	start() {
 		this.clearDebris();
+		this.clearWaterEffects();
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
@@ -503,6 +533,9 @@ export class StampKonijnGame {
 		this.camera.lookAt(CAMERA_TARGET);
 		this.rabbitTumble.rotation.set(0, 0, 0);
 		this.velocity.set(0, 0, 0);
+		this.rabbitInPoolWater = false;
+		this.poolSplashCooldown = 0;
+		this.poolWaveEnergy = 0;
 		this.pointerActive = false;
 		this.stomping = false;
 		this.stompWindup = 0;
@@ -632,6 +665,7 @@ export class StampKonijnGame {
 		for (const sample of this.activeSamples) sample.pause();
 		this.activeSamples.clear();
 		this.clearDebris();
+		this.clearWaterEffects();
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
@@ -2188,7 +2222,15 @@ export class StampKonijnGame {
 		const rightGardenChair = this.makeGardenChair(COLORS.blue);
 		rightGardenChair.rotation.y = -0.55;
 		this.addBreakable('TUINSTOEL', 45, rightGardenChair, [0.8, 0, -11.2], 0.82, 1.15, 'wood');
-		this.addBreakable('ZWEMBAD', 320, this.makePool(), [5.2, 0, -15.1], 2.2, 0.82, 'canvas');
+		this.poolBreakable = this.addBreakable(
+			'ZWEMBAD',
+			320,
+			this.makePool(),
+			[POOL_X, 0, POOL_Z],
+			2.2,
+			0.82,
+			'canvas'
+		);
 		this.addBreakable(
 			'APPELBOOM',
 			480,
@@ -3089,20 +3131,41 @@ export class StampKonijnGame {
 
 	private makePool() {
 		const group = new THREE.Group();
-		group.add(cylinder(2.06, 2.12, 0.68, [0, 0.34, 0], 0x4fa7c7, 32));
-		const water = new THREE.Mesh(
-			new THREE.CircleGeometry(1.86, 40),
+		const wall = shadowMesh(
+			new THREE.CylinderGeometry(2.06, 2.12, 0.68, 40, 1, true),
 			new THREE.MeshStandardMaterial({
-				color: 0x62c7df,
-				roughness: 0.18,
-				transparent: true,
-				opacity: 0.78,
-				depthWrite: false
+				color: 0x4fa7c7,
+				roughness: 0.72,
+				side: THREE.DoubleSide
 			})
 		);
-		water.rotation.x = -Math.PI / 2;
-		water.position.y = 0.7;
-		group.add(water);
+		wall.position.y = 0.34;
+		group.add(wall);
+		group.add(cylinder(2.08, 2.08, 0.1, [0, 0.05, 0], 0x378eae, 40));
+		group.add(cylinder(1.88, 1.88, 0.025, [0, 0.115, 0], 0x277f9e, 40));
+
+		const waterGeometry = new THREE.CircleGeometry(POOL_WATER_RADIUS, 48);
+		const waterPositions = waterGeometry.getAttribute('position') as THREE.BufferAttribute;
+		waterPositions.setUsage(THREE.DynamicDrawUsage);
+		this.poolWaterBasePositions = Float32Array.from(waterPositions.array as ArrayLike<number>);
+		this.poolWater = new THREE.Mesh(
+			waterGeometry,
+			new THREE.MeshPhysicalMaterial({
+				color: 0x57cbe2,
+				roughness: 0.12,
+				metalness: 0,
+				clearcoat: 0.72,
+				clearcoatRoughness: 0.2,
+				transparent: true,
+				opacity: 0.72,
+				depthWrite: false,
+				side: THREE.DoubleSide
+			})
+		);
+		this.poolWater.rotation.x = -Math.PI / 2;
+		this.poolWater.position.y = POOL_WATER_Y;
+		this.poolWater.renderOrder = 1;
+		group.add(this.poolWater);
 		const rim = shadowMesh(new THREE.TorusGeometry(1.98, 0.16, 10, 40), material(0xf0e6d5, 0.86));
 		rim.rotation.x = Math.PI / 2;
 		rim.position.y = 0.72;
@@ -3310,6 +3373,7 @@ export class StampKonijnGame {
 			if (this.phase === 'playing') this.updateGame(delta);
 			this.updateDebris(delta);
 			this.updateImpactRings(delta);
+			this.updatePoolWater(delta);
 			this.updateWeaponProjectiles(delta);
 			this.updateMuzzleEffects(delta);
 			this.updateToilet(delta);
@@ -3322,6 +3386,7 @@ export class StampKonijnGame {
 		this.syncUpstairsVisibility();
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
+		this.poolSplashCooldown = Math.max(0, this.poolSplashCooldown - delta);
 		for (let index = 0; index < this.upstairsLights.length; index += 1) {
 			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
 			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
@@ -3808,14 +3873,25 @@ export class StampKonijnGame {
 		}
 
 		if (this.playerInSewer) this.resolveSewerObstacleCollisions();
-		const floorHeight = this.getActiveFloorHeight();
+		const overPoolWater = this.isPlayerOverPoolInterior();
+		const floorHeight = overPoolWater
+			? (this.poolBreakable?.group.position.y ?? 0) + POOL_BOTTOM_Y
+			: this.getActiveFloorHeight();
 		const canFallThroughLevel = topToiletOpening || topHatchOpening;
 		if (!canFallThroughLevel && this.player.position.y <= floorHeight) {
 			const impactSpeed = Math.abs(this.velocity.y);
 			const stampImpactSpeed = this.velocity.length();
 			const floorNormal = new THREE.Vector3(0, 1, 0);
 			this.player.position.y = floorHeight;
-			if (this.isTargetStampSurface(floorNormal) && stampImpactSpeed > 2.8) {
+			if (overPoolWater && this.isTargetStampSurface(floorNormal) && stampImpactSpeed > 2.8) {
+				this.performPoolStamp(stampImpactSpeed);
+				this.finishStampRebound(floorNormal, 0.62, stampImpactSpeed);
+			} else if (overPoolWater) {
+				this.velocity.y = Math.max(6.1, impactSpeed * 0.34);
+				this.squash = Math.min(0.72, impactSpeed / 18);
+				this.joltArms(1.15 + Math.min(impactSpeed, 12) * 0.08);
+				this.spawnPoolSplash(Math.max(4, impactSpeed * 0.7), 0.72);
+			} else if (this.isTargetStampSurface(floorNormal) && stampImpactSpeed > 2.8) {
 				this.performGroundStamp(stampImpactSpeed);
 				this.finishStampRebound(floorNormal, 0.7, stampImpactSpeed);
 			} else {
@@ -4289,6 +4365,88 @@ export class StampKonijnGame {
 		}
 	}
 
+	private isPlayerOverPoolInterior() {
+		const pool = this.poolBreakable;
+		if (!pool || pool.broken || !this.isBreakableActive(pool)) return false;
+		return (
+			Math.hypot(
+				this.player.position.x - pool.group.position.x,
+				this.player.position.z - pool.group.position.z
+			) <= POOL_ENTRY_RADIUS
+		);
+	}
+
+	private resolvePoolWaterContact(
+		pool: Breakable,
+		distance: number,
+		previousBottom: number,
+		delta: number
+	) {
+		const surfaceY = pool.group.position.y + POOL_WATER_Y;
+		const bottomY = pool.group.position.y + POOL_BOTTOM_Y;
+		const playerBottom = this.player.position.y;
+		const playerTop = playerBottom + PLAYER_HEIGHT;
+		const insideWater = distance <= POOL_ENTRY_RADIUS;
+
+		if (!insideWater) {
+			const stillAgainstInnerWall =
+				this.rabbitInPoolWater &&
+				playerBottom <= surfaceY + 0.12 &&
+				distance <= pool.radius + PLAYER_RADIUS;
+			if (stillAgainstInnerWall) {
+				const nx = (this.player.position.x - pool.group.position.x) / Math.max(distance, 0.001);
+				const nz = (this.player.position.z - pool.group.position.z) / Math.max(distance, 0.001);
+				this.player.position.x = pool.group.position.x + nx * POOL_ENTRY_RADIUS;
+				this.player.position.z = pool.group.position.z + nz * POOL_ENTRY_RADIUS;
+				const outwardSpeed = this.velocity.x * nx + this.velocity.z * nz;
+				if (outwardSpeed > 0) {
+					this.velocity.x -= outwardSpeed * nx * 1.58;
+					this.velocity.z -= outwardSpeed * nz * 1.58;
+				}
+				this.joltArms(0.55);
+				return true;
+			}
+			this.rabbitInPoolWater = false;
+			return false;
+		}
+
+		if (playerBottom > surfaceY) {
+			if (this.rabbitInPoolWater && previousBottom <= surfaceY && this.velocity.y > 0) {
+				this.spawnPoolSplash(Math.abs(this.velocity.y), 0.48);
+			}
+			this.rabbitInPoolWater = false;
+			return true;
+		}
+		if (playerTop < bottomY) return false;
+
+		if (previousBottom > surfaceY && this.velocity.y < 0) {
+			this.spawnPoolSplash(Math.abs(this.velocity.y), 1);
+		}
+		this.rabbitInPoolWater = true;
+		const submersion = THREE.MathUtils.clamp(
+			(surfaceY - playerBottom) / Math.max(0.01, surfaceY - bottomY),
+			0,
+			1
+		);
+		const horizontalDrag = Math.exp(-(1.2 + submersion * 1.6) * delta);
+		this.velocity.x *= horizontalDrag;
+		this.velocity.z *= horizontalDrag;
+		this.velocity.y *= Math.exp(-(0.45 + submersion * 0.7) * delta);
+		this.velocity.y += submersion * 3.8 * delta;
+		return true;
+	}
+
+	private performPoolStamp(speed: number) {
+		this.spawnPoolSplash(speed, 1.35);
+		if (this.poolBreakable && !this.poolBreakable.broken) {
+			this.damageBreakable(this.poolBreakable, 'stamp');
+		}
+		this.rabbitInPoolWater = false;
+		this.squash = 1;
+		this.cameraShake = Math.max(this.cameraShake, 0.82);
+		this.playImpactSample(Math.min(1, speed / 20));
+	}
+
 	private resolveBreakables(delta: number) {
 		for (const breakable of this.breakables) {
 			if (breakable.broken || !this.isBreakableActive(breakable)) continue;
@@ -4299,6 +4457,12 @@ export class StampKonijnGame {
 			const objectTop = breakable.group.position.y + breakable.height;
 			const playerBottom = this.player.position.y;
 			const previousBottom = playerBottom - this.velocity.y * delta;
+			if (
+				breakable === this.poolBreakable &&
+				this.resolvePoolWaterContact(breakable, distance, previousBottom, delta)
+			) {
+				continue;
+			}
 			const topContactRadius = breakable.radius + PLAYER_RADIUS * 0.56;
 			const closeToTop = playerBottom >= objectTop - 0.12;
 			const landingOnTop =
@@ -4975,6 +5139,7 @@ export class StampKonijnGame {
 				? this.breakables.find((item) => item.label === 'FRUITSCHAAL' && !item.broken)
 				: undefined;
 		breakable.broken = true;
+		if (breakable === this.poolBreakable) this.rabbitInPoolWater = false;
 		breakable.group.visible = effect === 'sink';
 		const points = breakable.value;
 		this.score += points;
@@ -5226,6 +5391,84 @@ export class StampKonijnGame {
 		ring.scale.setScalar(0.4);
 		this.scene.add(ring);
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });
+	}
+
+	private spawnPoolSplash(impactSpeed: number, strengthScale: number) {
+		const pool = this.poolBreakable;
+		if (!pool || pool.broken || this.poolSplashCooldown > 0) return;
+		const intensity = THREE.MathUtils.clamp((impactSpeed / 10) * strengthScale, 0.32, 1.35);
+		const surfaceY = pool.group.position.y + POOL_WATER_Y;
+		const offset = new THREE.Vector2(
+			this.player.position.x - pool.group.position.x,
+			this.player.position.z - pool.group.position.z
+		);
+		if (offset.length() > POOL_ENTRY_RADIUS * 0.88) offset.setLength(POOL_ENTRY_RADIUS * 0.88);
+		const splashX = pool.group.position.x + offset.x;
+		const splashZ = pool.group.position.z + offset.y;
+
+		const rippleCount = this.reducedMotion ? 1 : 2;
+		for (let index = 0; index < rippleCount; index += 1) {
+			const maxLife = 0.48 + index * 0.14;
+			const ripple = new THREE.Mesh(
+				new THREE.RingGeometry(0.68, 0.82, 40),
+				new THREE.MeshBasicMaterial({
+					color: index === 0 ? 0xc9f5f4 : 0x71ddeb,
+					transparent: true,
+					opacity: 0.7 - index * 0.16,
+					side: THREE.DoubleSide,
+					depthWrite: false,
+					blending: THREE.AdditiveBlending
+				})
+			);
+			ripple.rotation.x = -Math.PI / 2;
+			ripple.position.set(splashX, surfaceY + 0.018 + index * 0.004, splashZ);
+			ripple.scale.setScalar(0.09 + index * 0.06);
+			ripple.renderOrder = 3;
+			this.scene.add(ripple);
+			this.waterRipples.push({
+				mesh: ripple,
+				life: maxLife,
+				maxLife,
+				expansion: (1.65 + intensity * 0.85) * (1 - index * 0.16)
+			});
+		}
+
+		const dropletCount = this.reducedMotion ? 4 : Math.round(7 + intensity * 8);
+		for (let index = 0; index < dropletCount; index += 1) {
+			const droplet = new THREE.Mesh(
+				new THREE.SphereGeometry(0.025 + Math.random() * 0.025, 7, 5),
+				new THREE.MeshStandardMaterial({
+					color: index % 3 === 0 ? 0xd1f7f4 : 0x67d7e8,
+					roughness: 0.18,
+					transparent: true,
+					opacity: 0.82
+				})
+			);
+			const angle = Math.random() * Math.PI * 2;
+			const radialSpeed = 0.8 + Math.random() * (1.4 + intensity * 1.4);
+			const maxLife = 0.5 + Math.random() * 0.32;
+			droplet.position.set(
+				splashX + Math.cos(angle) * Math.random() * 0.16,
+				surfaceY + 0.035,
+				splashZ + Math.sin(angle) * Math.random() * 0.16
+			);
+			droplet.scale.set(0.72, 1.45 + Math.random() * 0.55, 0.72);
+			this.scene.add(droplet);
+			this.waterDroplets.push({
+				mesh: droplet,
+				velocity: new THREE.Vector3(
+					Math.cos(angle) * radialSpeed,
+					2.1 + Math.random() * (2.2 + intensity * 1.5),
+					Math.sin(angle) * radialSpeed
+				),
+				life: maxLife,
+				maxLife
+			});
+		}
+
+		this.poolWaveEnergy = Math.max(this.poolWaveEnergy, intensity);
+		this.poolSplashCooldown = 0.11;
+		this.playWaterSplash(impactSpeed * strengthScale);
 	}
 
 	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number, emphasizeWindow = false) {
@@ -5498,6 +5741,57 @@ export class StampKonijnGame {
 		}
 	}
 
+	private updatePoolWater(delta: number) {
+		this.poolWaterTime += delta;
+		this.poolWaveEnergy *= Math.exp(-2.4 * delta);
+		if (this.poolWater && this.poolWaterBasePositions && !this.poolBreakable?.broken) {
+			const position = this.poolWater.geometry.getAttribute('position');
+			const amplitude = 0.008 + this.poolWaveEnergy * 0.036;
+			for (let index = 0; index < position.count; index += 1) {
+				const offset = index * 3;
+				const x = this.poolWaterBasePositions[offset];
+				const y = this.poolWaterBasePositions[offset + 1];
+				const wave =
+					Math.sin(x * 3.4 + this.poolWaterTime * 2.7) * 0.58 +
+					Math.cos(y * 4.1 - this.poolWaterTime * 2.15) * 0.42;
+				position.setZ(index, wave * amplitude);
+			}
+			position.needsUpdate = true;
+			this.poolWater.geometry.computeVertexNormals();
+		}
+
+		for (let index = this.waterRipples.length - 1; index >= 0; index -= 1) {
+			const ripple = this.waterRipples[index];
+			ripple.life -= delta;
+			ripple.mesh.scale.addScalar(ripple.expansion * delta);
+			const lifeRatio = Math.max(0, ripple.life / ripple.maxLife);
+			ripple.mesh.material.opacity = Math.pow(lifeRatio, 1.4) * 0.68;
+			if (ripple.life <= 0) {
+				this.scene.remove(ripple.mesh);
+				ripple.mesh.geometry.dispose();
+				ripple.mesh.material.dispose();
+				this.waterRipples.splice(index, 1);
+			}
+		}
+
+		const surfaceY = (this.poolBreakable?.group.position.y ?? 0) + POOL_WATER_Y;
+		for (let index = this.waterDroplets.length - 1; index >= 0; index -= 1) {
+			const droplet = this.waterDroplets[index];
+			droplet.life -= delta;
+			droplet.velocity.y -= 9.8 * delta;
+			droplet.mesh.position.addScaledVector(droplet.velocity, delta);
+			droplet.mesh.rotation.x += delta * 4.2;
+			const lifeRatio = Math.max(0, droplet.life / droplet.maxLife);
+			droplet.mesh.material.opacity = Math.min(0.82, lifeRatio * 1.2);
+			if (droplet.life <= 0 || (droplet.velocity.y < 0 && droplet.mesh.position.y <= surfaceY)) {
+				this.scene.remove(droplet.mesh);
+				droplet.mesh.geometry.dispose();
+				droplet.mesh.material.dispose();
+				this.waterDroplets.splice(index, 1);
+			}
+		}
+	}
+
 	private updateCamera(delta: number) {
 		if (this.playerInSewer) {
 			this.cameraDesiredPosition.set(
@@ -5628,6 +5922,9 @@ export class StampKonijnGame {
 		this.toiletSinking = false;
 		this.toiletSinkAmount = 0;
 		this.toiletPoopCount = 0;
+		this.rabbitInPoolWater = false;
+		this.poolSplashCooldown = 0;
+		this.poolWaveEnergy = 0;
 		this.toiletHole.visible = false;
 		this.kitchenHatchHole.visible = false;
 		this.kitchenHatchDamage.visible = false;
@@ -5673,6 +5970,21 @@ export class StampKonijnGame {
 			ring.mesh.material.dispose();
 		}
 		this.impactRings = [];
+	}
+
+	private clearWaterEffects() {
+		for (const ripple of this.waterRipples) {
+			this.scene.remove(ripple.mesh);
+			ripple.mesh.geometry.dispose();
+			ripple.mesh.material.dispose();
+		}
+		this.waterRipples = [];
+		for (const droplet of this.waterDroplets) {
+			this.scene.remove(droplet.mesh);
+			droplet.mesh.geometry.dispose();
+			droplet.mesh.material.dispose();
+		}
+		this.waterDroplets = [];
 	}
 
 	private clearSurfaceCracks() {
@@ -6035,6 +6347,46 @@ export class StampKonijnGame {
 		oscillator.connect(gain).connect(audio.destination);
 		oscillator.start(now);
 		oscillator.stop(now + duration);
+	}
+
+	private playWaterSplash(impactSpeed: number) {
+		if (this.muted) return;
+		this.ensureAudio();
+		const audio = this.audioContext;
+		if (!audio) return;
+		const strength = THREE.MathUtils.clamp(impactSpeed / 12, 0.3, 1);
+		const now = audio.currentTime;
+		const duration = 0.13 + strength * 0.13;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			const envelope = Math.pow(1 - progress, 2.1) * Math.min(1, progress * 18);
+			noise[index] = (Math.random() * 2 - 1) * envelope;
+		}
+		const source = audio.createBufferSource();
+		const filter = audio.createBiquadFilter();
+		const gain = audio.createGain();
+		source.buffer = buffer;
+		filter.type = 'bandpass';
+		filter.frequency.setValueAtTime(620 + strength * 480, now);
+		filter.frequency.exponentialRampToValueAtTime(240, now + duration);
+		filter.Q.setValueAtTime(0.7, now);
+		gain.gain.setValueAtTime(0.035 + strength * 0.055, now);
+		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		source.connect(filter).connect(gain).connect(audio.destination);
+		source.start(now);
+
+		const plop = audio.createOscillator();
+		const plopGain = audio.createGain();
+		plop.type = 'sine';
+		plop.frequency.setValueAtTime(150 + strength * 55, now);
+		plop.frequency.exponentialRampToValueAtTime(72, now + duration * 0.8);
+		plopGain.gain.setValueAtTime(0.025 + strength * 0.025, now);
+		plopGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		plop.connect(plopGain).connect(audio.destination);
+		plop.start(now);
+		plop.stop(now + duration);
 	}
 
 	private emitHud(force = false) {
