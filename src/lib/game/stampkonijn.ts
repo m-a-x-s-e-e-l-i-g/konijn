@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export type GamePhase = 'idle' | 'playing' | 'finished';
 export type WeaponName = 'poop' | 'pistol' | 'g36';
@@ -61,6 +62,11 @@ interface DebrisPiece {
 	velocity: THREE.Vector3;
 	spin: THREE.Vector3;
 	life: number;
+	floorY: number;
+}
+
+interface GarbagePile {
+	mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 }
 
 interface ImpactRing {
@@ -496,6 +502,7 @@ export class StampKonijnGame {
 	private poopieMonsterTime = 0;
 	private poopieMonsterHitFlash = 0;
 	private debris: DebrisPiece[] = [];
+	private garbagePiles: GarbagePile[] = [];
 	private impactRings: ImpactRing[] = [];
 	private waterRipples: WaterRipple[] = [];
 	private waterDroplets: WaterDroplet[] = [];
@@ -4775,6 +4782,7 @@ export class StampKonijnGame {
 		this.clearWindowCracks();
 		this.clearWindowBulletHoles();
 		this.spawnWindowDebris();
+		this.spawnWindowGarbagePile();
 		this.playVaseBreakSample();
 		this.player.position.x = THREE.MathUtils.clamp(
 			this.player.position.x,
@@ -4873,9 +4881,47 @@ export class StampKonijnGame {
 					(Math.random() - 0.5) * 14,
 					(Math.random() - 0.5) * 14
 				),
-				life: 4 + Math.random() * 2
+				life: 4 + Math.random() * 2,
+				floorY: 0
 			});
 		}
+	}
+
+	private spawnWindowGarbagePile() {
+		const geometries: THREE.BufferGeometry[] = [];
+		const shardCount = this.reducedMotion ? 6 : 11;
+		for (let index = 0; index < shardCount; index += 1) {
+			const width = 0.1 + Math.random() * 0.3;
+			const depth = 0.08 + Math.random() * 0.24;
+			const geometry = new THREE.BoxGeometry(width, 0.018 + Math.random() * 0.022, depth);
+			geometry.rotateX((Math.random() - 0.5) * 0.26);
+			geometry.rotateY(Math.random() * Math.PI * 2);
+			geometry.rotateZ((Math.random() - 0.5) * 0.22);
+			geometry.translate(
+				(Math.random() - 0.5) * (WINDOW_OPENING_WIDTH + 0.55),
+				0.045 + Math.random() * 0.055,
+				(Math.random() - 0.5) * 1.65
+			);
+			geometries.push(geometry);
+		}
+
+		const geometry = mergeGeometries(geometries, false);
+		for (const shard of geometries) shard.dispose();
+		if (!geometry) return;
+		const mesh = new THREE.Mesh(
+			geometry,
+			new THREE.MeshStandardMaterial({
+				color: 0x6f9eaa,
+				roughness: 0.36,
+				metalness: 0.06
+			})
+		);
+		mesh.name = 'garbage-window-glass';
+		mesh.position.set(WINDOW_CENTER_X, 0.012, BACK_WALL_Z);
+		mesh.castShadow = !this.reducedMotion;
+		mesh.receiveShadow = true;
+		this.scene.add(mesh);
+		this.garbagePiles.push({ mesh });
 	}
 
 	private isPlayerOverPoolInterior() {
@@ -5857,6 +5903,7 @@ export class StampKonijnGame {
 		this.lastHit = breakable.label;
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
+		this.spawnGarbagePile(breakable);
 		this.callbacks.onImpact(breakable.label, points);
 		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
 		this.playBreakSound(breakable.material, breakable.label);
@@ -5875,6 +5922,8 @@ export class StampKonijnGame {
 
 	private spawnDebris(breakable: Breakable) {
 		const pieces = this.reducedMotion ? 5 : 10;
+		const floorY = this.getBreakableFloorY(breakable);
+		const debrisParent = this.getBreakableSceneRoot(breakable);
 		for (let index = 0; index < pieces; index += 1) {
 			const geometry = new THREE.BoxGeometry(
 				0.12 + Math.random() * 0.22,
@@ -5900,7 +5949,7 @@ export class StampKonijnGame {
 						(Math.random() - 0.5) * breakable.radius
 					)
 				);
-			this.scene.add(mesh);
+			debrisParent.add(mesh);
 			const away = mesh.position.clone().sub(this.player.position).setY(0).normalize();
 			this.debris.push({
 				mesh,
@@ -5918,9 +5967,144 @@ export class StampKonijnGame {
 					(Math.random() - 0.5) * 9,
 					(Math.random() - 0.5) * 9
 				),
-				life: 5 + Math.random() * 2
+				life: 5 + Math.random() * 2,
+				floorY
 			});
 		}
+	}
+
+	private spawnGarbagePile(breakable: Breakable) {
+		const shardProfiles: Record<
+			BreakMaterial,
+			{ width: [number, number]; height: [number, number]; depth: [number, number] }
+		> = {
+			ceramic: { width: [0.12, 0.34], height: [0.025, 0.075], depth: [0.1, 0.28] },
+			wood: { width: [0.3, 0.72], height: [0.055, 0.14], depth: [0.08, 0.2] },
+			metal: { width: [0.18, 0.52], height: [0.07, 0.2], depth: [0.14, 0.38] },
+			plant: { width: [0.26, 0.68], height: [0.04, 0.11], depth: [0.055, 0.15] },
+			electronics: { width: [0.18, 0.48], height: [0.055, 0.16], depth: [0.12, 0.34] },
+			canvas: { width: [0.3, 0.74], height: [0.025, 0.075], depth: [0.07, 0.18] }
+		};
+		const profile = shardProfiles[breakable.material];
+		const scale = THREE.MathUtils.clamp(
+			0.7 + breakable.radius * 0.28 + breakable.height * 0.07,
+			0.78,
+			1.38
+		);
+		const spread = THREE.MathUtils.clamp(
+			breakable.radius * 0.72 + breakable.height * 0.07,
+			0.38,
+			1.42
+		);
+		const targetCount = THREE.MathUtils.clamp(
+			Math.round(5 + breakable.radius * 2 + breakable.height * 0.45),
+			6,
+			10
+		);
+		const shardCount = this.reducedMotion ? Math.min(5, targetCount) : targetCount;
+		const geometries: THREE.BufferGeometry[] = [];
+		const keepsCenterClear =
+			breakable === this.kitchenHatchBreakable || breakable === this.toiletBreakable;
+		const randomBetween = ([minimum, maximum]: [number, number]) =>
+			THREE.MathUtils.lerp(minimum, maximum, Math.random()) * scale;
+
+		for (let index = 0; index < shardCount; index += 1) {
+			const width = randomBetween(profile.width);
+			const height = randomBetween(profile.height);
+			const depth = randomBetween(profile.depth);
+			const angle = Math.random() * Math.PI * 2;
+			const minimumRadius = keepsCenterClear ? spread * 0.62 : 0;
+			const radius = THREE.MathUtils.lerp(minimumRadius, spread, Math.sqrt(Math.random()));
+			const geometry = new THREE.BoxGeometry(width, height, depth);
+			geometry.rotateX((Math.random() - 0.5) * 0.34);
+			geometry.rotateY(angle + (Math.random() - 0.5) * 1.1);
+			geometry.rotateZ((Math.random() - 0.5) * 0.28);
+			geometry.translate(
+				Math.cos(angle) * radius,
+				height * 0.8 + Math.random() * 0.065,
+				Math.sin(angle) * radius
+			);
+
+			const pieceColor = breakable.color
+				.clone()
+				.offsetHSL(
+					(Math.random() - 0.5) * 0.055,
+					-Math.random() * 0.08,
+					-0.16 + Math.random() * 0.2
+				);
+			const vertexCount = geometry.getAttribute('position').count;
+			const colors = new Float32Array(vertexCount * 3);
+			for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+				colors[vertex * 3] = pieceColor.r;
+				colors[vertex * 3 + 1] = pieceColor.g;
+				colors[vertex * 3 + 2] = pieceColor.b;
+			}
+			geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+			geometries.push(geometry);
+		}
+
+		const geometry = mergeGeometries(geometries, false);
+		for (const shard of geometries) shard.dispose();
+		if (!geometry) return;
+		geometry.computeBoundingSphere();
+		const mesh = new THREE.Mesh(
+			geometry,
+			new THREE.MeshStandardMaterial({
+				color: 0xf7f3e9,
+				vertexColors: true,
+				roughness: breakable.material === 'metal' ? 0.58 : 0.88,
+				metalness:
+					breakable.material === 'metal' ? 0.34 : breakable.material === 'electronics' ? 0.12 : 0
+			})
+		);
+		mesh.name = `garbage-${breakable.label.toLowerCase().replaceAll(' ', '-')}`;
+		mesh.position.set(
+			breakable.group.position.x,
+			this.getBreakableFloorY(breakable) + 0.012,
+			breakable.group.position.z
+		);
+		mesh.castShadow = !this.reducedMotion;
+		mesh.receiveShadow = true;
+		this.getBreakableSceneRoot(breakable).add(mesh);
+		this.garbagePiles.push({ mesh });
+	}
+
+	private getBreakableFloorY(breakable: Breakable) {
+		if (this.upstairsBreakables.includes(breakable)) return UPSTAIRS_FLOOR_Y;
+		if (breakable.biome === 'basement') return BASEMENT_FLOOR_Y;
+		if (breakable.biome === 'sewer') return SEWER_FLOOR_Y;
+		return 0;
+	}
+
+	private getBreakableSceneRoot(breakable: Breakable): THREE.Object3D {
+		if (this.upstairsBreakables.includes(breakable)) return this.upstairsRoot;
+		if (breakable.biome === 'basement') return this.basementRoot;
+		if (breakable.biome === 'sewer') return this.sewerRoot;
+
+		const position = breakable.basePosition;
+		if (
+			position.x >= KITCHEN_MIN_X &&
+			position.x <= KITCHEN_MAX_X &&
+			position.z >= BACK_WALL_Z &&
+			position.z <= ROOM_DEPTH / 2
+		) {
+			return this.kitchenInteriorRoot;
+		}
+		if (
+			position.x >= LEFT_ROOMS_MIN_X &&
+			position.x <= LEFT_ROOMS_MAX_X &&
+			position.z >= BACK_WALL_Z &&
+			position.z <= ROOM_DEPTH / 2
+		) {
+			const room: LeftRoomName =
+				position.z < BATHROOM_MAX_Z
+					? 'bathroom'
+					: position.z < BEDROOM_MIN_Z
+						? 'stairs'
+						: 'bedroom';
+			return this.leftRoomInteriorRoots.get(room) ?? this.scene;
+		}
+		return this.scene;
 	}
 
 	private updateDebris(delta: number) {
@@ -5933,8 +6117,8 @@ export class StampKonijnGame {
 			piece.mesh.rotation.y += piece.spin.y * delta;
 			piece.mesh.rotation.z += piece.spin.z * delta;
 
-			if (piece.mesh.position.y < 0.08) {
-				piece.mesh.position.y = 0.08;
+			if (piece.mesh.position.y < piece.floorY + 0.08) {
+				piece.mesh.position.y = piece.floorY + 0.08;
 				if (piece.velocity.y < 0) piece.velocity.y *= -0.38;
 				piece.velocity.x *= 0.9;
 				piece.velocity.z *= 0.9;
@@ -5952,7 +6136,7 @@ export class StampKonijnGame {
 
 			if (piece.life < 0.8) piece.mesh.material.opacity = Math.max(0, piece.life / 0.8);
 			if (piece.life <= 0) {
-				this.scene.remove(piece.mesh);
+				piece.mesh.removeFromParent();
 				piece.mesh.geometry.dispose();
 				piece.mesh.material.dispose();
 				this.debris.splice(index, 1);
@@ -6693,11 +6877,17 @@ export class StampKonijnGame {
 
 	private clearDebris() {
 		for (const piece of this.debris) {
-			this.scene.remove(piece.mesh);
+			piece.mesh.removeFromParent();
 			piece.mesh.geometry.dispose();
 			piece.mesh.material.dispose();
 		}
 		this.debris = [];
+		for (const pile of this.garbagePiles) {
+			pile.mesh.removeFromParent();
+			pile.mesh.geometry.dispose();
+			pile.mesh.material.dispose();
+		}
+		this.garbagePiles = [];
 		for (const ring of this.impactRings) {
 			this.scene.remove(ring.mesh);
 			ring.mesh.geometry.dispose();
