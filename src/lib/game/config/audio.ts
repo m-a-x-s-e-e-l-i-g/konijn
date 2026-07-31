@@ -9,7 +9,8 @@ export const AUDIO_PATHS = {
 	poopieMonsterSpeech: '/audio/characters/poopiemonster.ogg',
 	poopieMonsterEat: '/audio/characters/poopiemonster-eat.ogg',
 	poopieMonsterFriend: '/audio/characters/poopiemonster-friend.ogg',
-	poopieMonsterDeath: '/audio/characters/poopiemonster-death.ogg'
+	poopieMonsterDeath: '/audio/characters/poopiemonster-death.ogg',
+	poopieMonsterDeathThud: '/audio/characters/poopiemonster-thud.ogg'
 } as const;
 
 export const GUNSHOT_PATHS: Record<GunWeapon, string> = {

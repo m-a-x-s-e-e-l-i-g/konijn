@@ -37,6 +37,9 @@ export class AudioSystem {
 	private readonly poopieMonsterEatSample = this.createSample(AUDIO_PATHS.poopieMonsterEat);
 	private readonly poopieMonsterFriendSample = this.createSample(AUDIO_PATHS.poopieMonsterFriend);
 	private readonly poopieMonsterDeathSample = this.createSample(AUDIO_PATHS.poopieMonsterDeath);
+	private readonly poopieMonsterDeathThudSample = this.createSample(
+		AUDIO_PATHS.poopieMonsterDeathThud
+	);
 	private readonly swimSamples = SWIM_SAMPLE_PATHS.map((path) => this.createSample(path));
 	private readonly bulletImpactSamples = this.createBulletImpactSamples();
 
@@ -184,6 +187,9 @@ export class AudioSystem {
 	}
 
 	playPoopieMonsterDeathThud() {
+		this.playSample(this.poopieMonsterDeathThudSample, (sample) => {
+			sample.volume = 1;
+		});
 		if (this.muted) return;
 		this.ensure();
 		const audio = this.context;
@@ -213,7 +219,7 @@ export class AudioSystem {
 		impactFilter.frequency.setValueAtTime(260, now);
 		impactFilter.frequency.exponentialRampToValueAtTime(55, now + duration);
 		impactFilter.Q.setValueAtTime(0.8, now);
-		impactGain.gain.setValueAtTime(0.32, now);
+		impactGain.gain.setValueAtTime(0.08, now);
 		impactGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 		impact.connect(impactFilter).connect(impactGain).connect(output);
 		impact.start(now);
@@ -223,7 +229,7 @@ export class AudioSystem {
 		sub.type = 'sine';
 		sub.frequency.setValueAtTime(74, now);
 		sub.frequency.exponentialRampToValueAtTime(27, now + duration);
-		subGain.gain.setValueAtTime(0.34, now);
+		subGain.gain.setValueAtTime(0.16, now);
 		subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 		sub.connect(subGain).connect(output);
 		sub.start(now);
