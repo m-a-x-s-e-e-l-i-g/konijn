@@ -392,8 +392,8 @@ export class StampKonijnGame {
 	private lockedBackDoorHit = 0;
 	private doorOpen = false;
 	private doorOpenAmount = 0;
-	private kitchenRevealMask = new THREE.Group();
-	private leftRoomRevealMasks = new Map<LeftRoomName, THREE.Group>();
+	private kitchenInteriorRoot = new THREE.Group();
+	private leftRoomInteriorRoots = new Map<LeftRoomName, THREE.Group>();
 	private playerOutside = false;
 	private playerInKitchen = false;
 	private playerLeftRoom: LeftRoomName | null = null;
@@ -816,62 +816,10 @@ export class StampKonijnGame {
 		this.scene.add(skirting);
 		this.createLeftRooms();
 		this.createKitchen();
-		this.createRoomRevealMasks();
 		this.createBasement();
 		this.createSewer();
 		this.createUpstairs();
 		this.createGarden();
-	}
-
-	private createRoomRevealMasks() {
-		this.kitchenRevealMask = new THREE.Group();
-		this.kitchenRevealMask.add(
-			box(
-				[KITCHEN_WIDTH - 0.08, ROOM_HEIGHT, 0.14],
-				[KITCHEN_CENTER_X, ROOM_HEIGHT / 2, ROOM_DEPTH / 2 + 0.07],
-				0xd8c7b4
-			),
-			box(
-				[KITCHEN_WIDTH - 0.08, 0.14, ROOM_DEPTH - 0.08],
-				[KITCHEN_CENTER_X, ROOM_HEIGHT + 0.07, 0],
-				0xd8c7b4
-			)
-		);
-		this.scene.add(this.kitchenRevealMask);
-
-		this.leftRoomRevealMasks.clear();
-		const roomSections: Array<{
-			room: LeftRoomName;
-			minZ: number;
-			maxZ: number;
-			color: number;
-		}> = [
-			{ room: 'bathroom', minZ: BACK_WALL_Z, maxZ: BATHROOM_MAX_Z, color: 0xd7e2df },
-			{ room: 'stairs', minZ: BATHROOM_MAX_Z, maxZ: BEDROOM_MIN_Z, color: 0xd8c7b4 },
-			{ room: 'bedroom', minZ: BEDROOM_MIN_Z, maxZ: ROOM_DEPTH / 2, color: 0xe2d0c1 }
-		];
-		for (const section of roomSections) {
-			const mask = new THREE.Group();
-			const depth = section.maxZ - section.minZ;
-			mask.add(
-				box(
-					[LEFT_ROOMS_WIDTH - 0.08, 0.14, depth - 0.06],
-					[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT + 0.07, (section.minZ + section.maxZ) / 2],
-					section.color
-				)
-			);
-			if (section.room === 'bedroom') {
-				mask.add(
-					box(
-						[LEFT_ROOMS_WIDTH - 0.08, ROOM_HEIGHT, 0.14],
-						[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, ROOM_DEPTH / 2 + 0.07],
-						section.color
-					)
-				);
-			}
-			this.leftRoomRevealMasks.set(section.room, mask);
-			this.scene.add(mask);
-		}
 	}
 
 	private createLeftRooms() {
@@ -885,6 +833,13 @@ export class StampKonijnGame {
 			{ room: 'stairs', label: 'TRAP', centerZ: STAIRS_DOOR_Z, color: 0xd1a64d },
 			{ room: 'bedroom', label: 'SLAAPKAMER', centerZ: BEDROOM_DOOR_Z, color: 0xb77875 }
 		];
+		this.leftRoomInteriorRoots.clear();
+		for (const config of doorConfigs) {
+			const interiorRoot = new THREE.Group();
+			interiorRoot.visible = false;
+			this.leftRoomInteriorRoots.set(config.room, interiorRoot);
+			this.scene.add(interiorRoot);
+		}
 
 		let wallCursor = BACK_WALL_Z;
 		for (const config of doorConfigs) {
@@ -948,7 +903,7 @@ export class StampKonijnGame {
 			floor.rotation.x = -Math.PI / 2;
 			floor.position.set(LEFT_ROOMS_CENTER_X, -0.003, (room.minZ + room.maxZ) / 2);
 			floor.receiveShadow = true;
-			this.scene.add(floor);
+			this.leftRoomInteriorRoots.get(room.room)?.add(floor);
 			this.bulletImpactSurfaces.push(floor);
 			this.stampSurfaceKinds.set(floor, 'floor');
 		}
@@ -960,7 +915,7 @@ export class StampKonijnGame {
 				0x8ba9a7
 			);
 			seam.receiveShadow = false;
-			this.scene.add(seam);
+			this.leftRoomInteriorRoots.get('bathroom')?.add(seam);
 		}
 		for (let z = BACK_WALL_Z + 0.55; z < BATHROOM_MAX_Z; z += 0.55) {
 			const seam = box(
@@ -969,7 +924,7 @@ export class StampKonijnGame {
 				0x8ba9a7
 			);
 			seam.receiveShadow = false;
-			this.scene.add(seam);
+			this.leftRoomInteriorRoots.get('bathroom')?.add(seam);
 		}
 
 		const outerWall = box(
@@ -1018,8 +973,9 @@ export class StampKonijnGame {
 		tapSpout.rotation.x = Math.PI / 2;
 		const tapHandle = box([0.2, 0.035, 0.055], [handBasinX, 1.12, handBasinZ - 0.1], 0x777a78);
 		const mirror = box([0.74, 0.82, 0.035], [handBasinX, 1.7, BACK_WALL_Z + 0.12], 0x88b4bd);
-		this.scene.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
-		this.createToiletRoomDecor();
+		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom');
+		bathroomRoot?.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
+		if (bathroomRoot) this.createToiletRoomDecor(bathroomRoot);
 
 		const staircase = new THREE.Group();
 		const treadThickness = 0.1;
@@ -1099,14 +1055,14 @@ export class StampKonijnGame {
 			rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
 			staircase.add(rail);
 		}
-		this.scene.add(staircase);
+		this.leftRoomInteriorRoots.get('stairs')?.add(staircase);
 
 		const wardrobe = box([0.82, 2.2, 1.35], [LEFT_ROOMS_MIN_X + 0.52, 1.1, 3.25], 0x7d5a46);
 		const bedroomRug = shadowMesh(new THREE.CircleGeometry(1.2, 32), material(0x725c72, 0.95));
 		bedroomRug.scale.z = 0.64;
 		bedroomRug.rotation.x = -Math.PI / 2;
 		bedroomRug.position.set(-9.15, 0.015, 3.5);
-		this.scene.add(wardrobe, bedroomRug);
+		this.leftRoomInteriorRoots.get('bedroom')?.add(wardrobe, bedroomRug);
 
 		for (const config of doorConfigs) {
 			this.createLeftRoomDoor(config.room, config.label, config.centerZ, config.color);
@@ -1796,6 +1752,9 @@ export class StampKonijnGame {
 	}
 
 	private createKitchen() {
+		this.kitchenInteriorRoot = new THREE.Group();
+		this.kitchenInteriorRoot.visible = false;
+		this.scene.add(this.kitchenInteriorRoot);
 		const doorMinZ = DOOR_CENTER_Z - DOOR_WIDTH / 2;
 		const doorMaxZ = DOOR_CENTER_Z + DOOR_WIDTH / 2;
 		const backPanelDepth = doorMinZ + ROOM_DEPTH / 2;
@@ -1831,19 +1790,19 @@ export class StampKonijnGame {
 		kitchenFloor.rotation.x = -Math.PI / 2;
 		kitchenFloor.position.set(KITCHEN_CENTER_X, -0.004, 0);
 		kitchenFloor.receiveShadow = true;
-		this.scene.add(kitchenFloor);
+		this.kitchenInteriorRoot.add(kitchenFloor);
 		this.bulletImpactSurfaces.push(kitchenFloor);
 		this.stampSurfaceKinds.set(kitchenFloor, 'floor');
 
 		for (let x = KITCHEN_MIN_X + 0.7; x < KITCHEN_MAX_X; x += 0.7) {
 			const seam = box([0.018, 0.008, ROOM_DEPTH - 0.2], [x, 0.018, 0], 0xb7a68b);
 			seam.receiveShadow = false;
-			this.scene.add(seam);
+			this.kitchenInteriorRoot.add(seam);
 		}
 		for (let z = BACK_WALL_Z + 0.7; z < ROOM_DEPTH / 2; z += 0.7) {
 			const seam = box([KITCHEN_WIDTH - 0.2, 0.008, 0.018], [KITCHEN_CENTER_X, 0.019, z], 0xb7a68b);
 			seam.receiveShadow = false;
-			this.scene.add(seam);
+			this.kitchenInteriorRoot.add(seam);
 		}
 
 		const kitchenOuterWall = box(
@@ -1886,14 +1845,14 @@ export class StampKonijnGame {
 		for (const x of [8.15, 9.45, 10.75]) {
 			const lower = box([1.18, 0.86, 0.68], [x, 0.43, BACK_WALL_Z + 0.43], cabinetColor);
 			const upper = box([1.18, 0.86, 0.48], [x, 2.45, BACK_WALL_Z + 0.34], 0x91aa86);
-			this.scene.add(lower, upper);
+			this.kitchenInteriorRoot.add(lower, upper);
 		}
 		const counter = box([4.05, 0.14, 0.84], [9.45, 0.93, BACK_WALL_Z + 0.48], 0x4a403a);
-		this.scene.add(counter);
+		this.kitchenInteriorRoot.add(counter);
 		const sink = box([0.78, 0.045, 0.46], [9.45, 1.015, BACK_WALL_Z + 0.51], 0xa9aaa3);
 		const tap = cylinder(0.035, 0.035, 0.5, [9.45, 1.23, BACK_WALL_Z + 0.25], 0x6f7373, 10);
 		tap.rotation.x = Math.PI / 2;
-		this.scene.add(sink, tap);
+		this.kitchenInteriorRoot.add(sink, tap);
 
 		const frameColor = 0x332b27;
 		this.scene.add(
@@ -2914,7 +2873,7 @@ export class StampKonijnGame {
 		return group;
 	}
 
-	private createToiletRoomDecor() {
+	private createToiletRoomDecor(parent: THREE.Group) {
 		const rabbitArt: Array<{
 			source: string;
 			x: number;
@@ -2933,25 +2892,25 @@ export class StampKonijnGame {
 			frame.position.set(art.x, art.y, BACK_WALL_Z + 0.18);
 			frame.scale.setScalar(art.scale);
 			frame.rotation.z = art.rotation;
-			this.scene.add(frame);
+			parent.add(frame);
 		}
 
 		const sideArt = this.makeArtwork('/images/artwork/29.webp');
 		sideArt.position.set(LEFT_ROOMS_MIN_X + 0.18, 1.34, -3.18);
 		sideArt.scale.setScalar(0.3);
 		sideArt.rotation.set(0, Math.PI / 2, -0.05);
-		this.scene.add(sideArt);
+		parent.add(sideArt);
 
 		const calendar = this.makeToiletCalendar();
 		calendar.position.set(-10.62, 1.3, BACK_WALL_Z + 0.18);
-		this.scene.add(calendar);
+		parent.add(calendar);
 
 		const plunger = new THREE.Group();
 		plunger.add(cylinder(0.085, 0.21, 0.2, [0, 0.1, 0], 0xb84c3e, 18));
 		plunger.add(cylinder(0.03, 0.034, 0.88, [0, 0.62, 0], 0x876044, 10));
 		plunger.position.set(-13.16, 0, -2.82);
 		plunger.rotation.z = -0.12;
-		this.scene.add(plunger);
+		parent.add(plunger);
 
 		const toiletBrush = new THREE.Group();
 		toiletBrush.add(cylinder(0.14, 0.12, 0.34, [0, 0.17, 0], 0xe8e1d5, 16));
@@ -2960,12 +2919,12 @@ export class StampKonijnGame {
 		brushGrip.position.y = 1.04;
 		toiletBrush.add(brushGrip);
 		toiletBrush.position.set(-13.2, 0, -3.58);
-		this.scene.add(toiletBrush);
+		parent.add(toiletBrush);
 
 		const toiletCleaner = this.makeToiletCleaner();
 		toiletCleaner.position.set(-9.62, 0, -4.22);
 		toiletCleaner.rotation.y = -0.08;
-		this.scene.add(toiletCleaner);
+		parent.add(toiletCleaner);
 	}
 
 	private makeToiletCalendar() {
@@ -3677,6 +3636,46 @@ export class StampKonijnGame {
 		}
 	}
 
+	private syncGroundRoomVisibility() {
+		this.kitchenInteriorRoot.visible = this.doorOpen;
+		for (const door of this.leftRoomDoors) {
+			const interiorRoot = this.leftRoomInteriorRoots.get(door.room);
+			if (interiorRoot) interiorRoot.visible = door.open;
+		}
+
+		const groundBiomeActive = this.getActiveBiome() === 'ground';
+		for (const breakable of this.breakables) {
+			if (breakable.biome !== 'ground' || this.upstairsBreakables.includes(breakable)) continue;
+			const position = breakable.group.position;
+			let roomUnlocked = true;
+			if (
+				position.x >= KITCHEN_MIN_X &&
+				position.x <= KITCHEN_MAX_X &&
+				position.z >= BACK_WALL_Z &&
+				position.z <= ROOM_DEPTH / 2
+			) {
+				roomUnlocked = this.doorOpen;
+			} else if (
+				position.x >= LEFT_ROOMS_MIN_X &&
+				position.x <= LEFT_ROOMS_MAX_X &&
+				position.z >= BACK_WALL_Z &&
+				position.z <= ROOM_DEPTH / 2
+			) {
+				const room: LeftRoomName =
+					position.z < BATHROOM_MAX_Z
+						? 'bathroom'
+						: position.z < BEDROOM_MIN_Z
+							? 'stairs'
+							: 'bedroom';
+				roomUnlocked = this.leftRoomDoors.some((door) => door.room === room && door.open);
+			}
+
+			const sinkingToilet = breakable === this.toiletBreakable && this.toiletSinking;
+			breakable.group.visible =
+				groundBiomeActive && roomUnlocked && (!breakable.broken || sinkingToilet);
+		}
+	}
+
 	private resolveRoomCollisions() {
 		let wallNormal: THREE.Vector3 | null = null;
 		let wallImpactSpeed = 0;
@@ -4339,6 +4338,8 @@ export class StampKonijnGame {
 			const sinkingToilet = breakable === this.toiletBreakable && this.toiletSinking;
 			breakable.group.visible = breakable.biome === biome && (!breakable.broken || sinkingToilet);
 		}
+		this.syncGroundRoomVisibility();
+		this.syncUpstairsVisibility();
 
 		const palette =
 			biome === 'ground'
@@ -4390,8 +4391,7 @@ export class StampKonijnGame {
 		this.breakContacts(0.16);
 		door.open = true;
 		door.damage.visible = true;
-		const revealMask = this.leftRoomRevealMasks.get(door.room);
-		if (revealMask) revealMask.visible = false;
+		this.syncGroundRoomVisibility();
 		this.setLeftRoomDoorCollisionEnabled(door, false);
 		this.playerOutside = false;
 		this.playerInKitchen = false;
@@ -4466,7 +4466,7 @@ export class StampKonijnGame {
 		this.breakContacts(0.16);
 		this.doorOpen = true;
 		this.doorDamage.visible = true;
-		this.kitchenRevealMask.visible = false;
+		this.syncGroundRoomVisibility();
 		this.setDoorCollisionEnabled(false);
 		this.playerOutside = false;
 		this.playerLeftRoom = null;
@@ -6380,8 +6380,6 @@ export class StampKonijnGame {
 		this.doorLeafRoot.position.y = 0;
 		this.doorLeafRoot.rotation.set(0, 0, 0);
 		this.doorDamage.visible = false;
-		this.kitchenRevealMask.visible = true;
-		for (const mask of this.leftRoomRevealMasks.values()) mask.visible = true;
 		this.lockedBackDoorHit = 0;
 		this.lockedBackDoorLeafRoot.position.x = KITCHEN_BACK_DOOR_X;
 		this.lockedBackDoorLeafRoot.rotation.set(0, 0, 0);
@@ -6396,6 +6394,8 @@ export class StampKonijnGame {
 			door.damage.visible = false;
 			this.setLeftRoomDoorCollisionEnabled(door, true);
 		}
+		this.syncGroundRoomVisibility();
+		this.syncUpstairsVisibility();
 	}
 
 	private clearDebris() {
