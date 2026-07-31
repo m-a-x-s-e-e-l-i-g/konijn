@@ -216,6 +216,9 @@ const POOPIE_MONSTER_FEED_DISTANCE = 3;
 const POOPIE_MONSTER_FEED_HEIGHT = 0.58;
 const POOPIE_MONSTER_SPEECH_RADIUS = 5.4;
 const POOPIE_MONSTER_SPEECH_REARM_RADIUS = 7;
+const POOPIE_MONSTER_DEATH_TIME_SCALE = 0.28;
+const POOPIE_MONSTER_DEATH_DURATION = 0.82;
+const POOPIE_MONSTER_DEATH_GROUND_Y = 0.18;
 const STAIR_STEP_COUNT = 12;
 const STAIR_STEP_RISE = ROOM_HEIGHT / STAIR_STEP_COUNT;
 const STAIR_STEP_RUN = 0.45;
@@ -456,6 +459,11 @@ export class StampKonijnGame {
 	private poopieMonsterPoopHits = 0;
 	private poopieMonsterTime = 0;
 	private poopieMonsterHitFlash = 0;
+	private poopieMonsterDeathInProgress = false;
+	private poopieMonsterDeathProgress = 0;
+	private poopieMonsterDeathStartY = 0;
+	private poopieMonsterDeathStartRotation = 0;
+	private poopieMonsterDeathStartScale = new THREE.Vector3(1, 1, 1);
 	private debris: DebrisPiece[] = [];
 	private garbagePiles: GarbagePile[] = [];
 	private impactRings: ImpactRing[] = [];
@@ -3698,7 +3706,9 @@ export class StampKonijnGame {
 	private animate = (timestamp = performance.now()) => {
 		this.frame = requestAnimationFrame(this.animate);
 		this.timer.update(timestamp);
-		const delta = Math.min(this.timer.getDelta(), 0.034);
+		const realDelta = Math.min(this.timer.getDelta(), 0.034);
+		const delta =
+			realDelta * (this.poopieMonsterDeathInProgress ? POOPIE_MONSTER_DEATH_TIME_SCALE : 1);
 		if (!this.paused) {
 			if (this.phase === 'playing') this.updateGame(delta);
 			this.updateDebris(delta);
@@ -5258,12 +5268,19 @@ export class StampKonijnGame {
 
 		if (hitKind === 'bullet') {
 			this.poopieMonsterHealth -= 1;
-			this.audio.playBulletImpact('body');
 			if (this.poopieMonsterHealth <= 0) {
 				this.poopieMonsterState = 'dead';
+				this.poopieMonsterDeathInProgress = true;
+				this.poopieMonsterDeathProgress = 0;
+				this.poopieMonsterDeathStartY = this.poopieMonsterPose.position.y;
+				this.poopieMonsterDeathStartRotation = this.poopieMonsterPose.rotation.z;
+				this.poopieMonsterDeathStartScale.copy(this.poopieMonsterPose.scale);
+				this.audio.playPoopieMonsterFinalHit();
 				this.audio.playPoopieMonsterDeath();
+				this.cameraShake = Math.max(this.cameraShake, 0.72);
 				this.emitFeedback('POOPIEMONSTER: AUCH!');
 			} else {
+				this.audio.playBulletImpact('body');
 				this.emitFeedback(`POOPIEMONSTER: AU! ${this.poopieMonsterHealth} KOGELS OVER`);
 			}
 			return;
@@ -5296,21 +5313,53 @@ export class StampKonijnGame {
 			this.poopieMonsterWarning.visible = this.poopieMonsterState === 'neutral';
 		}
 		if (this.poopieMonsterState === 'dead') {
-			this.poopieMonsterPose.rotation.z = THREE.MathUtils.lerp(
-				this.poopieMonsterPose.rotation.z,
-				-Math.PI / 2,
-				response
-			);
-			this.poopieMonsterPose.position.y = THREE.MathUtils.lerp(
-				this.poopieMonsterPose.position.y,
-				0.18,
-				response
-			);
-			this.poopieMonsterPose.scale.set(
-				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.x, 1, response),
-				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.y, 1, response),
-				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.z, 1, response)
-			);
+			if (this.poopieMonsterDeathInProgress) {
+				this.poopieMonsterDeathProgress = Math.min(
+					1,
+					this.poopieMonsterDeathProgress + delta / POOPIE_MONSTER_DEATH_DURATION
+				);
+				const progress = this.poopieMonsterDeathProgress;
+				const fallProgress = THREE.MathUtils.clamp((progress - 0.08) / 0.92, 0, 1);
+				const fallEase = fallProgress * fallProgress * fallProgress;
+				const recoilLift = Math.sin(progress * Math.PI) * (1 - fallProgress) * 0.16;
+				this.poopieMonsterPose.rotation.z = THREE.MathUtils.lerp(
+					this.poopieMonsterDeathStartRotation,
+					-Math.PI / 2,
+					fallEase
+				);
+				this.poopieMonsterPose.rotation.x = Math.sin(fallProgress * Math.PI) * 0.1;
+				this.poopieMonsterPose.position.y =
+					THREE.MathUtils.lerp(
+						this.poopieMonsterDeathStartY,
+						POOPIE_MONSTER_DEATH_GROUND_Y,
+						fallEase
+					) + recoilLift;
+				this.poopieMonsterPose.scale.set(
+					THREE.MathUtils.lerp(this.poopieMonsterDeathStartScale.x, 1, fallProgress),
+					THREE.MathUtils.lerp(this.poopieMonsterDeathStartScale.y, 1, fallProgress),
+					THREE.MathUtils.lerp(this.poopieMonsterDeathStartScale.z, 1, fallProgress)
+				);
+
+				if (progress >= 1) {
+					this.poopieMonsterDeathInProgress = false;
+					this.poopieMonsterPose.rotation.set(0, 0, -Math.PI / 2);
+					this.poopieMonsterPose.position.y = POOPIE_MONSTER_DEATH_GROUND_Y;
+					this.poopieMonsterPose.scale.set(1.13, 0.82, 1.1);
+					this.audio.playPoopieMonsterDeathThud();
+					this.cameraShake = Math.max(this.cameraShake, 1.35);
+					this.joltRagdoll(2.2);
+					this.spawnImpactRing(1.45, this.poopieMonsterRoot.position, 0x5b3022);
+					this.spawnImpactRing(0.92, this.poopieMonsterRoot.position, 0x1c0f0b);
+				}
+			} else {
+				this.poopieMonsterPose.rotation.set(0, 0, -Math.PI / 2);
+				this.poopieMonsterPose.position.y = POOPIE_MONSTER_DEATH_GROUND_Y;
+				this.poopieMonsterPose.scale.set(
+					THREE.MathUtils.lerp(this.poopieMonsterPose.scale.x, 1, response),
+					THREE.MathUtils.lerp(this.poopieMonsterPose.scale.y, 1, response),
+					THREE.MathUtils.lerp(this.poopieMonsterPose.scale.z, 1, response)
+				);
+			}
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = false;
 			return;
 		}
@@ -5353,6 +5402,11 @@ export class StampKonijnGame {
 		this.poopieMonsterPoopHits = 0;
 		this.poopieMonsterTime = 0;
 		this.poopieMonsterHitFlash = 0;
+		this.poopieMonsterDeathInProgress = false;
+		this.poopieMonsterDeathProgress = 0;
+		this.poopieMonsterDeathStartY = 0;
+		this.poopieMonsterDeathStartRotation = 0;
+		this.poopieMonsterDeathStartScale.set(1, 1, 1);
 		this.poopieMonsterRoot.position.set(POOPIE_MONSTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
 		this.poopieMonsterPose.position.set(0, 0, 0);
 		this.poopieMonsterPose.rotation.set(0, 0, 0);
@@ -6388,9 +6442,13 @@ export class StampKonijnGame {
 		}
 	}
 
-	private spawnImpactRing(radius: number) {
+	private spawnImpactRing(
+		radius: number,
+		position: THREE.Vector3 = this.player.position,
+		color: THREE.ColorRepresentation = COLORS.cream
+	) {
 		const ringMaterial = new THREE.MeshBasicMaterial({
-			color: COLORS.cream,
+			color,
 			transparent: true,
 			opacity: 0.9,
 			side: THREE.DoubleSide,
@@ -6398,11 +6456,7 @@ export class StampKonijnGame {
 		});
 		const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.52, 48), ringMaterial);
 		ring.rotation.x = -Math.PI / 2;
-		ring.position.set(
-			this.player.position.x,
-			this.getActiveFloorHeight() + 0.035,
-			this.player.position.z
-		);
+		ring.position.set(position.x, this.getActiveFloorHeight() + 0.035, position.z);
 		ring.scale.setScalar(0.4);
 		this.scene.add(ring);
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });

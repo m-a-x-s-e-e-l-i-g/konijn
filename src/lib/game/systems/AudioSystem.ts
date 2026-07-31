@@ -135,6 +135,101 @@ export class AudioSystem {
 		this.queuePoopieMonsterVoice(this.poopieMonsterDeathSample, true);
 	}
 
+	playPoopieMonsterFinalHit() {
+		const options = this.bulletImpactSamples.body;
+		const source = options[Math.floor(Math.random() * options.length)];
+		this.playSample(source, (sample) => {
+			sample.volume = 0.94;
+			sample.preservesPitch = false;
+			sample.playbackRate = 0.48;
+		});
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+
+		const now = audio.currentTime;
+		const duration = 0.68;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			const attack = Math.min(1, progress * 24);
+			const pulse = 0.68 + Math.sin(progress * Math.PI * 9) * 0.22;
+			noise[index] = (Math.random() * 2 - 1) * attack * Math.pow(1 - progress, 1.35) * pulse;
+		}
+		const squish = audio.createBufferSource();
+		const wetFilter = audio.createBiquadFilter();
+		const squishGain = audio.createGain();
+		squish.buffer = buffer;
+		wetFilter.type = 'lowpass';
+		wetFilter.frequency.setValueAtTime(720, now);
+		wetFilter.frequency.exponentialRampToValueAtTime(95, now + duration);
+		wetFilter.Q.setValueAtTime(1.15, now);
+		squishGain.gain.setValueAtTime(0.18, now);
+		squishGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		squish.connect(wetFilter).connect(squishGain).connect(audio.destination);
+		squish.start(now);
+
+		const body = audio.createOscillator();
+		const bodyGain = audio.createGain();
+		body.type = 'sine';
+		body.frequency.setValueAtTime(118, now);
+		body.frequency.exponentialRampToValueAtTime(39, now + duration * 0.88);
+		bodyGain.gain.setValueAtTime(0.13, now);
+		bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		body.connect(bodyGain).connect(audio.destination);
+		body.start(now);
+		body.stop(now + duration);
+	}
+
+	playPoopieMonsterDeathThud() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+
+		const now = audio.currentTime;
+		const duration = 0.72;
+		const output = audio.createDynamicsCompressor();
+		output.threshold.setValueAtTime(-14, now);
+		output.knee.setValueAtTime(8, now);
+		output.ratio.setValueAtTime(5, now);
+		output.attack.setValueAtTime(0.004, now);
+		output.release.setValueAtTime(0.28, now);
+		output.connect(audio.destination);
+
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			noise[index] = (Math.random() * 2 - 1) * Math.pow(1 - progress, 2.4);
+		}
+		const impact = audio.createBufferSource();
+		const impactFilter = audio.createBiquadFilter();
+		const impactGain = audio.createGain();
+		impact.buffer = buffer;
+		impactFilter.type = 'lowpass';
+		impactFilter.frequency.setValueAtTime(260, now);
+		impactFilter.frequency.exponentialRampToValueAtTime(55, now + duration);
+		impactFilter.Q.setValueAtTime(0.8, now);
+		impactGain.gain.setValueAtTime(0.32, now);
+		impactGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		impact.connect(impactFilter).connect(impactGain).connect(output);
+		impact.start(now);
+
+		const sub = audio.createOscillator();
+		const subGain = audio.createGain();
+		sub.type = 'sine';
+		sub.frequency.setValueAtTime(74, now);
+		sub.frequency.exponentialRampToValueAtTime(27, now + duration);
+		subGain.gain.setValueAtTime(0.34, now);
+		subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		sub.connect(subGain).connect(output);
+		sub.start(now);
+		sub.stop(now + duration);
+	}
+
 	playGunshot(weapon: GunWeapon) {
 		if (this.muted) return;
 		const buffer = this.gunshotBuffers[weapon];
