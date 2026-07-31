@@ -224,8 +224,9 @@ const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const POOPIE_MONSTER_X = 10;
-const POOPIE_MONSTER_RADIUS = 0.86;
-const POOPIE_MONSTER_HEIGHT = 3.2;
+const POOPIE_MONSTER_RADIUS = 0.52;
+const POOPIE_MONSTER_HEIGHT = 1.58;
+const POOPIE_MONSTER_JUMP_HEIGHT = 0.3;
 const POOPIE_MONSTER_BULLET_HITS = 3;
 const POOPIE_MONSTER_POOP_HITS = 3;
 const POOPIE_MONSTER_SPEECH_RADIUS = 5.4;
@@ -1664,7 +1665,7 @@ export class StampKonijnGame {
 		this.poopieMonsterArms = [];
 
 		this.poopieMonsterWarning = this.makePoopieMonsterWarning();
-		this.poopieMonsterWarning.position.set(0, 3.75, 0.72);
+		this.poopieMonsterWarning.position.set(0, POOPIE_MONSTER_HEIGHT + 0.98, 0.72);
 		this.poopieMonsterRoot.add(this.poopieMonsterWarning);
 
 		const heartShape = new THREE.Shape();
@@ -1683,8 +1684,8 @@ export class StampKonijnGame {
 				side: THREE.DoubleSide
 			})
 		);
-		this.poopieMonsterHeart.position.set(0, 3.58, 0.58);
-		this.poopieMonsterHeart.scale.setScalar(0.55);
+		this.poopieMonsterHeart.position.set(0, POOPIE_MONSTER_HEIGHT + 0.38, 0.58);
+		this.poopieMonsterHeart.scale.setScalar(0.32);
 		this.poopieMonsterHeart.visible = false;
 		this.poopieMonsterRoot.add(this.poopieMonsterHeart);
 		this.sewerRoot.add(this.poopieMonsterRoot);
@@ -1725,7 +1726,7 @@ export class StampKonijnGame {
 			})
 		);
 		warning.name = 'poopiemonster-warning';
-		warning.scale.set(5.2, 1.3, 1);
+		warning.scale.set(4.2, 1.05, 1);
 		warning.renderOrder = 8;
 		return warning;
 	}
@@ -1766,7 +1767,7 @@ export class StampKonijnGame {
 		source.updateMatrixWorld(true);
 		const initialBounds = new THREE.Box3().setFromObject(source);
 		const size = initialBounds.getSize(new THREE.Vector3());
-		source.scale.setScalar(3.08 / Math.max(size.y, 0.001));
+		source.scale.setScalar(POOPIE_MONSTER_HEIGHT / Math.max(size.y, 0.001));
 		source.updateMatrixWorld(true);
 		const bounds = new THREE.Box3().setFromObject(source);
 		const center = bounds.getCenter(new THREE.Vector3());
@@ -4418,7 +4419,7 @@ export class StampKonijnGame {
 		const minX = POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS;
 		const maxX = POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS;
 		const minY = SEWER_FLOOR_Y;
-		const maxY = SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT;
+		const maxY = SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT;
 		const playerLeft = this.player.position.x - PLAYER_RADIUS;
 		const playerRight = this.player.position.x + PLAYER_RADIUS;
 		const playerBottom = this.player.position.y;
@@ -5308,8 +5309,8 @@ export class StampKonijnGame {
 		if (
 			Math.abs(position.x - POOPIE_MONSTER_X) > POOPIE_MONSTER_RADIUS + 0.15 ||
 			position.y < SEWER_FLOOR_Y ||
-			position.y > SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT ||
-			Math.abs(position.z - SEWER_CENTER_Z) > 0.95
+			position.y > SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT ||
+			Math.abs(position.z - SEWER_CENTER_Z) > POOPIE_MONSTER_RADIUS + 0.15
 		) {
 			return false;
 		}
@@ -5369,8 +5370,13 @@ export class StampKonijnGame {
 			);
 			this.poopieMonsterPose.position.y = THREE.MathUtils.lerp(
 				this.poopieMonsterPose.position.y,
-				0.28,
+				0.18,
 				response
+			);
+			this.poopieMonsterPose.scale.set(
+				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.x, 1, response),
+				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.y, 1, response),
+				THREE.MathUtils.lerp(this.poopieMonsterPose.scale.z, 1, response)
 			);
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = false;
 			return;
@@ -5378,13 +5384,19 @@ export class StampKonijnGame {
 
 		const friendly = this.poopieMonsterState === 'friend';
 		const motion = this.reducedMotion ? 0 : 1;
-		this.poopieMonsterPose.position.y =
-			(friendly
-				? Math.abs(Math.sin(this.poopieMonsterTime * 3.1)) * 0.07
-				: Math.sin(this.poopieMonsterTime * 1.7) * 0.025) * motion;
+		const jumpWave = Math.abs(Math.sin(this.poopieMonsterTime * (friendly ? 2.8 : 3.6)));
+		const jumpHeight =
+			Math.pow(jumpWave, 1.45) * (friendly ? 0.1 : POOPIE_MONSTER_JUMP_HEIGHT) * motion;
+		const landingSquash = Math.pow(1 - jumpWave, 8) * (friendly ? 0.025 : 0.085) * motion;
+		this.poopieMonsterPose.position.y = jumpHeight;
+		this.poopieMonsterPose.scale.set(
+			1 + landingSquash * 0.7,
+			1 - landingSquash,
+			1 + landingSquash * 0.7
+		);
 		this.poopieMonsterPose.rotation.z =
 			Math.sin(this.poopieMonsterTime * (friendly ? 3.1 : 1.5)) *
-			(friendly ? 0.07 : 0.025) *
+			(friendly ? 0.055 : 0.035) *
 			motion;
 		const armWave =
 			Math.sin(this.poopieMonsterTime * (friendly ? 6.2 : 2.4)) * (friendly ? 0.34 : 0.07) * motion;
@@ -5394,8 +5406,8 @@ export class StampKonijnGame {
 		if (this.poopieMonsterHeart) {
 			this.poopieMonsterHeart.visible = friendly;
 			this.poopieMonsterHeart.position.y =
-				3.58 + Math.sin(this.poopieMonsterTime * 3.8) * 0.1 * motion;
-			const pulse = 0.55 * (1 + Math.sin(this.poopieMonsterTime * 4.8) * 0.08 * motion);
+				POOPIE_MONSTER_HEIGHT + 0.38 + Math.sin(this.poopieMonsterTime * 3.8) * 0.06 * motion;
+			const pulse = 0.32 * (1 + Math.sin(this.poopieMonsterTime * 4.8) * 0.08 * motion);
 			this.poopieMonsterHeart.scale.setScalar(pulse);
 		}
 	}
@@ -5416,8 +5428,8 @@ export class StampKonijnGame {
 		if (this.poopieMonsterArms[1]) this.poopieMonsterArms[1].rotation.z = -0.82;
 		if (this.poopieMonsterHeart) {
 			this.poopieMonsterHeart.visible = false;
-			this.poopieMonsterHeart.position.set(0, 3.58, 0.58);
-			this.poopieMonsterHeart.scale.setScalar(0.55);
+			this.poopieMonsterHeart.position.set(0, POOPIE_MONSTER_HEIGHT + 0.38, 0.58);
+			this.poopieMonsterHeart.scale.setScalar(0.32);
 		}
 		if (this.poopieMonsterWarning) this.poopieMonsterWarning.visible = true;
 		for (const poopieMaterial of this.poopieMonsterMaterials) {
@@ -5806,12 +5818,12 @@ export class StampKonijnGame {
 			new THREE.Vector3(
 				POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS,
 				SEWER_FLOOR_Y,
-				SEWER_CENTER_Z - 0.95
+				SEWER_CENTER_Z - POOPIE_MONSTER_RADIUS - 0.15
 			),
 			new THREE.Vector3(
 				POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS,
-				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT,
-				SEWER_CENTER_Z + 0.95
+				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT,
+				SEWER_CENTER_Z + POOPIE_MONSTER_RADIUS + 0.15
 			)
 		);
 		const point = new THREE.Ray(origin, direction).intersectBox(hitBox, new THREE.Vector3());
