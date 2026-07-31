@@ -89,6 +89,13 @@ interface MuzzleEffect {
 	followMuzzleUntilVisible: boolean;
 }
 
+interface MuzzleLightEffect {
+	light: THREE.PointLight;
+	life: number;
+	maxLife: number;
+	intensity: number;
+}
+
 interface ArmRagdoll {
 	object: THREE.Object3D;
 	baseQuaternion: THREE.Quaternion;
@@ -369,6 +376,7 @@ export class StampKonijnGame {
 	private surfaceCracks: SurfaceCrack[] = [];
 	private weaponProjectiles: WeaponProjectile[] = [];
 	private muzzleEffects: MuzzleEffect[] = [];
+	private muzzleLightEffects: MuzzleLightEffect[] = [];
 	private muzzleGlowTexture: THREE.CanvasTexture | null = null;
 	private muzzleSmokeTexture: THREE.CanvasTexture | null = null;
 	private bulletHoles: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[] = [];
@@ -4043,6 +4051,44 @@ export class StampKonijnGame {
 			followMuzzleUntilVisible: false
 		});
 
+		const flashBloom = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: this.getMuzzleGlowTexture(),
+				color: 0xffa34d,
+				transparent: true,
+				opacity: 0.3,
+				depthTest: false,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				toneMapped: false
+			})
+		);
+		flashBloom.scale.setScalar(0.72);
+		flashBloom.position.copy(origin).addScaledVector(direction, 0.045);
+		flashBloom.renderOrder = 5;
+		this.scene.add(flashBloom);
+		this.muzzleEffects.push({
+			mesh: flashBloom,
+			velocity: direction.clone().multiplyScalar(0.12),
+			life: 0.12,
+			maxLife: 0.12,
+			growth: 0.85,
+			opacity: 0.3,
+			delay: 0,
+			followMuzzleUntilVisible: false
+		});
+
+		const flashLight = new THREE.PointLight(0xffad5c, 105 + Math.random() * 20, 5.2, 2);
+		flashLight.position.copy(origin).addScaledVector(direction, 0.045);
+		flashLight.castShadow = false;
+		this.scene.add(flashLight);
+		this.muzzleLightEffects.push({
+			light: flashLight,
+			life: 0.11,
+			maxLife: 0.11,
+			intensity: flashLight.intensity
+		});
+
 		const smokeSide = new THREE.Vector3(1, 0, 0).applyQuaternion(
 			new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction)
 		);
@@ -4126,6 +4172,17 @@ export class StampKonijnGame {
 	}
 
 	private updateMuzzleEffects(delta: number) {
+		for (let index = this.muzzleLightEffects.length - 1; index >= 0; index -= 1) {
+			const effect = this.muzzleLightEffects[index];
+			effect.life -= delta;
+			const lifeRatio = Math.max(0, effect.life / effect.maxLife);
+			effect.light.intensity = effect.intensity * lifeRatio * lifeRatio;
+			if (effect.life <= 0) {
+				this.scene.remove(effect.light);
+				this.muzzleLightEffects.splice(index, 1);
+			}
+		}
+
 		for (let index = this.muzzleEffects.length - 1; index >= 0; index -= 1) {
 			const effect = this.muzzleEffects[index];
 			if (effect.delay > 0) {
@@ -5015,6 +5072,8 @@ export class StampKonijnGame {
 	}
 
 	private clearMuzzleEffects() {
+		for (const effect of this.muzzleLightEffects) this.scene.remove(effect.light);
+		this.muzzleLightEffects = [];
 		for (const effect of this.muzzleEffects) {
 			this.scene.remove(effect.mesh);
 			effect.mesh.geometry.dispose();
