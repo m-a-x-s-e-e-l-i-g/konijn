@@ -162,6 +162,12 @@ const KITCHEN_BACK_DOOR_X = 12.35;
 const KITCHEN_BACK_DOOR_WIDTH = 1.65;
 const KITCHEN_BACK_DOOR_HEIGHT = 2.72;
 const BASEMENT_FLOOR_Y = -4.2;
+const BASEMENT_STAIR_STEP_COUNT = 9;
+const BASEMENT_STAIR_RISE = Math.abs(BASEMENT_FLOOR_Y) / (BASEMENT_STAIR_STEP_COUNT + 1);
+const BASEMENT_STAIR_RUN = 0.46;
+const BASEMENT_STAIR_WIDTH = 1.2;
+const BASEMENT_STAIR_BOTTOM_X =
+	KITCHEN_HATCH_X - (BASEMENT_STAIR_STEP_COUNT - 1) * BASEMENT_STAIR_RUN;
 const BASEMENT_MIN_X = -ROOM_WIDTH / 2;
 const BASEMENT_MAX_X = KITCHEN_MAX_X;
 const BASEMENT_CENTER_X = (BASEMENT_MIN_X + BASEMENT_MAX_X) / 2;
@@ -368,6 +374,7 @@ export class StampKonijnGame {
 	private kitchenHatchDamage = new THREE.Group();
 	private kitchenHatchOpen = false;
 	private kitchenHatchHole = new THREE.Group();
+	private basementEntryCooldown = 0;
 	private basementLights: THREE.PointLight[] = [];
 	private sewerLight = new THREE.PointLight(0xb7cb74, 0, 40, 2);
 	private sewerObstacles: SewerObstacle[] = [];
@@ -1083,6 +1090,7 @@ export class StampKonijnGame {
 			this.bulletImpactSurfaces.push(wall);
 			this.stampSurfaceKinds.set(wall, 'wall');
 		}
+		this.createBasementStairs();
 
 		for (let index = 0; index < 18; index += 1) {
 			const x = BASEMENT_MIN_X + 0.7 + ((index * 3.17) % (basementWidth - 1.4));
@@ -1176,6 +1184,71 @@ export class StampKonijnGame {
 		this.basementLights[0].position.set(-4, BASEMENT_FLOOR_Y + 2.7, 0.8);
 		this.basementLights[1].position.set(9.5, BASEMENT_FLOOR_Y + 2.55, -1.4);
 		this.basementRoot.add(...this.basementLights);
+	}
+
+	private createBasementStairs() {
+		const treadThickness = 0.11;
+		const treadColor = 0x8a5b36;
+		const alternateTreadColor = 0x765033;
+		const frameColor = 0x4e3324;
+		for (let index = 0; index < BASEMENT_STAIR_STEP_COUNT; index += 1) {
+			const x = BASEMENT_STAIR_BOTTOM_X + index * BASEMENT_STAIR_RUN;
+			const topY = BASEMENT_FLOOR_Y + (index + 1) * BASEMENT_STAIR_RISE;
+			const tread = box(
+				[BASEMENT_STAIR_RUN + 0.04, treadThickness, BASEMENT_STAIR_WIDTH],
+				[x, topY - treadThickness / 2, KITCHEN_HATCH_Z],
+				index % 2 === 0 ? treadColor : alternateTreadColor
+			);
+			const riser = box(
+				[0.09, BASEMENT_STAIR_RISE - treadThickness, BASEMENT_STAIR_WIDTH - 0.08],
+				[
+					x - BASEMENT_STAIR_RUN / 2,
+					topY - (BASEMENT_STAIR_RISE + treadThickness) / 2,
+					KITCHEN_HATCH_Z
+				],
+				frameColor
+			);
+			this.basementRoot.add(tread, riser);
+			this.bulletImpactSurfaces.push(tread, riser);
+			this.stampSurfaceKinds.set(tread, 'floor');
+			this.stampSurfaceKinds.set(riser, 'wall');
+		}
+
+		const stairRun = (BASEMENT_STAIR_STEP_COUNT - 1) * BASEMENT_STAIR_RUN;
+		const stairRise = (BASEMENT_STAIR_STEP_COUNT - 1) * BASEMENT_STAIR_RISE;
+		const stairLength = Math.hypot(stairRun, stairRise);
+		const stairAngle = Math.atan2(stairRise, stairRun);
+		const stairCenterX = (BASEMENT_STAIR_BOTTOM_X + KITCHEN_HATCH_X) / 2;
+		const bottomStepY = BASEMENT_FLOOR_Y + BASEMENT_STAIR_RISE;
+		const topStepY = BASEMENT_FLOOR_Y + BASEMENT_STAIR_STEP_COUNT * BASEMENT_STAIR_RISE;
+		const stairCenterY = (bottomStepY + topStepY) / 2;
+		for (const zOffset of [-BASEMENT_STAIR_WIDTH / 2 + 0.08, BASEMENT_STAIR_WIDTH / 2 - 0.08]) {
+			const stringer = box(
+				[stairLength, 0.14, 0.13],
+				[stairCenterX, stairCenterY - 0.2, KITCHEN_HATCH_Z + zOffset],
+				frameColor
+			);
+			stringer.rotation.z = stairAngle;
+			this.basementRoot.add(stringer);
+		}
+
+		const railZ = KITCHEN_HATCH_Z + BASEMENT_STAIR_WIDTH / 2 + 0.08;
+		for (let index = 0; index < BASEMENT_STAIR_STEP_COUNT; index += 2) {
+			const x = BASEMENT_STAIR_BOTTOM_X + index * BASEMENT_STAIR_RUN;
+			const topY = BASEMENT_FLOOR_Y + (index + 1) * BASEMENT_STAIR_RISE;
+			this.basementRoot.add(cylinder(0.035, 0.045, 0.82, [x, topY + 0.41, railZ], frameColor, 8));
+		}
+		const handrailDirection = new THREE.Vector3(stairRun, stairRise, 0).normalize();
+		const handrail = cylinder(
+			0.05,
+			0.05,
+			stairLength + 0.18,
+			[stairCenterX, stairCenterY + 0.82, railZ],
+			frameColor,
+			10
+		);
+		handrail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), handrailDirection);
+		this.basementRoot.add(handrail);
 	}
 
 	private createSewer() {
@@ -2749,6 +2822,7 @@ export class StampKonijnGame {
 
 	private updateGame(delta: number) {
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
+		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -3140,15 +3214,28 @@ export class StampKonijnGame {
 			this.playerOutside = false;
 			this.playerInKitchen = false;
 			this.playerLeftRoom = null;
+			this.basementEntryCooldown = 0.85;
+			this.velocity.x = Math.min(this.velocity.x, -2.4);
 			this.syncBiomeState();
 			this.callbacks.onFeedback('DE KELDER IN!');
 		} else if (this.playerInBasement) {
 			if (this.player.position.y + PLAYER_HEIGHT >= -0.08) {
-				if (basementHatchOpening && this.player.position.y > -0.2) {
+				if (
+					basementHatchOpening &&
+					this.basementEntryCooldown <= 0 &&
+					this.player.position.y > -0.2
+				) {
 					this.playerInBasement = false;
 					this.playerInKitchen = true;
 					this.syncBiomeState();
 					this.callbacks.onFeedback('TERUG NAAR BOVEN!');
+				} else if (
+					basementHatchOpening &&
+					this.basementEntryCooldown > 0 &&
+					this.player.position.y > -0.2
+				) {
+					this.player.position.y = -0.2;
+					this.velocity.y = -Math.abs(this.velocity.y) * 0.45;
 				} else if (!basementHatchOpening) {
 					this.player.position.y = -PLAYER_HEIGHT - 0.08;
 					this.velocity.y = -Math.abs(this.velocity.y) * 0.68;
@@ -3312,7 +3399,9 @@ export class StampKonijnGame {
 
 	private getActiveFloorHeight() {
 		if (this.playerInSewer) return SEWER_FLOOR_Y;
-		if (this.playerInBasement) return BASEMENT_FLOOR_Y;
+		if (this.playerInBasement) {
+			return this.getBasementStairFloorHeight() ?? BASEMENT_FLOOR_Y;
+		}
 		if (this.playerUpstairs) return UPSTAIRS_FLOOR_Y;
 		if (this.playerLeftRoom !== 'stairs') return 0;
 		const stepIndex = THREE.MathUtils.clamp(
@@ -3327,6 +3416,21 @@ export class StampKonijnGame {
 			}
 		}
 		return (stepIndex + 1) * STAIR_STEP_RISE;
+	}
+
+	private getBasementStairFloorHeight() {
+		if (Math.abs(this.player.position.z - KITCHEN_HATCH_Z) > BASEMENT_STAIR_WIDTH / 2) {
+			return null;
+		}
+		const stairMinX = BASEMENT_STAIR_BOTTOM_X - BASEMENT_STAIR_RUN / 2;
+		const stairMaxX = KITCHEN_HATCH_X + BASEMENT_STAIR_RUN / 2;
+		if (this.player.position.x < stairMinX || this.player.position.x > stairMaxX) return null;
+		const stepIndex = THREE.MathUtils.clamp(
+			Math.floor((this.player.position.x - stairMinX) / BASEMENT_STAIR_RUN),
+			0,
+			BASEMENT_STAIR_STEP_COUNT - 1
+		);
+		return BASEMENT_FLOOR_Y + (stepIndex + 1) * BASEMENT_STAIR_RISE;
 	}
 
 	private isAtToiletHole() {
@@ -5001,6 +5105,7 @@ export class StampKonijnGame {
 		this.playerInBasement = false;
 		this.playerInSewer = false;
 		this.playerUpstairs = false;
+		this.basementEntryCooldown = 0;
 		this.toiletHoleOpen = false;
 		this.kitchenHatchOpen = false;
 		this.toiletSinking = false;
