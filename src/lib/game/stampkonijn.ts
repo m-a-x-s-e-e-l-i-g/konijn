@@ -4348,6 +4348,7 @@ export class StampKonijnGame {
 			const stampImpactSpeed = this.velocity.length();
 			const floorNormal = new THREE.Vector3(0, 1, 0);
 			this.player.position.y = floorHeight;
+			this.standRabbitUpright();
 			if (overPoolWater && this.isTargetStampSurface(floorNormal) && stampImpactSpeed > 2.8) {
 				this.performPoolStamp(stampImpactSpeed);
 				this.finishStampRebound(floorNormal, 0.62, stampImpactSpeed);
@@ -5053,6 +5054,7 @@ export class StampKonijnGame {
 			if (landingOnTop) {
 				const impactSpeed = Math.abs(this.velocity.y);
 				this.player.position.y = objectTop;
+				this.standRabbitUpright();
 				this.velocity.y = Math.max(5.2, impactSpeed * 0.42);
 				this.squash = Math.max(this.squash, Math.min(0.68, impactSpeed / 18));
 				this.joltArms(0.9 + Math.min(impactSpeed, 12) * 0.07);
@@ -7101,6 +7103,11 @@ export class StampKonijnGame {
 		this.stampTargetsDoor = false;
 		this.stampTargetLeftDoor = null;
 		this.stampPose.identity();
+	}
+
+	private standRabbitUpright() {
+		if (this.stomping && this.stampTargetKind === 'wall') this.cancelStamp();
+		this.rabbitTumble.quaternion.copy(this.uprightPose);
 	}
 
 	private resize() {
