@@ -5527,7 +5527,7 @@ export class StampKonijnGame {
 
 		if (source === 'bullet') {
 			this.playBulletImpact();
-			this.callbacks.onFeedback('DIE BOOM MOET JE STAMPEN!');
+			this.callbacks.onFeedback(`${breakable.label} MOET JE STAMPEN!`);
 			return;
 		}
 		if (breakable.lastStampSequence === this.stampSequence) return;
@@ -5535,7 +5535,6 @@ export class StampKonijnGame {
 		breakable.lastStampSequence = this.stampSequence;
 		breakable.stampCount += 1;
 		if (breakable.stampCount >= breakable.stampsRequired) {
-			this.pendingStampFeedback = 'BOOM OM!';
 			this.breakObject(breakable);
 			return;
 		}
