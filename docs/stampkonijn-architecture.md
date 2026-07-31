@@ -19,8 +19,8 @@ Systems should receive only their explicit dependencies. They communicate throug
 1. Keep behavior stable while extracting leaf systems (audio, VFX and weapons).
 2. Move rabbit movement, stamps and arm ragdoll behind a player controller.
 3. Move breakables, doors and projectiles into systems that consume the typed events.
-4. Rebuild the living room in Blender and load it through `WorldLoader`.
-5. Migrate one unlockable zone at a time; remove its old procedural builder only after an in-game comparison.
+4. Export the existing static house to GLB and load all nine zones through `WorldLoader`. (Complete.)
+5. Import the generated GLB into Blender and adopt a `.blend` file as the visual source of truth.
 6. Introduce a physics adapter before considering Rapier, so the current collision code can remain the first implementation.
 
-The `.blend` file is source art. The `.glb` and `.level.json` are generated runtime artifacts. Game mechanics stay in TypeScript; Blender custom properties contain stable ids and configuration, not executable logic.
+The `.blend` file becomes source art after the generated GLB is imported. The `.glb` and `.level.json` are runtime artifacts; `scripts/export-stampkonijn-map.mjs` remains the reproducible initial migration. Game mechanics stay in TypeScript; Blender custom properties contain stable ids and configuration, not executable logic.

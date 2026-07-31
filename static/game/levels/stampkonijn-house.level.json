@@ -1,0 +1,704 @@
+{
+  "version": 1,
+  "id": "stampkonijn-house",
+  "model": "./stampkonijn-house.glb",
+  "zones": [
+    {
+      "id": "living_room",
+      "node": "zone_living_room",
+      "biome": "ground"
+    },
+    {
+      "id": "bathroom",
+      "node": "zone_bathroom",
+      "biome": "ground",
+      "enabledBy": "left_door_bathroom"
+    },
+    {
+      "id": "stairs",
+      "node": "zone_stairs",
+      "biome": "ground",
+      "enabledBy": "left_door_stairs"
+    },
+    {
+      "id": "bedroom",
+      "node": "zone_bedroom",
+      "biome": "ground",
+      "enabledBy": "left_door_bedroom"
+    },
+    {
+      "id": "kitchen",
+      "node": "zone_kitchen",
+      "biome": "ground",
+      "enabledBy": "kitchen_door"
+    },
+    {
+      "id": "garden",
+      "node": "zone_garden",
+      "biome": "outside"
+    },
+    {
+      "id": "upstairs",
+      "node": "zone_upstairs",
+      "biome": "upstairs",
+      "enabledBy": "left_door_stairs"
+    },
+    {
+      "id": "basement",
+      "node": "zone_basement",
+      "biome": "basement",
+      "enabledBy": "kitchen_hatch"
+    },
+    {
+      "id": "sewer",
+      "node": "zone_sewer",
+      "biome": "sewer",
+      "enabledBy": "toilet"
+    }
+  ],
+  "entities": [],
+  "colliders": [
+    {
+      "id": "living_floor",
+      "node": "living_floor",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "living_back_wall_left",
+      "node": "living_back_wall_left",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "living_back_wall_right",
+      "node": "living_back_wall_right",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "living_back_wall_below_window",
+      "node": "living_back_wall_below_window",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "living_back_wall_above_window",
+      "node": "living_back_wall_above_window",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_wall_0",
+      "node": "left_shared_wall_0",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_header_0",
+      "node": "left_shared_header_0",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_wall_1",
+      "node": "left_shared_wall_1",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_header_1",
+      "node": "left_shared_header_1",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_wall_2",
+      "node": "left_shared_wall_2",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_header_2",
+      "node": "left_shared_header_2",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "left_shared_wall_final",
+      "node": "left_shared_wall_final",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_shared_wall_back",
+      "node": "kitchen_shared_wall_back",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_shared_wall_front",
+      "node": "kitchen_shared_wall_front",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_shared_header",
+      "node": "kitchen_shared_header",
+      "zone": "living_room",
+      "shape": "mesh"
+    },
+    {
+      "id": "bathroom_floor",
+      "node": "bathroom_floor",
+      "zone": "bathroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "bathroom_outer_wall",
+      "node": "bathroom_outer_wall",
+      "zone": "bathroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_floor",
+      "node": "stairs_floor",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_outer_wall",
+      "node": "stairs_outer_wall",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "bedroom_floor",
+      "node": "bedroom_floor",
+      "zone": "bedroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "bedroom_outer_wall",
+      "node": "bedroom_outer_wall",
+      "zone": "bedroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "bathroom_back_wall",
+      "node": "bathroom_back_wall",
+      "zone": "bathroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "bathroom_divider",
+      "node": "bathroom_divider",
+      "zone": "bathroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "bedroom_divider",
+      "node": "bedroom_divider",
+      "zone": "bedroom",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_0",
+      "node": "stairs_tread_0",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_0",
+      "node": "stairs_riser_0",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_1",
+      "node": "stairs_tread_1",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_1",
+      "node": "stairs_riser_1",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_2",
+      "node": "stairs_tread_2",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_2",
+      "node": "stairs_riser_2",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_3",
+      "node": "stairs_tread_3",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_3",
+      "node": "stairs_riser_3",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_4",
+      "node": "stairs_tread_4",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_4",
+      "node": "stairs_riser_4",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_5",
+      "node": "stairs_tread_5",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_5",
+      "node": "stairs_riser_5",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_6",
+      "node": "stairs_tread_6",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_6",
+      "node": "stairs_riser_6",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_7",
+      "node": "stairs_tread_7",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_7",
+      "node": "stairs_riser_7",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_8",
+      "node": "stairs_tread_8",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_8",
+      "node": "stairs_riser_8",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_9",
+      "node": "stairs_tread_9",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_9",
+      "node": "stairs_riser_9",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_10",
+      "node": "stairs_tread_10",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_10",
+      "node": "stairs_riser_10",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_tread_11",
+      "node": "stairs_tread_11",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "stairs_riser_11",
+      "node": "stairs_riser_11",
+      "zone": "stairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_floor",
+      "node": "kitchen_floor",
+      "zone": "kitchen",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_outer_wall",
+      "node": "kitchen_outer_wall",
+      "zone": "kitchen",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_back_wall_left",
+      "node": "kitchen_back_wall_left",
+      "zone": "kitchen",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_back_wall_right",
+      "node": "kitchen_back_wall_right",
+      "zone": "kitchen",
+      "shape": "mesh"
+    },
+    {
+      "id": "kitchen_back_wall_header",
+      "node": "kitchen_back_wall_header",
+      "zone": "kitchen",
+      "shape": "mesh"
+    },
+    {
+      "id": "garden_lawn",
+      "node": "garden_lawn",
+      "zone": "garden",
+      "shape": "mesh"
+    },
+    {
+      "id": "garden_left_hedge",
+      "node": "garden_left_hedge",
+      "zone": "garden",
+      "shape": "mesh"
+    },
+    {
+      "id": "garden_right_hedge",
+      "node": "garden_right_hedge",
+      "zone": "garden",
+      "shape": "mesh"
+    },
+    {
+      "id": "garden_back_hedge",
+      "node": "garden_back_hedge",
+      "zone": "garden",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_floor_0",
+      "node": "upstairs_floor_0",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_floor_1",
+      "node": "upstairs_floor_1",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_floor_2",
+      "node": "upstairs_floor_2",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_left_wall",
+      "node": "upstairs_left_wall",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_right_wall",
+      "node": "upstairs_right_wall",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "upstairs_back_wall",
+      "node": "upstairs_back_wall",
+      "zone": "upstairs",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_floor",
+      "node": "basement_floor",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_left_wall",
+      "node": "basement_left_wall",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_right_wall",
+      "node": "basement_right_wall",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_back_wall",
+      "node": "basement_back_wall",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_0",
+      "node": "basement_stair_tread_0",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_0",
+      "node": "basement_stair_riser_0",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_1",
+      "node": "basement_stair_tread_1",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_1",
+      "node": "basement_stair_riser_1",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_2",
+      "node": "basement_stair_tread_2",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_2",
+      "node": "basement_stair_riser_2",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_3",
+      "node": "basement_stair_tread_3",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_3",
+      "node": "basement_stair_riser_3",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_4",
+      "node": "basement_stair_tread_4",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_4",
+      "node": "basement_stair_riser_4",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_5",
+      "node": "basement_stair_tread_5",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_5",
+      "node": "basement_stair_riser_5",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_6",
+      "node": "basement_stair_tread_6",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_6",
+      "node": "basement_stair_riser_6",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_7",
+      "node": "basement_stair_tread_7",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_7",
+      "node": "basement_stair_riser_7",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_tread_8",
+      "node": "basement_stair_tread_8",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "basement_stair_riser_8",
+      "node": "basement_stair_riser_8",
+      "zone": "basement",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_floor",
+      "node": "sewer_floor",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_left_wall",
+      "node": "sewer_left_wall",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_right_wall",
+      "node": "sewer_right_wall",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_back_wall",
+      "node": "sewer_back_wall",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_roof_0",
+      "node": "sewer_roof_0",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_roof_1",
+      "node": "sewer_roof_1",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_0",
+      "node": "sewer_obstacle_0",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_1",
+      "node": "sewer_obstacle_1",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_2",
+      "node": "sewer_obstacle_2",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_3",
+      "node": "sewer_obstacle_3",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_4",
+      "node": "sewer_obstacle_4",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_5",
+      "node": "sewer_obstacle_5",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_6",
+      "node": "sewer_obstacle_6",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_7",
+      "node": "sewer_obstacle_7",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_8",
+      "node": "sewer_obstacle_8",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_9",
+      "node": "sewer_obstacle_9",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_10",
+      "node": "sewer_obstacle_10",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_11",
+      "node": "sewer_obstacle_11",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_12",
+      "node": "sewer_obstacle_12",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_13",
+      "node": "sewer_obstacle_13",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_14",
+      "node": "sewer_obstacle_14",
+      "zone": "sewer",
+      "shape": "mesh"
+    },
+    {
+      "id": "sewer_obstacle_15",
+      "node": "sewer_obstacle_15",
+      "zone": "sewer",
+      "shape": "mesh"
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # Stampkonijn level workflow
 
-Blender is the source of truth for room geometry, placement, zone roots and colliders. The game loads a generated `.glb` and `.level.json`; do not hand-edit exported files.
+The game loads its static room geometry, placement, zone roots and gameplay surfaces from `static/game/levels/stampkonijn-house.glb` plus `stampkonijn-house.level.json`. TypeScript now owns only interactive objects and mechanics.
 
-The current JavaScript-built house remains active while rooms are migrated one by one. Start with the living room, compare it in-game, then move the kitchen, garden, side rooms, upstairs, basement and sewer.
+`scripts/export-stampkonijn-map.mjs` is the repeatable code-to-asset migration used to create the initial GLB. Run `npm run export:map` when changing that migration script. For normal visual editing, import the GLB into Blender, save it as `art/levels/stampkonijn-house.blend`, preserve the names and custom properties below, and use the Blender export command.
 
 ## Blender setup
 
@@ -28,7 +28,13 @@ Use simple hidden meshes for colliders. Prefer `box`; use `mesh` only when the s
 
 ## Export
 
-From the repository root, with Blender available on `PATH`:
+Regenerate the initial code-authored asset:
+
+```powershell
+npm run export:map
+```
+
+After adopting a Blender source file, export it from the repository root with Blender available on `PATH`:
 
 ```powershell
 blender --background art/levels/stampkonijn-house.blend --python tools/blender/export_level.py -- --output static/game/levels/stampkonijn-house

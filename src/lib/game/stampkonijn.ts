@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GameEvents } from './core/GameEvents';
 import { AudioSystem } from './systems/AudioSystem';
+import { WorldLoader, type LoadedWorld } from './world/WorldLoader';
 import type {
 	BreakMaterial,
 	BulletImpactMaterial,
@@ -344,6 +345,7 @@ export class StampKonijnGame {
 	private renderer: THREE.WebGLRenderer;
 	private timer = new THREE.Timer();
 	private loader = new GLTFLoader();
+	private worldLoader = new WorldLoader();
 	private player = new THREE.Group();
 	private rabbitTumble = new THREE.Group();
 	private rabbitSquash = new THREE.Group();
@@ -393,8 +395,8 @@ export class StampKonijnGame {
 	private stompTimeout = 0;
 	private breakables: Breakable[] = [];
 	private breakablesRoot = new THREE.Group();
-	private basementRoot = new THREE.Group();
-	private sewerRoot = new THREE.Group();
+	private basementRoot: THREE.Object3D = new THREE.Group();
+	private sewerRoot: THREE.Object3D = new THREE.Group();
 	private activeBiome: BiomeName = 'ground';
 	private groundHemisphere: THREE.HemisphereLight | null = null;
 	private groundSun: THREE.DirectionalLight | null = null;
@@ -411,8 +413,8 @@ export class StampKonijnGame {
 	private lockedBackDoorHit = 0;
 	private doorOpen = false;
 	private doorOpenAmount = 0;
-	private kitchenInteriorRoot = new THREE.Group();
-	private leftRoomInteriorRoots = new Map<LeftRoomName, THREE.Group>();
+	private kitchenInteriorRoot: THREE.Object3D = new THREE.Group();
+	private leftRoomInteriorRoots = new Map<LeftRoomName, THREE.Object3D>();
 	private playerOutside = false;
 	private playerInKitchen = false;
 	private playerLeftRoom: LeftRoomName | null = null;
@@ -434,7 +436,7 @@ export class StampKonijnGame {
 	private playerInBasement = false;
 	private playerInSewer = false;
 	private playerUpstairs = false;
-	private upstairsRoot = new THREE.Group();
+	private upstairsRoot: THREE.Object3D = new THREE.Group();
 	private upstairsBreakables: Breakable[] = [];
 	private toiletHole = new THREE.Group();
 	private kitchenHatchBreakable: Breakable | null = null;
@@ -532,6 +534,7 @@ export class StampKonijnGame {
 			this.scene.background = new THREE.Color(0xc9d8d1);
 			this.scene.fog = new THREE.Fog(0xc9d8d1, 13, 27);
 			this.createLights();
+			await this.loadWorldGeometry();
 			this.createRoom();
 			this.scene.add(this.breakablesRoot);
 			this.createBreakables();
@@ -752,69 +755,81 @@ export class StampKonijnGame {
 		this.scene.add(this.muzzleLight);
 	}
 
+	private async loadWorldGeometry() {
+		const world = await this.worldLoader.load('/game/levels/stampkonijn-house.level.json');
+		this.scene.add(world.root);
+		this.kitchenInteriorRoot = this.requireWorldZone(world, 'kitchen');
+		this.basementRoot = this.requireWorldZone(world, 'basement');
+		this.sewerRoot = this.requireWorldZone(world, 'sewer');
+		this.upstairsRoot = this.requireWorldZone(world, 'upstairs');
+		this.leftRoomInteriorRoots.clear();
+		this.leftRoomInteriorRoots.set('bathroom', this.requireWorldZone(world, 'bathroom'));
+		this.leftRoomInteriorRoots.set('stairs', this.requireWorldZone(world, 'stairs'));
+		this.leftRoomInteriorRoots.set('bedroom', this.requireWorldZone(world, 'bedroom'));
+
+		world.root.traverse((child) => {
+			if (!(child instanceof THREE.Mesh)) return;
+			child.castShadow = true;
+			child.receiveShadow = true;
+		});
+		world.root.updateMatrixWorld(true);
+		this.registerWorldSurfaces(world);
+		this.kitchenInteriorRoot.visible = false;
+		this.basementRoot.visible = false;
+		this.sewerRoot.visible = false;
+		this.upstairsRoot.visible = false;
+		for (const interior of this.leftRoomInteriorRoots.values()) interior.visible = false;
+	}
+
+	private requireWorldZone(world: LoadedWorld, zoneId: string) {
+		const zone = world.zones.get(zoneId);
+		if (!zone) throw new Error('Missing GLB world zone: ' + zoneId);
+		return zone;
+	}
+
+	private registerWorldSurfaces(world: LoadedWorld) {
+		const impactMaterials = new Set<BulletImpactMaterial>([
+			'land',
+			'metal',
+			'water',
+			'wood',
+			'body',
+			'concrete',
+			'glass',
+			'grass'
+		]);
+		this.sewerObstacles = [];
+
+		for (const [colliderId, collider] of world.colliders) {
+			if (!(collider instanceof THREE.Mesh)) {
+				throw new Error('GLB collider is not a mesh: ' + colliderId);
+			}
+			this.bulletImpactSurfaces.push(collider);
+			const stampSurface = collider.userData.stamp_surface;
+			if (stampSurface === 'floor' || stampSurface === 'wall') {
+				this.stampSurfaceKinds.set(collider, stampSurface);
+			}
+			const impactMaterial = collider.userData.impact_material;
+			if (
+				typeof impactMaterial === 'string' &&
+				impactMaterials.has(impactMaterial as BulletImpactMaterial)
+			) {
+				this.bulletImpactSurfaceMaterials.set(collider, impactMaterial as BulletImpactMaterial);
+			}
+
+			if (colliderId.startsWith('sewer_obstacle_')) {
+				const bounds = new THREE.Box3().setFromObject(collider);
+				this.sewerObstacles.push({
+					minX: bounds.min.x,
+					maxX: bounds.max.x,
+					minY: bounds.min.y,
+					maxY: bounds.max.y
+				});
+			}
+		}
+	}
+
 	private createRoom() {
-		const floor = shadowMesh(
-			new THREE.PlaneGeometry(ROOM_WIDTH, ROOM_DEPTH),
-			material(COLORS.floor)
-		);
-		floor.rotation.x = -Math.PI / 2;
-		floor.receiveShadow = true;
-		this.scene.add(floor);
-		this.bulletImpactSurfaces.push(floor);
-		this.bulletImpactSurfaceMaterials.set(floor, 'wood');
-		this.stampSurfaceKinds.set(floor, 'floor');
-
-		const rug = shadowMesh(new THREE.CircleGeometry(2.8, 64), material(COLORS.rug, 0.95));
-		rug.scale.z = 0.62;
-		rug.rotation.x = -Math.PI / 2;
-		rug.position.set(0, 0.018, 1.1);
-		this.scene.add(rug);
-
-		const windowLeft = WINDOW_CENTER_X - WINDOW_WIDTH / 2;
-		const windowRight = WINDOW_CENTER_X + WINDOW_WIDTH / 2;
-		const windowBottom = WINDOW_CENTER_Y - WINDOW_HEIGHT / 2;
-		const windowTop = WINDOW_CENTER_Y + WINDOW_HEIGHT / 2;
-		const backWallPanels = [
-			box(
-				[windowLeft + ROOM_WIDTH / 2, ROOM_HEIGHT, 0.18],
-				[(-ROOM_WIDTH / 2 + windowLeft) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
-				COLORS.wallWarm
-			),
-			box(
-				[ROOM_WIDTH / 2 - windowRight, ROOM_HEIGHT, 0.18],
-				[(windowRight + ROOM_WIDTH / 2) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
-				COLORS.wallWarm
-			),
-			box(
-				[WINDOW_WIDTH, windowBottom, 0.18],
-				[WINDOW_CENTER_X, windowBottom / 2, BACK_WALL_Z],
-				COLORS.wallWarm
-			),
-			box(
-				[WINDOW_WIDTH, ROOM_HEIGHT - windowTop, 0.18],
-				[WINDOW_CENTER_X, (windowTop + ROOM_HEIGHT) / 2, BACK_WALL_Z],
-				COLORS.wallWarm
-			)
-		];
-		for (const panel of backWallPanels) {
-			panel.receiveShadow = true;
-			this.scene.add(panel);
-			this.bulletImpactSurfaces.push(panel);
-			this.stampSurfaceKinds.set(panel, 'wall');
-		}
-
-		for (let x = -5.6; x <= 5.6; x += 1.4) {
-			const seam = box([0.025, 0.008, ROOM_DEPTH - 0.3], [x, 0.024, 0], 0x8e6048);
-			seam.receiveShadow = false;
-			this.scene.add(seam);
-		}
-
-		const windowFrame = new THREE.Group();
-		windowFrame.add(box([WINDOW_WIDTH, 0.14, 0.2], [0, WINDOW_HEIGHT / 2, 0], COLORS.ink));
-		windowFrame.add(box([WINDOW_WIDTH, 0.14, 0.2], [0, -WINDOW_HEIGHT / 2, 0], COLORS.ink));
-		windowFrame.add(box([0.14, WINDOW_HEIGHT, 0.2], [-WINDOW_WIDTH / 2, 0, 0], COLORS.ink));
-		windowFrame.add(box([0.14, WINDOW_HEIGHT, 0.2], [WINDOW_WIDTH / 2, 0, 0], COLORS.ink));
-
 		this.windowBreakaway = new THREE.Group();
 		const glass = new THREE.Mesh(
 			new THREE.PlaneGeometry(WINDOW_OPENING_WIDTH, WINDOW_OPENING_HEIGHT),
@@ -829,25 +844,22 @@ export class StampKonijnGame {
 		);
 		glass.position.z = 0.025;
 		glass.receiveShadow = true;
-		this.windowBreakaway.add(glass);
-		this.windowBreakaway.add(box([0.07, WINDOW_OPENING_HEIGHT, 0.1], [0, 0, 0.06], COLORS.cream));
-		this.windowBreakaway.add(box([WINDOW_OPENING_WIDTH, 0.07, 0.1], [0, 0, 0.06], COLORS.cream));
+		this.windowBreakaway.add(
+			glass,
+			box([0.07, WINDOW_OPENING_HEIGHT, 0.1], [0, 0, 0.06], COLORS.cream),
+			box([WINDOW_OPENING_WIDTH, 0.07, 0.1], [0, 0, 0.06], COLORS.cream)
+		);
+		this.windowBreakaway.position.set(WINDOW_CENTER_X, WINDOW_CENTER_Y, BACK_WALL_Z + 0.18);
 		this.windowStampSurfaces = [glass];
 		this.setWindowCollisionEnabled(true);
-		windowFrame.add(this.windowBreakaway);
-		windowFrame.position.set(WINDOW_CENTER_X, WINDOW_CENTER_Y, BACK_WALL_Z + 0.18);
-		this.scene.add(windowFrame);
+		this.scene.add(this.windowBreakaway);
 
-		const skirting = box([ROOM_WIDTH - 0.2, 0.22, 0.16], [0, 0.11, -4.84], COLORS.cream);
-		this.scene.add(skirting);
 		this.createLeftRooms();
 		this.createKitchen();
 		this.createBasement();
 		this.createSewer();
 		this.createUpstairs();
-		this.createGarden();
 	}
-
 	private createLeftRooms() {
 		const doorConfigs: Array<{
 			room: LeftRoomName;
@@ -859,331 +871,27 @@ export class StampKonijnGame {
 			{ room: 'stairs', label: 'TRAP', centerZ: STAIRS_DOOR_Z, color: 0xd1a64d },
 			{ room: 'bedroom', label: 'SLAAPKAMER', centerZ: BEDROOM_DOOR_Z, color: 0xb77875 }
 		];
-		this.leftRoomInteriorRoots.clear();
-		for (const config of doorConfigs) {
-			const interiorRoot = new THREE.Group();
-			interiorRoot.visible = false;
-			this.leftRoomInteriorRoots.set(config.room, interiorRoot);
-			this.scene.add(interiorRoot);
-		}
 
-		let wallCursor = BACK_WALL_Z;
-		for (const config of doorConfigs) {
-			const doorMinZ = config.centerZ - LEFT_ROOM_DOOR_WIDTH / 2;
-			const panelDepth = doorMinZ - wallCursor;
-			if (panelDepth > 0.01) {
-				const panel = box(
-					[0.18, ROOM_HEIGHT, panelDepth],
-					[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, wallCursor + panelDepth / 2],
-					COLORS.wall
-				);
-				panel.receiveShadow = true;
-				this.scene.add(panel);
-				this.bulletImpactSurfaces.push(panel);
-				this.stampSurfaceKinds.set(panel, 'wall');
-			}
-			const header = box(
-				[0.18, ROOM_HEIGHT - LEFT_ROOM_DOOR_HEIGHT, LEFT_ROOM_DOOR_WIDTH],
-				[
-					-ROOM_WIDTH / 2,
-					LEFT_ROOM_DOOR_HEIGHT + (ROOM_HEIGHT - LEFT_ROOM_DOOR_HEIGHT) / 2,
-					config.centerZ
-				],
-				COLORS.wall
-			);
-			header.receiveShadow = true;
-			this.scene.add(header);
-			this.bulletImpactSurfaces.push(header);
-			this.stampSurfaceKinds.set(header, 'wall');
-			wallCursor = config.centerZ + LEFT_ROOM_DOOR_WIDTH / 2;
-		}
-		const finalPanelDepth = ROOM_DEPTH / 2 - wallCursor;
-		if (finalPanelDepth > 0.01) {
-			const panel = box(
-				[0.18, ROOM_HEIGHT, finalPanelDepth],
-				[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, wallCursor + finalPanelDepth / 2],
-				COLORS.wall
-			);
-			panel.receiveShadow = true;
-			this.scene.add(panel);
-			this.bulletImpactSurfaces.push(panel);
-			this.stampSurfaceKinds.set(panel, 'wall');
-		}
-
-		const roomFloors: Array<{
-			room: LeftRoomName;
-			minZ: number;
-			maxZ: number;
-			color: number;
-		}> = [
-			{ room: 'bathroom', minZ: BACK_WALL_Z, maxZ: BATHROOM_MAX_Z, color: 0xb9d1cf },
-			{ room: 'stairs', minZ: BATHROOM_MAX_Z, maxZ: BEDROOM_MIN_Z, color: 0x9a704e },
-			{ room: 'bedroom', minZ: BEDROOM_MIN_Z, maxZ: ROOM_DEPTH / 2, color: 0xc49087 }
-		];
-		for (const room of roomFloors) {
-			const depth = room.maxZ - room.minZ;
-			const floor = shadowMesh(
-				new THREE.PlaneGeometry(LEFT_ROOMS_WIDTH, depth),
-				material(room.color, 0.94)
-			);
-			floor.rotation.x = -Math.PI / 2;
-			floor.position.set(LEFT_ROOMS_CENTER_X, -0.003, (room.minZ + room.maxZ) / 2);
-			floor.receiveShadow = true;
-			this.leftRoomInteriorRoots.get(room.room)?.add(floor);
-			this.bulletImpactSurfaces.push(floor);
-			this.bulletImpactSurfaceMaterials.set(floor, room.room === 'bathroom' ? 'concrete' : 'wood');
-			this.stampSurfaceKinds.set(floor, 'floor');
-		}
-
-		for (let x = LEFT_ROOMS_MIN_X + 0.55; x < LEFT_ROOMS_MAX_X; x += 0.55) {
-			const seam = box(
-				[0.016, 0.008, BATHROOM_MAX_Z - BACK_WALL_Z - 0.12],
-				[x, 0.018, (BACK_WALL_Z + BATHROOM_MAX_Z) / 2],
-				0x8ba9a7
-			);
-			seam.receiveShadow = false;
-			this.leftRoomInteriorRoots.get('bathroom')?.add(seam);
-		}
-		for (let z = BACK_WALL_Z + 0.55; z < BATHROOM_MAX_Z; z += 0.55) {
-			const seam = box(
-				[LEFT_ROOMS_WIDTH - 0.12, 0.008, 0.016],
-				[LEFT_ROOMS_CENTER_X, 0.019, z],
-				0x8ba9a7
-			);
-			seam.receiveShadow = false;
-			this.leftRoomInteriorRoots.get('bathroom')?.add(seam);
-		}
-
-		const outerWall = box(
-			[0.18, ROOM_HEIGHT, ROOM_DEPTH],
-			[LEFT_ROOMS_MIN_X, ROOM_HEIGHT / 2, 0],
-			0xd8c7b4
-		);
-		const bathroomBackWall = box(
-			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
-			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BACK_WALL_Z],
-			0xd7e2df
-		);
-		const bathroomDivider = box(
-			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
-			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BATHROOM_MAX_Z],
-			0xd7e2df
-		);
-		const bedroomDivider = box(
-			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
-			[LEFT_ROOMS_CENTER_X, ROOM_HEIGHT / 2, BEDROOM_MIN_Z],
-			0xe2d0c1
-		);
-		for (const wall of [outerWall, bathroomBackWall, bathroomDivider, bedroomDivider]) {
-			wall.receiveShadow = true;
-			this.scene.add(wall);
-			this.bulletImpactSurfaces.push(wall);
-			this.stampSurfaceKinds.set(wall, 'wall');
-		}
-
-		const handBasinX = -8.75;
-		const handBasinZ = BACK_WALL_Z + 0.43;
-		const basinSupport = box([0.68, 0.58, 0.38], [handBasinX, 0.34, handBasinZ - 0.08], 0x6b8e88);
-		const basin = shadowMesh(new THREE.SphereGeometry(0.34, 18, 10), material(0xe6e2d8, 0.42));
-		basin.scale.set(1.08, 0.32, 0.7);
-		basin.position.set(handBasinX, 0.72, handBasinZ);
-		const drainPipe = cylinder(0.055, 0.055, 0.48, [handBasinX, 0.25, handBasinZ], 0x777a78, 10);
-		const tapStem = cylinder(
-			0.035,
-			0.035,
-			0.24,
-			[handBasinX, 0.98, handBasinZ - 0.1],
-			0x777a78,
-			10
-		);
-		const tapSpout = cylinder(0.032, 0.032, 0.2, [handBasinX, 1.08, handBasinZ], 0x777a78, 10);
-		tapSpout.rotation.x = Math.PI / 2;
-		const tapHandle = box([0.2, 0.035, 0.055], [handBasinX, 1.12, handBasinZ - 0.1], 0x777a78);
-		const mirror = box([0.74, 0.82, 0.035], [handBasinX, 1.7, BACK_WALL_Z + 0.12], 0x88b4bd);
-		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom');
-		bathroomRoot?.add(basinSupport, basin, drainPipe, tapStem, tapSpout, tapHandle, mirror);
-		if (bathroomRoot) this.createToiletRoomDecor(bathroomRoot);
-
-		const staircase = new THREE.Group();
-		const treadThickness = 0.1;
-		const stairWidth = 2.28;
 		this.stairSteps = [];
 		for (let index = 0; index < STAIR_STEP_COUNT; index += 1) {
-			const step: StairStep = {
+			this.stairSteps.push({
 				x: STAIR_BOTTOM_X - index * STAIR_STEP_RUN,
 				z: STAIR_TOP_Z,
 				topY: STAIR_STEP_RISE * (index + 1),
 				length: STAIR_STEP_RUN + 0.08,
-				width: stairWidth,
+				width: 2.28,
 				rotationY: 0
-			};
-			this.stairSteps.push(step);
-
-			const tread = box(
-				[step.length, treadThickness, step.width],
-				[step.x, step.topY - treadThickness / 2, step.z],
-				index % 2 === 0 ? 0x9a6b46 : 0xa87950,
-				step.rotationY
-			);
-			const directionX = Math.cos(step.rotationY);
-			const directionZ = -Math.sin(step.rotationY);
-			const riser = box(
-				[0.1, STAIR_STEP_RISE - treadThickness, step.width - 0.06],
-				[
-					step.x - directionX * (step.length / 2 - 0.05),
-					step.topY - (STAIR_STEP_RISE + treadThickness) / 2,
-					step.z - directionZ * (step.length / 2 - 0.05)
-				],
-				0x68462f,
-				step.rotationY
-			);
-			staircase.add(tread, riser);
-			this.bulletImpactSurfaces.push(tread, riser);
-			this.bulletImpactSurfaceMaterials.set(tread, 'wood');
-			this.bulletImpactSurfaceMaterials.set(riser, 'wood');
-			this.stampSurfaceKinds.set(tread, 'floor');
-			this.stampSurfaceKinds.set(riser, 'wall');
+			});
 		}
 
-		const railPoints: THREE.Vector3[] = [];
-		for (let index = 0; index < this.stairSteps.length; index += 2) {
-			const step = this.stairSteps[index];
-			const railX = step.x - Math.sin(step.rotationY) * (step.width / 2 + 0.04);
-			const railZ = step.z - Math.cos(step.rotationY) * (step.width / 2 + 0.04);
-			staircase.add(cylinder(0.038, 0.046, 0.84, [railX, step.topY + 0.42, railZ], 0x3d3029, 8));
-			railPoints.push(new THREE.Vector3(railX, step.topY + 0.84, railZ));
-		}
-		const topStep = this.stairSteps[this.stairSteps.length - 1];
-		const finalRailPoint = new THREE.Vector3(
-			topStep.x - Math.sin(topStep.rotationY) * (topStep.width / 2 + 0.04),
-			topStep.topY + 0.84,
-			topStep.z - Math.cos(topStep.rotationY) * (topStep.width / 2 + 0.04)
-		);
-		if (!railPoints[railPoints.length - 1].equals(finalRailPoint)) railPoints.push(finalRailPoint);
-		for (let index = 1; index < railPoints.length; index += 1) {
-			const start = railPoints[index - 1];
-			const end = railPoints[index];
-			const direction = end.clone().sub(start);
-			const rail = cylinder(
-				0.05,
-				0.05,
-				direction.length(),
-				[(start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2],
-				0x3d3029,
-				10
-			);
-			rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-			staircase.add(rail);
-		}
-		this.leftRoomInteriorRoots.get('stairs')?.add(staircase);
-
-		const wardrobe = box([0.82, 2.2, 1.35], [LEFT_ROOMS_MIN_X + 0.52, 1.1, 3.25], 0x7d5a46);
-		const bedroomRug = shadowMesh(new THREE.CircleGeometry(1.2, 32), material(0x725c72, 0.95));
-		bedroomRug.scale.z = 0.64;
-		bedroomRug.rotation.x = -Math.PI / 2;
-		bedroomRug.position.set(-9.15, 0.015, 3.5);
-		this.leftRoomInteriorRoots.get('bedroom')?.add(wardrobe, bedroomRug);
-
+		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom');
+		if (bathroomRoot) this.createToiletRoomDecor(bathroomRoot);
 		for (const config of doorConfigs) {
 			this.createLeftRoomDoor(config.room, config.label, config.centerZ, config.color);
 		}
 	}
-
 	private createUpstairs() {
-		this.upstairsRoot.visible = false;
-		this.scene.add(this.upstairsRoot);
-		const upstairsWidth = UPSTAIRS_MAX_X - UPSTAIRS_MIN_X;
-		const stairwellWidth = UPSTAIRS_STAIRWELL_MAX_X - UPSTAIRS_STAIRWELL_MIN_X;
-		const stairwellSideDepth = ROOM_DEPTH / 2 - UPSTAIRS_STAIRWELL_HALF_Z;
-		const floorPanels: Array<[number, number, number, number]> = [
-			[
-				UPSTAIRS_MAX_X - UPSTAIRS_STAIRWELL_MAX_X,
-				ROOM_DEPTH,
-				(UPSTAIRS_MAX_X + UPSTAIRS_STAIRWELL_MAX_X) / 2,
-				0
-			],
-			[
-				stairwellWidth,
-				stairwellSideDepth,
-				UPSTAIRS_STAIRWELL_CENTER_X,
-				BACK_WALL_Z + stairwellSideDepth / 2
-			],
-			[
-				stairwellWidth,
-				stairwellSideDepth,
-				UPSTAIRS_STAIRWELL_CENTER_X,
-				ROOM_DEPTH / 2 - stairwellSideDepth / 2
-			]
-		];
-		for (const [width, depth, x, z] of floorPanels) {
-			const floor = shadowMesh(new THREE.BoxGeometry(width, 0.08, depth), material(0x30342f, 0.9));
-			floor.position.set(x, UPSTAIRS_FLOOR_Y - 0.02, z);
-			floor.receiveShadow = true;
-			this.upstairsRoot.add(floor);
-			this.bulletImpactSurfaces.push(floor);
-			this.bulletImpactSurfaceMaterials.set(floor, 'metal');
-			this.stampSurfaceKinds.set(floor, 'floor');
-		}
-
-		for (let x = UPSTAIRS_MIN_X + 0.9; x < UPSTAIRS_MAX_X; x += 0.9) {
-			if (x < UPSTAIRS_STAIRWELL_MAX_X) continue;
-			this.upstairsRoot.add(
-				box([0.025, 0.012, ROOM_DEPTH - 0.24], [x, UPSTAIRS_FLOOR_Y + 0.026, 0], 0x20241f)
-			);
-		}
-
-		const upstairsHeight = ROOM_HEIGHT;
-		const walls = [
-			box(
-				[0.2, upstairsHeight, ROOM_DEPTH],
-				[UPSTAIRS_MIN_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, 0],
-				0x454942
-			),
-			box(
-				[0.2, upstairsHeight, ROOM_DEPTH],
-				[UPSTAIRS_MAX_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, 0],
-				0x454942
-			),
-			box(
-				[upstairsWidth, upstairsHeight, 0.2],
-				[UPSTAIRS_CENTER_X, UPSTAIRS_FLOOR_Y + upstairsHeight / 2, BACK_WALL_Z],
-				0x383d38
-			)
-		];
-		for (const wall of walls) {
-			wall.receiveShadow = true;
-			this.upstairsRoot.add(wall);
-			this.bulletImpactSurfaces.push(wall);
-			this.stampSurfaceKinds.set(wall, 'wall');
-		}
-
-		const railColor = 0x1c211e;
-		for (const z of [-UPSTAIRS_STAIRWELL_HALF_Z, UPSTAIRS_STAIRWELL_HALF_Z]) {
-			this.upstairsRoot.add(
-				box(
-					[stairwellWidth, 0.09, 0.09],
-					[UPSTAIRS_STAIRWELL_CENTER_X, UPSTAIRS_FLOOR_Y + 0.9, z],
-					railColor
-				)
-			);
-			for (const x of [
-				UPSTAIRS_STAIRWELL_MIN_X + 0.12,
-				UPSTAIRS_STAIRWELL_CENTER_X,
-				UPSTAIRS_STAIRWELL_MAX_X - 0.12
-			]) {
-				this.upstairsRoot.add(
-					cylinder(0.04, 0.045, 0.9, [x, UPSTAIRS_FLOOR_Y + 0.45, z], railColor, 8)
-				);
-			}
-		}
-
-		for (const x of [-8.6, 0.2, 9]) {
-			const beam = box([0.08, 0.08, ROOM_DEPTH - 0.5], [x, UPSTAIRS_FLOOR_Y + 4.25, 0], 0x171b18);
-			this.upstairsRoot.add(beam);
-		}
-
 		this.createKo9HideoutDecor();
-
 		const monitorGlow = new THREE.PointLight(0x58c8b5, 0, 6.5, 2);
 		monitorGlow.position.set(0.45, UPSTAIRS_FLOOR_Y + 2.2, -1.15);
 		const archiveLight = new THREE.PointLight(0xf0a85c, 0, 5.6, 2);
@@ -1193,7 +901,6 @@ export class StampKonijnGame {
 		this.upstairsLights.push(monitorGlow, archiveLight, armoryLight);
 		this.upstairsRoot.add(...this.upstairsLights);
 	}
-
 	private createKo9HideoutDecor() {
 		const brand = this.makeKo9WallPanel(5.2, 0.82, 'brand');
 		brand.position.set(0.3, UPSTAIRS_FLOOR_Y + 3.82, BACK_WALL_Z + 0.12);
@@ -1220,97 +927,6 @@ export class StampKonijnGame {
 	}
 
 	private createBasement() {
-		this.basementRoot = new THREE.Group();
-		this.basementRoot.visible = false;
-		this.scene.add(this.basementRoot);
-		const basementWidth = BASEMENT_MAX_X - BASEMENT_MIN_X;
-		const basementFloor = shadowMesh(
-			new THREE.PlaneGeometry(basementWidth, ROOM_DEPTH),
-			material(0x63503b, 1)
-		);
-		basementFloor.rotation.x = -Math.PI / 2;
-		basementFloor.position.set(BASEMENT_CENTER_X, BASEMENT_FLOOR_Y, 0);
-		basementFloor.receiveShadow = true;
-		this.basementRoot.add(basementFloor);
-		this.bulletImpactSurfaces.push(basementFloor);
-		this.bulletImpactSurfaceMaterials.set(basementFloor, 'land');
-		this.stampSurfaceKinds.set(basementFloor, 'floor');
-
-		const basementHeight = Math.abs(BASEMENT_FLOOR_Y) + 0.1;
-		const basementWalls = [
-			box(
-				[0.22, basementHeight, ROOM_DEPTH],
-				[BASEMENT_MIN_X, BASEMENT_FLOOR_Y + basementHeight / 2, 0],
-				0x443a31
-			),
-			box(
-				[0.22, basementHeight, ROOM_DEPTH],
-				[BASEMENT_MAX_X, BASEMENT_FLOOR_Y + basementHeight / 2, 0],
-				0x443a31
-			),
-			box(
-				[basementWidth, basementHeight, 0.22],
-				[BASEMENT_CENTER_X, BASEMENT_FLOOR_Y + basementHeight / 2, BACK_WALL_Z],
-				0x3b332c
-			)
-		];
-		for (const wall of basementWalls) {
-			this.basementRoot.add(wall);
-			this.bulletImpactSurfaces.push(wall);
-			this.bulletImpactSurfaceMaterials.set(wall, 'land');
-			this.stampSurfaceKinds.set(wall, 'wall');
-		}
-		this.createBasementStairs();
-
-		for (let index = 0; index < 18; index += 1) {
-			const x = BASEMENT_MIN_X + 0.7 + ((index * 3.17) % (basementWidth - 1.4));
-			const z = BACK_WALL_Z + 0.55 + ((index * 2.41) % (ROOM_DEPTH - 1.1));
-			const mound = shadowMesh(
-				new THREE.SphereGeometry(0.65 + (index % 3) * 0.14, 12, 7),
-				material(index % 2 === 0 ? 0x7a6042 : 0x6e563d, 1)
-			);
-			mound.scale.set(1.35 + (index % 4) * 0.18, 0.16 + (index % 3) * 0.035, 0.82);
-			mound.position.set(x, BASEMENT_FLOOR_Y - 0.03, z);
-			mound.receiveShadow = true;
-			this.basementRoot.add(mound);
-		}
-
-		for (let index = 0; index < 26; index += 1) {
-			const rock = shadowMesh(
-				new THREE.DodecahedronGeometry(0.07 + (index % 4) * 0.025, 0),
-				material(index % 3 === 0 ? 0x493d32 : 0x796249, 1)
-			);
-			rock.scale.y = 0.55;
-			rock.position.set(
-				BASEMENT_MIN_X + 0.4 + ((index * 4.11) % (basementWidth - 0.8)),
-				BASEMENT_FLOOR_Y + 0.05,
-				BACK_WALL_Z + 0.35 + ((index * 3.07) % (ROOM_DEPTH - 0.7))
-			);
-			this.basementRoot.add(rock);
-		}
-
-		for (const x of [-5.3, 1.9, 9.1]) {
-			const column = box([0.46, 3.82, 0.46], [x, BASEMENT_FLOOR_Y + 1.91, -0.2], 0x55564f);
-			const beam = box([0.62, 0.34, ROOM_DEPTH - 0.35], [x, -0.2, 0], 0x4d4239);
-			this.basementRoot.add(column, beam);
-		}
-
-		const boiler = cylinder(0.68, 0.72, 2.25, [11.8, BASEMENT_FLOOR_Y + 1.13, -3.55], 0x7e6654, 20);
-		const boilerPipe = cylinder(
-			0.13,
-			0.13,
-			1.55,
-			[11.8, BASEMENT_FLOOR_Y + 2.95, -3.55],
-			0x76503a,
-			12
-		);
-		this.basementRoot.add(boiler, boilerPipe);
-		this.basementRoot.add(
-			box([1.05, 0.92, 0.82], [-5.2, BASEMENT_FLOOR_Y + 0.46, -3.6], 0x7a573d, 0.16),
-			box([0.86, 0.7, 0.72], [-4.25, BASEMENT_FLOOR_Y + 0.35, -3.35], 0x8b6548, -0.12),
-			box([1.35, 1.72, 0.42], [7.8, BASEMENT_FLOOR_Y + 0.86, -4.45], 0x4e514b)
-		);
-
 		this.toiletHole = new THREE.Group();
 		this.toiletHole.position.set(TOILET_X, 0, TOILET_Z);
 		const toiletDarkness = new THREE.Mesh(
@@ -1355,228 +971,23 @@ export class StampKonijnGame {
 		this.basementLights[1].position.set(9.5, BASEMENT_FLOOR_Y + 2.55, -1.4);
 		this.basementRoot.add(...this.basementLights);
 	}
-
-	private createBasementStairs() {
-		const treadThickness = 0.11;
-		const treadColor = 0x8a5b36;
-		const alternateTreadColor = 0x765033;
-		const frameColor = 0x4e3324;
-		for (let index = 0; index < BASEMENT_STAIR_STEP_COUNT; index += 1) {
-			const x = BASEMENT_STAIR_BOTTOM_X + index * BASEMENT_STAIR_RUN;
-			const topY = BASEMENT_FLOOR_Y + (index + 1) * BASEMENT_STAIR_RISE;
-			const tread = box(
-				[BASEMENT_STAIR_RUN + 0.04, treadThickness, BASEMENT_STAIR_WIDTH],
-				[x, topY - treadThickness / 2, KITCHEN_HATCH_Z],
-				index % 2 === 0 ? treadColor : alternateTreadColor
-			);
-			const riser = box(
-				[0.09, BASEMENT_STAIR_RISE - treadThickness, BASEMENT_STAIR_WIDTH - 0.08],
-				[
-					x - BASEMENT_STAIR_RUN / 2,
-					topY - (BASEMENT_STAIR_RISE + treadThickness) / 2,
-					KITCHEN_HATCH_Z
-				],
-				frameColor
-			);
-			this.basementRoot.add(tread, riser);
-			this.bulletImpactSurfaces.push(tread, riser);
-			this.bulletImpactSurfaceMaterials.set(tread, 'wood');
-			this.bulletImpactSurfaceMaterials.set(riser, 'wood');
-			this.stampSurfaceKinds.set(tread, 'floor');
-			this.stampSurfaceKinds.set(riser, 'wall');
-		}
-
-		const stairRun = (BASEMENT_STAIR_STEP_COUNT - 1) * BASEMENT_STAIR_RUN;
-		const stairRise = (BASEMENT_STAIR_STEP_COUNT - 1) * BASEMENT_STAIR_RISE;
-		const stairLength = Math.hypot(stairRun, stairRise);
-		const stairAngle = Math.atan2(stairRise, stairRun);
-		const stairCenterX = (BASEMENT_STAIR_BOTTOM_X + KITCHEN_HATCH_X) / 2;
-		const bottomStepY = BASEMENT_FLOOR_Y + BASEMENT_STAIR_RISE;
-		const topStepY = BASEMENT_FLOOR_Y + BASEMENT_STAIR_STEP_COUNT * BASEMENT_STAIR_RISE;
-		const stairCenterY = (bottomStepY + topStepY) / 2;
-		for (const zOffset of [-BASEMENT_STAIR_WIDTH / 2 + 0.08, BASEMENT_STAIR_WIDTH / 2 - 0.08]) {
-			const stringer = box(
-				[stairLength, 0.14, 0.13],
-				[stairCenterX, stairCenterY - 0.2, KITCHEN_HATCH_Z + zOffset],
-				frameColor
-			);
-			stringer.rotation.z = stairAngle;
-			this.basementRoot.add(stringer);
-		}
-
-		const railZ = KITCHEN_HATCH_Z + BASEMENT_STAIR_WIDTH / 2 + 0.08;
-		for (let index = 0; index < BASEMENT_STAIR_STEP_COUNT; index += 2) {
-			const x = BASEMENT_STAIR_BOTTOM_X + index * BASEMENT_STAIR_RUN;
-			const topY = BASEMENT_FLOOR_Y + (index + 1) * BASEMENT_STAIR_RISE;
-			this.basementRoot.add(cylinder(0.035, 0.045, 0.82, [x, topY + 0.41, railZ], frameColor, 8));
-		}
-		const handrailDirection = new THREE.Vector3(stairRun, stairRise, 0).normalize();
-		const handrail = cylinder(
-			0.05,
-			0.05,
-			stairLength + 0.18,
-			[stairCenterX, stairCenterY + 0.82, railZ],
-			frameColor,
-			10
-		);
-		handrail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), handrailDirection);
-		this.basementRoot.add(handrail);
-	}
-
 	private createSewer() {
-		this.sewerRoot = new THREE.Group();
-		this.sewerRoot.visible = false;
-		this.scene.add(this.sewerRoot);
-		const sewerFloor = shadowMesh(
-			new THREE.PlaneGeometry(SEWER_WIDTH, SEWER_DEPTH),
-			material(0x303932, 1)
-		);
-		sewerFloor.rotation.x = -Math.PI / 2;
-		sewerFloor.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
-		sewerFloor.receiveShadow = true;
-		this.sewerRoot.add(sewerFloor);
-		this.bulletImpactSurfaces.push(sewerFloor);
-		this.stampSurfaceKinds.set(sewerFloor, 'floor');
-
-		const sewerWalls = [
-			box(
-				[0.18, SEWER_HEIGHT, SEWER_DEPTH],
-				[SEWER_MIN_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
-				0x343c36
-			),
-			box(
-				[0.28, SEWER_HEIGHT, SEWER_DEPTH],
-				[SEWER_MAX_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
-				0x5a4b3b
-			),
-			box(
-				[SEWER_WIDTH, SEWER_HEIGHT, 0.18],
-				[SEWER_CENTER_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
-				0x3a423b
-			)
-		];
-		for (const wall of sewerWalls) {
-			this.sewerRoot.add(wall);
-			this.bulletImpactSurfaces.push(wall);
-			this.stampSurfaceKinds.set(wall, 'wall');
-		}
-
-		const shaftMinX = TOILET_X - SEWER_SHAFT_HALF_WIDTH;
-		const shaftMaxX = TOILET_X + SEWER_SHAFT_HALF_WIDTH;
-		for (const [minX, maxX] of [
-			[SEWER_MIN_X, shaftMinX],
-			[shaftMaxX, SEWER_MAX_X]
-		] as Array<[number, number]>) {
-			const width = maxX - minX;
-			const roof = box(
-				[width, 0.18, SEWER_DEPTH],
-				[(minX + maxX) / 2, SEWER_CEILING_Y, SEWER_CENTER_Z],
-				0x252d28
-			);
-			this.sewerRoot.add(roof);
-			this.bulletImpactSurfaces.push(roof);
-			this.stampSurfaceKinds.set(roof, 'wall');
-		}
-
-		this.sewerRoot.add(
-			box([SEWER_WIDTH, 0.16, 8], [SEWER_CENTER_X, SEWER_FLOOR_Y - 0.02, SEWER_MAX_Z + 4], 0x303932)
-		);
-		for (const [minX, maxX] of [
-			[SEWER_MIN_X, shaftMinX],
-			[shaftMaxX, SEWER_MAX_X]
-		] as Array<[number, number]>) {
-			this.sewerRoot.add(
-				box(
-					[maxX - minX, 0.16, 8],
-					[(minX + maxX) / 2, SEWER_CEILING_Y + 0.02, SEWER_MAX_Z + 4],
-					0x252d28
-				)
-			);
-		}
-
-		const shaftHeight = Math.abs(SEWER_CEILING_Y);
-		for (const x of [shaftMinX - 0.08, shaftMaxX + 0.08]) {
-			this.sewerRoot.add(
-				box(
-					[0.16, shaftHeight, SEWER_DEPTH - 0.18],
-					[x, SEWER_CEILING_Y + shaftHeight / 2, SEWER_CENTER_Z],
-					0x3f473f
-				)
-			);
-		}
-		for (const y of [SEWER_CEILING_Y + 0.28, -2.7, -1.3]) {
-			const shaftRing = new THREE.Mesh(
-				new THREE.TorusGeometry(SEWER_SHAFT_HALF_WIDTH + 0.12, 0.07, 8, 24),
-				material(0x76533b, 0.86)
-			);
-			shaftRing.rotation.x = Math.PI / 2;
-			shaftRing.position.set(TOILET_X, y, SEWER_CENTER_Z);
-			this.sewerRoot.add(shaftRing);
-		}
 		const shaftGlow = new THREE.PointLight(0xb9d19b, 5.5, 8, 2);
 		shaftGlow.position.set(TOILET_X, -1.3, SEWER_CENTER_Z + 0.2);
 		this.sewerRoot.add(shaftGlow);
-
-		const water = shadowMesh(
-			new THREE.PlaneGeometry(SEWER_WIDTH - 0.3, 0.58),
-			new THREE.MeshStandardMaterial({
-				color: 0x627047,
-				roughness: 0.58,
-				metalness: 0.04,
-				transparent: true,
-				opacity: 0.88
-			})
-		);
-		water.rotation.x = -Math.PI / 2;
-		water.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y + 0.025, SEWER_CENTER_Z - 0.72);
-		this.sewerRoot.add(water);
-
-		for (let x = SEWER_MIN_X + 2; x < SEWER_MAX_X; x += 5.2) {
-			const pipe = cylinder(
-				0.16,
-				0.16,
-				SEWER_DEPTH - 0.24,
-				[x, SEWER_FLOOR_Y + 3.3, SEWER_CENTER_Z - 0.18],
-				0x835b3c,
-				14
-			);
-			pipe.rotation.x = Math.PI / 2;
-			this.sewerRoot.add(pipe);
-		}
-
-		for (let index = 0; index < 16; index += 1) {
-			const x = TOILET_X + 6.5 + index * 4.55;
-			if (x > SEWER_MAX_X - 5) break;
-			const fromFloor = index % 2 === 0 || index % 5 === 3;
-			const height = fromFloor ? 1.05 + (index % 3) * 0.18 : 1.12 + (index % 4) * 0.13;
-			const centerY = fromFloor ? height / 2 : SEWER_HEIGHT - height / 2;
-			this.addSewerObstacle(x, SEWER_FLOOR_Y + centerY, 0.95 + (index % 3) * 0.17, height);
-		}
 		this.createPoopieMonster();
 
-		for (let index = 0; index < 4; index += 1) {
-			const foundation = box(
-				[0.42, 0.48, SEWER_DEPTH - 0.24],
-				[SEWER_MAX_X - 0.25, SEWER_FLOOR_Y + 0.3 + index * 0.76, SEWER_CENTER_Z],
-				index % 2 === 0 ? 0x8d755d : 0x6f5b49
-			);
-			foundation.rotation.z = index % 2 === 0 ? 0.035 : -0.025;
-			this.sewerRoot.add(foundation);
-		}
 		const distantGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
 		distantGlow.position.set(SEWER_MAX_X - 2.2, SEWER_FLOOR_Y + 2.3, SEWER_CENTER_Z + 0.2);
 		this.sewerRoot.add(distantGlow);
-
 		for (let x = TOILET_X + 4; x < SEWER_MAX_X - 5; x += 14) {
 			const tunnelLight = new THREE.PointLight(0x799066, 3.4, 12, 2);
 			tunnelLight.position.set(x, SEWER_FLOOR_Y + 2.9, SEWER_CENTER_Z + 0.25);
 			this.sewerRoot.add(tunnelLight);
 		}
-
 		this.sewerLight.position.set(TOILET_X + 1.5, SEWER_FLOOR_Y + 2.6, SEWER_CENTER_Z + 0.4);
 		this.sewerRoot.add(this.sewerLight);
 	}
-
 	private createPoopieMonster() {
 		this.poopieMonsterRoot = new THREE.Group();
 		this.poopieMonsterRoot.position.set(POOPIE_MONSTER_X, SEWER_FLOOR_Y, SEWER_CENTER_Z);
@@ -1700,19 +1111,6 @@ export class StampKonijnGame {
 		this.poopieMonsterFacing.add(source);
 	}
 
-	private addSewerObstacle(x: number, y: number, width: number, height: number) {
-		const obstacle = box([width, height, SEWER_DEPTH - 0.28], [x, y, SEWER_CENTER_Z], 0x59605a);
-		this.sewerRoot.add(obstacle);
-		this.bulletImpactSurfaces.push(obstacle);
-		this.stampSurfaceKinds.set(obstacle, 'wall');
-		this.sewerObstacles.push({
-			minX: x - width / 2,
-			maxX: x + width / 2,
-			minY: y - height / 2,
-			maxY: y + height / 2
-		});
-	}
-
 	private makeBrokenDoorDetails(leafHeight: number, leafDepth: number, faceOffset: number) {
 		const damage = new THREE.Group();
 		const crackColor = 0x4b3127;
@@ -1810,108 +1208,9 @@ export class StampKonijnGame {
 	}
 
 	private createKitchen() {
-		this.kitchenInteriorRoot = new THREE.Group();
-		this.kitchenInteriorRoot.visible = false;
-		this.scene.add(this.kitchenInteriorRoot);
+		this.createLockedKitchenBackDoor();
 		const doorMinZ = DOOR_CENTER_Z - DOOR_WIDTH / 2;
 		const doorMaxZ = DOOR_CENTER_Z + DOOR_WIDTH / 2;
-		const backPanelDepth = doorMinZ + ROOM_DEPTH / 2;
-		const frontPanelDepth = ROOM_DEPTH / 2 - doorMaxZ;
-		const sharedWallPanels = [
-			box(
-				[0.18, ROOM_HEIGHT, backPanelDepth],
-				[ROOM_WIDTH / 2, ROOM_HEIGHT / 2, -ROOM_DEPTH / 2 + backPanelDepth / 2],
-				COLORS.wall
-			),
-			box(
-				[0.18, ROOM_HEIGHT, frontPanelDepth],
-				[ROOM_WIDTH / 2, ROOM_HEIGHT / 2, doorMaxZ + frontPanelDepth / 2],
-				COLORS.wall
-			),
-			box(
-				[0.18, ROOM_HEIGHT - DOOR_HEIGHT, DOOR_WIDTH],
-				[ROOM_WIDTH / 2, DOOR_HEIGHT + (ROOM_HEIGHT - DOOR_HEIGHT) / 2, DOOR_CENTER_Z],
-				COLORS.wall
-			)
-		];
-		for (const panel of sharedWallPanels) {
-			panel.receiveShadow = true;
-			this.scene.add(panel);
-			this.bulletImpactSurfaces.push(panel);
-			this.stampSurfaceKinds.set(panel, 'wall');
-		}
-
-		const kitchenFloor = shadowMesh(
-			new THREE.PlaneGeometry(KITCHEN_WIDTH, ROOM_DEPTH),
-			material(0xd5c7ae, 0.94)
-		);
-		kitchenFloor.rotation.x = -Math.PI / 2;
-		kitchenFloor.position.set(KITCHEN_CENTER_X, -0.004, 0);
-		kitchenFloor.receiveShadow = true;
-		this.kitchenInteriorRoot.add(kitchenFloor);
-		this.bulletImpactSurfaces.push(kitchenFloor);
-		this.stampSurfaceKinds.set(kitchenFloor, 'floor');
-
-		for (let x = KITCHEN_MIN_X + 0.7; x < KITCHEN_MAX_X; x += 0.7) {
-			const seam = box([0.018, 0.008, ROOM_DEPTH - 0.2], [x, 0.018, 0], 0xb7a68b);
-			seam.receiveShadow = false;
-			this.kitchenInteriorRoot.add(seam);
-		}
-		for (let z = BACK_WALL_Z + 0.7; z < ROOM_DEPTH / 2; z += 0.7) {
-			const seam = box([KITCHEN_WIDTH - 0.2, 0.008, 0.018], [KITCHEN_CENTER_X, 0.019, z], 0xb7a68b);
-			seam.receiveShadow = false;
-			this.kitchenInteriorRoot.add(seam);
-		}
-
-		const kitchenOuterWall = box(
-			[0.18, ROOM_HEIGHT, ROOM_DEPTH],
-			[KITCHEN_MAX_X, ROOM_HEIGHT / 2, 0],
-			0xe0cbb1
-		);
-		const backDoorLeft = KITCHEN_BACK_DOOR_X - KITCHEN_BACK_DOOR_WIDTH / 2;
-		const backDoorRight = KITCHEN_BACK_DOOR_X + KITCHEN_BACK_DOOR_WIDTH / 2;
-		const kitchenBackWalls = [
-			box(
-				[backDoorLeft - KITCHEN_MIN_X, ROOM_HEIGHT, 0.18],
-				[(KITCHEN_MIN_X + backDoorLeft) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
-				0xe7d6bd
-			),
-			box(
-				[KITCHEN_MAX_X - backDoorRight, ROOM_HEIGHT, 0.18],
-				[(backDoorRight + KITCHEN_MAX_X) / 2, ROOM_HEIGHT / 2, BACK_WALL_Z],
-				0xe7d6bd
-			),
-			box(
-				[KITCHEN_BACK_DOOR_WIDTH, ROOM_HEIGHT - KITCHEN_BACK_DOOR_HEIGHT, 0.18],
-				[
-					KITCHEN_BACK_DOOR_X,
-					KITCHEN_BACK_DOOR_HEIGHT + (ROOM_HEIGHT - KITCHEN_BACK_DOOR_HEIGHT) / 2,
-					BACK_WALL_Z
-				],
-				0xe7d6bd
-			)
-		];
-		for (const wall of [kitchenOuterWall, ...kitchenBackWalls]) {
-			wall.receiveShadow = true;
-			this.scene.add(wall);
-			this.bulletImpactSurfaces.push(wall);
-			this.stampSurfaceKinds.set(wall, 'wall');
-		}
-		this.createLockedKitchenBackDoor();
-
-		const cabinetColor = 0x78966f;
-		for (const x of [8.15, 9.45, 10.75]) {
-			const lower = box([1.18, 0.86, 0.68], [x, 0.43, BACK_WALL_Z + 0.43], cabinetColor);
-			const upper = box([1.18, 0.86, 0.48], [x, 2.45, BACK_WALL_Z + 0.34], 0x91aa86);
-			this.kitchenInteriorRoot.add(lower, upper);
-		}
-		const counter = box([4.05, 0.14, 0.84], [9.45, 0.93, BACK_WALL_Z + 0.48], 0x4a403a);
-		this.kitchenInteriorRoot.add(counter);
-		const sink = box([0.78, 0.045, 0.46], [9.45, 1.015, BACK_WALL_Z + 0.51], 0xa9aaa3);
-		const tap = cylinder(0.035, 0.035, 0.5, [9.45, 1.23, BACK_WALL_Z + 0.25], 0x6f7373, 10);
-		tap.rotation.x = Math.PI / 2;
-		this.kitchenInteriorRoot.add(sink, tap);
-
 		const frameColor = 0x332b27;
 		this.scene.add(
 			box(
@@ -1950,7 +1249,6 @@ export class StampKonijnGame {
 		this.doorStampSurfaces = [doorLeaf];
 		this.setDoorCollisionEnabled(true);
 	}
-
 	private createLockedKitchenBackDoor() {
 		const frameZ = BACK_WALL_Z + 0.105;
 		const frameColor = 0x302c2a;
@@ -2052,83 +1350,6 @@ export class StampKonijnGame {
 		this.lockedBackDoorLeafRoot.add(exteriorLockwork);
 
 		this.scene.add(this.lockedBackDoorLeafRoot);
-	}
-
-	private createGarden() {
-		const gardenCenterZ = BACK_WALL_Z - GARDEN_DEPTH / 2;
-		const lawn = shadowMesh(
-			new THREE.PlaneGeometry(GARDEN_WIDTH, GARDEN_DEPTH),
-			material(0x789b55, 0.96)
-		);
-		lawn.rotation.x = -Math.PI / 2;
-		lawn.position.set(0, -0.006, gardenCenterZ);
-		lawn.receiveShadow = true;
-		this.scene.add(lawn);
-		this.bulletImpactSurfaces.push(lawn);
-		this.bulletImpactSurfaceMaterials.set(lawn, 'grass');
-		this.stampSurfaceKinds.set(lawn, 'floor');
-
-		const patio = shadowMesh(new THREE.CircleGeometry(3.4, 36), material(0xc9b89c, 0.94));
-		patio.scale.z = 0.72;
-		patio.rotation.x = -Math.PI / 2;
-		patio.position.set(-1.8, 0.012, -10.1);
-		patio.receiveShadow = true;
-		this.scene.add(patio);
-
-		for (let index = 0; index < 7; index += 1) {
-			const stone = cylinder(
-				0.42 + (index % 2) * 0.08,
-				0.46 + (index % 2) * 0.08,
-				0.055,
-				[WINDOW_CENTER_X + Math.sin(index * 0.9) * 0.34, 0.022, BACK_WALL_Z - 1.1 - index * 0.72],
-				index % 2 ? 0xd7c7aa : 0xbda98d,
-				12
-			);
-			stone.rotation.y = index * 0.63;
-			stone.receiveShadow = true;
-			this.scene.add(stone);
-		}
-
-		const hedgeMaterial = material(0x4f753f, 0.98);
-		const leftHedge = shadowMesh(
-			new THREE.BoxGeometry(0.55, 2.65, GARDEN_DEPTH),
-			hedgeMaterial.clone()
-		);
-		leftHedge.position.set(-GARDEN_WIDTH / 2, 1.3, gardenCenterZ);
-		const rightHedge = leftHedge.clone();
-		rightHedge.material = hedgeMaterial.clone();
-		rightHedge.position.x = GARDEN_WIDTH / 2;
-		const backHedge = shadowMesh(
-			new THREE.BoxGeometry(GARDEN_WIDTH, 2.65, 0.55),
-			hedgeMaterial.clone()
-		);
-		backHedge.position.set(0, 1.3, GARDEN_BACK_Z);
-		for (const hedge of [leftHedge, rightHedge, backHedge]) {
-			this.scene.add(hedge);
-			this.bulletImpactSurfaces.push(hedge);
-			this.bulletImpactSurfaceMaterials.set(hedge, 'grass');
-			this.stampSurfaceKinds.set(hedge, 'wall');
-		}
-
-		for (let x = -9; x <= 9; x += 3) {
-			if (Math.abs(x - DOGHOUSE_X) < 1.4) continue;
-			const shrub = shadowMesh(new THREE.DodecahedronGeometry(0.75, 1), material(0x648a49, 0.95));
-			shrub.scale.set(1.3, 1, 0.75);
-			shrub.position.set(x, 0.65, GARDEN_BACK_Z + 0.55);
-			this.scene.add(shrub);
-		}
-
-		const dogBone = this.makeDogBone();
-		dogBone.position.set(DOGHOUSE_X - 0.15, 0.055, DOGHOUSE_Z + 1.78);
-		dogBone.rotation.y = -0.32;
-		this.scene.add(dogBone);
-
-		const exteriorTrim = box(
-			[ROOM_WIDTH - 0.2, 0.22, 0.16],
-			[0, 0.11, BACK_WALL_Z - 0.1],
-			0xbca88b
-		);
-		this.scene.add(exteriorTrim);
 	}
 
 	private async loadModels() {
@@ -3043,7 +2264,7 @@ export class StampKonijnGame {
 		return group;
 	}
 
-	private createToiletRoomDecor(parent: THREE.Group) {
+	private createToiletRoomDecor(parent: THREE.Object3D) {
 		const rabbitArt: Array<{
 			source: string;
 			x: number;
