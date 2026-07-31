@@ -226,8 +226,9 @@ const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const POOPIE_MONSTER_X = 10;
 const POOPIE_MONSTER_RADIUS = 0.52;
-const POOPIE_MONSTER_HEIGHT = 1.58;
-const POOPIE_MONSTER_JUMP_HEIGHT = 0.3;
+const POOPIE_MONSTER_HEIGHT = 1.03;
+const POOPIE_MONSTER_JUMP_HEIGHT = 0.55;
+const POOPIE_MONSTER_BLOCK_KNOCKBACK = 5.4;
 const POOPIE_MONSTER_BULLET_HITS = 3;
 const POOPIE_MONSTER_POOP_HITS = 3;
 const POOPIE_MONSTER_SPEECH_RADIUS = 5.4;
@@ -1744,7 +1745,8 @@ export class StampKonijnGame {
 		const brownPalette = [0x8d5c3b, 0x75462d, 0x9a6843, 0x5f3826];
 		const brownMaterials = new Map<THREE.Material, THREE.MeshStandardMaterial>();
 
-		source.rotation.x = -Math.PI / 2;
+		// The Sketchfab root already converts the original Z-up mesh to glTF's Y-up space.
+		source.rotation.set(0, 0, 0);
 		source.traverse((child) => {
 			if (!(child instanceof THREE.Mesh)) return;
 			child.castShadow = true;
@@ -4459,6 +4461,11 @@ export class StampKonijnGame {
 			this.joltRagdoll(0.9 + impactSpeed * 0.06);
 			this.squash = Math.max(this.squash, 0.36);
 		}
+		if (Math.abs(normal.x) > 0.5) {
+			this.velocity.x =
+				normal.x * Math.max(Math.abs(this.velocity.x), POOPIE_MONSTER_BLOCK_KNOCKBACK);
+			this.velocity.y = Math.max(this.velocity.y, 2.4);
+		}
 		return true;
 	}
 
@@ -5393,7 +5400,7 @@ export class StampKonijnGame {
 
 		const friendly = this.poopieMonsterState === 'friend';
 		const motion = this.reducedMotion ? 0 : 1;
-		const jumpWave = Math.abs(Math.sin(this.poopieMonsterTime * (friendly ? 2.8 : 3.6)));
+		const jumpWave = Math.abs(Math.sin(this.poopieMonsterTime * (friendly ? 2.8 : 5.2)));
 		const jumpHeight =
 			Math.pow(jumpWave, 1.45) * (friendly ? 0.1 : POOPIE_MONSTER_JUMP_HEIGHT) * motion;
 		const landingSquash = Math.pow(1 - jumpWave, 8) * (friendly ? 0.025 : 0.085) * motion;
