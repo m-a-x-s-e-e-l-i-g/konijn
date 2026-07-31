@@ -80,6 +80,7 @@ interface WeaponProjectile {
 	life: number;
 	kind: WeaponName;
 	spawnDelay: number;
+	canFeedPoopieMonster?: boolean;
 }
 
 interface SewerObstacle {
@@ -204,13 +205,15 @@ const SEWER_MAX_Z = SEWER_CENTER_Z + SEWER_DEPTH / 2;
 const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
-const POOPIE_MONSTER_X = 10;
-const POOPIE_MONSTER_RADIUS = 0.52;
-const POOPIE_MONSTER_HEIGHT = 1.03;
+const POOPIE_MONSTER_X = 11.5;
+const POOPIE_MONSTER_RADIUS = 1.04;
+const POOPIE_MONSTER_HEIGHT = 2.06;
 const POOPIE_MONSTER_JUMP_HEIGHT = 0.55;
 const POOPIE_MONSTER_BLOCK_KNOCKBACK = 5.4;
 const POOPIE_MONSTER_BULLET_HITS = 3;
 const POOPIE_MONSTER_POOP_HITS = 3;
+const POOPIE_MONSTER_FEED_DISTANCE = 3;
+const POOPIE_MONSTER_FEED_HEIGHT = 0.58;
 const POOPIE_MONSTER_SPEECH_RADIUS = 5.4;
 const POOPIE_MONSTER_SPEECH_REARM_RADIUS = 7;
 const STAIR_STEP_COUNT = 12;
@@ -4334,7 +4337,9 @@ export class StampKonijnGame {
 		const minX = POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS;
 		const maxX = POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS;
 		const minY = SEWER_FLOOR_Y;
-		const maxY = SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT;
+		// A neutral Poopiemonster owns the full tunnel cross-section. The visual body may
+		// jump, but the player cannot squeeze over or under him until the encounter resolves.
+		const maxY = SEWER_CEILING_Y;
 		const playerLeft = this.player.position.x - PLAYER_RADIUS;
 		const playerRight = this.player.position.x + PLAYER_RADIUS;
 		const playerBottom = this.player.position.y;
@@ -5128,7 +5133,8 @@ export class StampKonijnGame {
 					),
 				life: 3.2 + Math.random() * 1.8,
 				kind: 'poop',
-				spawnDelay: 0
+				spawnDelay: 0,
+				canFeedPoopieMonster: index === 0
 			});
 		}
 		while (this.weaponProjectiles.length > 110) {
@@ -5223,6 +5229,7 @@ export class StampKonijnGame {
 	private tryHitPoopieMonster(projectile: WeaponProjectile) {
 		if (
 			projectile.kind !== 'poop' ||
+			!projectile.canFeedPoopieMonster ||
 			!this.playerInSewer ||
 			this.poopieMonsterState !== 'neutral'
 		) {
@@ -5231,10 +5238,11 @@ export class StampKonijnGame {
 
 		const position = projectile.mesh.position;
 		if (
-			Math.abs(position.x - POOPIE_MONSTER_X) > POOPIE_MONSTER_RADIUS + 0.15 ||
+			position.x < POOPIE_MONSTER_X - POOPIE_MONSTER_FEED_DISTANCE ||
+			position.x > POOPIE_MONSTER_X - POOPIE_MONSTER_RADIUS * 0.25 ||
 			position.y < SEWER_FLOOR_Y ||
-			position.y > SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT ||
-			Math.abs(position.z - SEWER_CENTER_Z) > POOPIE_MONSTER_RADIUS + 0.15
+			position.y > SEWER_FLOOR_Y + POOPIE_MONSTER_FEED_HEIGHT ||
+			Math.abs(position.z - SEWER_CENTER_Z) > SEWER_DEPTH / 2 - 0.08
 		) {
 			return false;
 		}
@@ -5264,11 +5272,9 @@ export class StampKonijnGame {
 		if (this.poopieMonsterPoopHits >= POOPIE_MONSTER_POOP_HITS) {
 			this.poopieMonsterState = 'friend';
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = true;
-			this.emitFeedback('POOPIEMONSTER IS JE VRIEND! ♥');
+			this.emitFeedback('POOPIEMONSTER: THANKS, YOU CAN PASS. ♥');
 		} else {
-			this.emitFeedback(
-				`POOPIEMONSTER: MMM... NOG ${POOPIE_MONSTER_POOP_HITS - this.poopieMonsterPoopHits} KEUTELS!`
-			);
+			this.emitFeedback('POOPIEMONSTER: HMMMM... POOPIES.');
 		}
 	}
 
