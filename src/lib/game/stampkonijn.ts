@@ -480,6 +480,7 @@ export class StampKonijnGame {
 	private impactSample: HTMLAudioElement;
 	private fartSample: HTMLAudioElement;
 	private pistolSample: HTMLAudioElement;
+	private g36Sample: HTMLAudioElement;
 	private vaseBreakSample: HTMLAudioElement;
 	private chairBreakSample: HTMLAudioElement;
 	private activeSamples = new Set<HTMLAudioElement>();
@@ -506,6 +507,8 @@ export class StampKonijnGame {
 		this.fartSample.preload = 'auto';
 		this.pistolSample = new Audio('/audio/weapons/pistol.ogg');
 		this.pistolSample.preload = 'auto';
+		this.g36Sample = new Audio('/audio/weapons/g36.ogg');
+		this.g36Sample.preload = 'auto';
 		this.vaseBreakSample = new Audio('/audio/vase-break.ogg');
 		this.vaseBreakSample.preload = 'auto';
 		this.chairBreakSample = new Audio('/audio/chair-break.ogg');
@@ -6717,12 +6720,9 @@ export class StampKonijnGame {
 
 	private playGunshot(weapon: Exclude<WeaponName, 'poop'>) {
 		if (this.muted) return;
-		const sample = this.pistolSample.cloneNode(true) as HTMLAudioElement;
+		const source = weapon === 'g36' ? this.g36Sample : this.pistolSample;
+		const sample = source.cloneNode(true) as HTMLAudioElement;
 		sample.volume = weapon === 'g36' ? 0.74 : 0.86;
-		if (weapon === 'g36') {
-			sample.preservesPitch = false;
-			sample.playbackRate = 1.08 + Math.random() * 0.08;
-		}
 		const cleanup = () => this.activeSamples.delete(sample);
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
