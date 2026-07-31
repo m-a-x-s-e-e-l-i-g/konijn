@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export type GamePhase = 'idle' | 'playing' | 'finished';
 export type WeaponName = 'poop' | 'pistol' | 'g36';
+type GunWeapon = Exclude<WeaponName, 'poop'>;
 type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
 type StampSurfaceKind = 'floor' | 'wall';
 type BulletImpactMaterial =
@@ -515,8 +516,10 @@ export class StampKonijnGame {
 	private weaponProjectiles: WeaponProjectile[] = [];
 	private muzzleEffects: MuzzleEffect[] = [];
 	private muzzleLightEffects: MuzzleLightEffect[] = [];
+	private muzzleLight = new THREE.PointLight(0xffad5c, 0, 5.2, 2);
 	private muzzleGlowTexture: THREE.CanvasTexture | null = null;
 	private muzzleSmokeTexture: THREE.CanvasTexture | null = null;
+	private weaponWarmupRoot: THREE.Group | null = null;
 	private bulletHoles: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[] = [];
 	private resizeObserver: ResizeObserver | null = null;
 	private frame = 0;
@@ -535,6 +538,7 @@ export class StampKonijnGame {
 	private squash = 0;
 	private cameraShake = 0;
 	private audioContext: AudioContext | null = null;
+	private gunshotBuffers: Partial<Record<GunWeapon, AudioBuffer>> = {};
 	private impactSample: HTMLAudioElement;
 	private fartSample: HTMLAudioElement;
 	private pistolSample: HTMLAudioElement;
@@ -615,7 +619,7 @@ export class StampKonijnGame {
 			this.createBreakables();
 			this.syncUpstairsVisibility();
 			this.syncBiomeState(true);
-			await this.loadModels();
+			await Promise.all([this.loadModels(), this.preloadGunshotBuffers()]);
 
 			this.camera.position.copy(CAMERA_HOME);
 			this.camera.lookAt(CAMERA_TARGET);
@@ -625,6 +629,7 @@ export class StampKonijnGame {
 			window.addEventListener('keyup', this.keyUpHandler, { passive: false });
 			window.addEventListener('blur', this.blurHandler);
 			this.resize();
+			await this.prepareWeaponEffects();
 			this.timer.connect(document);
 			this.timer.reset();
 			this.animate();
@@ -644,10 +649,6 @@ export class StampKonijnGame {
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
-		this.muzzleGlowTexture?.dispose();
-		this.muzzleGlowTexture = null;
-		this.muzzleSmokeTexture?.dispose();
-		this.muzzleSmokeTexture = null;
 		this.clearBulletHoles();
 		this.resetBreakables();
 		this.player.position.set(0, 0, 2.4);
@@ -797,11 +798,13 @@ export class StampKonijnGame {
 		this.clearSurfaceCracks();
 		this.clearWeaponProjectiles();
 		this.clearMuzzleEffects();
+		this.disposeWeaponWarmupResources();
 		this.muzzleGlowTexture?.dispose();
 		this.muzzleGlowTexture = null;
 		this.muzzleSmokeTexture?.dispose();
 		this.muzzleSmokeTexture = null;
 		this.clearBulletHoles();
+		this.gunshotBuffers = {};
 		disposeObject(this.scene);
 		this.renderer.dispose();
 		void this.audioContext?.close();
@@ -826,6 +829,10 @@ export class StampKonijnGame {
 		this.groundWindowGlow = new THREE.PointLight(0xffb868, 28, 11, 2);
 		this.groundWindowGlow.position.set(-5, 3.3, 1.5);
 		this.scene.add(this.groundWindowGlow);
+
+		// Keep the muzzle light in the scene so firing never changes the shader's light count.
+		this.muzzleLight.castShadow = false;
+		this.scene.add(this.muzzleLight);
 	}
 
 	private createRoom() {
@@ -5440,7 +5447,7 @@ export class StampKonijnGame {
 		}
 	}
 
-	private fireGun(weapon: Exclude<WeaponName, 'poop'>) {
+	private fireGun(weapon: GunWeapon) {
 		const muzzle = weapon === 'g36' ? this.g36Muzzle : this.pistolMuzzle;
 		const pivot = weapon === 'g36' ? this.g36Pivot : this.pistolPivot;
 		const origin = muzzle
@@ -5611,16 +5618,22 @@ export class StampKonijnGame {
 			followMuzzleUntilVisible: false
 		});
 
-		const flashLight = new THREE.PointLight(0xffad5c, 105 + Math.random() * 20, 5.2, 2);
+		const flashLight = this.muzzleLight;
 		flashLight.position.copy(origin).addScaledVector(direction, 0.045);
-		flashLight.castShadow = false;
-		this.scene.add(flashLight);
-		this.muzzleLightEffects.push({
-			light: flashLight,
-			life: 0.11,
-			maxLife: 0.11,
-			intensity: flashLight.intensity
-		});
+		flashLight.intensity = 105 + Math.random() * 20;
+		const activeLightEffect = this.muzzleLightEffects[0];
+		if (activeLightEffect) {
+			activeLightEffect.life = 0.11;
+			activeLightEffect.maxLife = 0.11;
+			activeLightEffect.intensity = flashLight.intensity;
+		} else {
+			this.muzzleLightEffects.push({
+				light: flashLight,
+				life: 0.11,
+				maxLife: 0.11,
+				intensity: flashLight.intensity
+			});
+		}
 
 		const smokeSide = new THREE.Vector3(1, 0, 0).applyQuaternion(
 			new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction)
@@ -5705,6 +5718,82 @@ export class StampKonijnGame {
 		return this.muzzleSmokeTexture;
 	}
 
+	private async prepareWeaponEffects() {
+		if (this.weaponWarmupRoot) return;
+
+		const glowTexture = this.getMuzzleGlowTexture();
+		const smokeTexture = this.getMuzzleSmokeTexture();
+		this.renderer.initTexture(glowTexture);
+		this.renderer.initTexture(smokeTexture);
+
+		const warmupRoot = new THREE.Group();
+		const flash = new THREE.Mesh(
+			new THREE.ConeGeometry(0.09, 0.34, 7),
+			new THREE.MeshBasicMaterial({
+				color: 0xffd98a,
+				transparent: true,
+				opacity: 0.76,
+				depthTest: false,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				toneMapped: false
+			})
+		);
+		const glow = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: glowTexture,
+				transparent: true,
+				depthTest: false,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				toneMapped: false
+			})
+		);
+		const smoke = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: smokeTexture,
+				transparent: true,
+				depthTest: false,
+				depthWrite: false,
+				toneMapped: false
+			})
+		);
+		const bullet = shadowMesh(
+			new THREE.LatheGeometry(
+				[
+					new THREE.Vector2(0.022, -0.06),
+					new THREE.Vector2(0.025, -0.043),
+					new THREE.Vector2(0.025, 0.016),
+					new THREE.Vector2(0.019, 0.04),
+					new THREE.Vector2(0, 0.06)
+				],
+				12
+			),
+			material(0xc78b42, 0.22, 0.72)
+		);
+		warmupRoot.add(flash, glow, smoke, bullet);
+		this.weaponWarmupRoot = warmupRoot;
+
+		try {
+			await this.renderer.compileAsync(warmupRoot, this.camera, this.scene);
+		} catch (error) {
+			console.warn('Weapon effect shader warmup failed; effects will compile on demand.', error);
+		}
+	}
+
+	private disposeWeaponWarmupResources() {
+		if (!this.weaponWarmupRoot) return;
+		this.weaponWarmupRoot.traverse((child) => {
+			if (child instanceof THREE.Mesh) child.geometry.dispose();
+			if (child instanceof THREE.Mesh || child instanceof THREE.Sprite) {
+				const childMaterial = child.material;
+				if (Array.isArray(childMaterial)) childMaterial.forEach((item) => item.dispose());
+				else childMaterial.dispose();
+			}
+		});
+		this.weaponWarmupRoot = null;
+	}
+
 	private updateMuzzleEffects(delta: number) {
 		for (let index = this.muzzleLightEffects.length - 1; index >= 0; index -= 1) {
 			const effect = this.muzzleLightEffects[index];
@@ -5712,7 +5801,7 @@ export class StampKonijnGame {
 			const lifeRatio = Math.max(0, effect.life / effect.maxLife);
 			effect.light.intensity = effect.intensity * lifeRatio * lifeRatio;
 			if (effect.life <= 0) {
-				this.scene.remove(effect.light);
+				effect.light.intensity = 0;
 				this.muzzleLightEffects.splice(index, 1);
 			}
 		}
@@ -7015,7 +7104,7 @@ export class StampKonijnGame {
 	}
 
 	private clearMuzzleEffects() {
-		for (const effect of this.muzzleLightEffects) this.scene.remove(effect.light);
+		for (const effect of this.muzzleLightEffects) effect.light.intensity = 0;
 		this.muzzleLightEffects = [];
 		for (const effect of this.muzzleEffects) {
 			this.scene.remove(effect.mesh);
@@ -7144,6 +7233,26 @@ export class StampKonijnGame {
 		if (this.audioContext.state === 'suspended') void this.audioContext.resume();
 	}
 
+	private async preloadGunshotBuffers() {
+		try {
+			this.audioContext ??= new AudioContext();
+			const audio = this.audioContext;
+			const gunshots = [
+				['pistol', '/audio/weapons/pistol.ogg'],
+				['g36', '/audio/weapons/g36.ogg']
+			] as const;
+			await Promise.all(
+				gunshots.map(async ([weapon, path]) => {
+					const response = await fetch(path);
+					if (!response.ok) throw new Error(`Could not preload ${path}: ${response.status}`);
+					this.gunshotBuffers[weapon] = await audio.decodeAudioData(await response.arrayBuffer());
+				})
+			);
+		} catch (error) {
+			console.warn('Gunshot audio warmup failed; falling back to media audio.', error);
+		}
+	}
+
 	private playFartSound() {
 		if (this.muted) return;
 		const sample = this.fartSample.cloneNode(true) as HTMLAudioElement;
@@ -7197,8 +7306,27 @@ export class StampKonijnGame {
 		this.poopieMonsterSpeechPlaying = null;
 	}
 
-	private playGunshot(weapon: Exclude<WeaponName, 'poop'>) {
+	private playGunshot(weapon: GunWeapon) {
 		if (this.muted) return;
+		const buffer = this.gunshotBuffers[weapon];
+		const audio = this.audioContext;
+		if (buffer && audio) {
+			const source = audio.createBufferSource();
+			const gain = audio.createGain();
+			source.buffer = buffer;
+			gain.gain.value = weapon === 'g36' ? 0.74 : 0.86;
+			source.connect(gain).connect(audio.destination);
+			source.addEventListener(
+				'ended',
+				() => {
+					source.disconnect();
+					gain.disconnect();
+				},
+				{ once: true }
+			);
+			source.start();
+			return;
+		}
 		const source = weapon === 'g36' ? this.g36Sample : this.pistolSample;
 		const sample = source.cloneNode(true) as HTMLAudioElement;
 		sample.volume = weapon === 'g36' ? 0.74 : 0.86;
