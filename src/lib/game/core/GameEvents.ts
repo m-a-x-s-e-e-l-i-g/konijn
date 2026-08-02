@@ -4,6 +4,7 @@ export interface GameEventMap {
 	hud: StampHudState;
 	impact: { label: string; value: number };
 	feedback: { message: string };
+	sewerIntro: { active: boolean };
 	ready: undefined;
 	error: { message: string };
 }

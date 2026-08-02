@@ -206,7 +206,7 @@ const SEWER_MAX_Z = SEWER_CENTER_Z + SEWER_DEPTH / 2;
 const SEWER_HEIGHT = 4.25;
 const SEWER_CEILING_Y = SEWER_FLOOR_Y + SEWER_HEIGHT;
 const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
-const POOPIE_MONSTER_X = 11.5;
+const POOPIE_MONSTER_X = TOILET_X + 4.85;
 const POOPIE_MONSTER_RADIUS = 1.04;
 const POOPIE_MONSTER_HEIGHT = 2.06;
 const POOPIE_MONSTER_JUMP_HEIGHT = 0.55;
@@ -220,6 +220,9 @@ const POOPIE_MONSTER_SPEECH_REARM_RADIUS = 7;
 const POOPIE_MONSTER_DEATH_TIME_SCALE = 0.28;
 const POOPIE_MONSTER_DEATH_DURATION = 0.82;
 const POOPIE_MONSTER_DEATH_GROUND_Y = 0.18;
+const SEWER_INTRO_DURATION = 4.95;
+const SEWER_INTRO_AUDIO_DELAY = 0.48;
+const SEWER_INTRO_FOCUS_DURATION = 0.82;
 const STAIR_STEP_COUNT = 12;
 const STAIR_STEP_RISE = ROOM_HEIGHT / STAIR_STEP_COUNT;
 const STAIR_STEP_RUN = 0.45;
@@ -366,6 +369,8 @@ export class StampKonijnGame {
 	private cameraDesiredPosition = CAMERA_HOME.clone();
 	private cameraDesiredTarget = CAMERA_TARGET.clone();
 	private cameraLookTarget = CAMERA_TARGET.clone();
+	private sewerIntroCameraPosition = new THREE.Vector3();
+	private sewerIntroCameraTarget = new THREE.Vector3();
 	private velocity = new THREE.Vector3();
 	private pointerRaycaster = new THREE.Raycaster();
 	private projectileRaycaster = new THREE.Raycaster();
@@ -497,6 +502,10 @@ export class StampKonijnGame {
 	private squash = 0;
 	private cameraShake = 0;
 	private poopieMonsterSpeechArmed = true;
+	private sewerIntroActive = false;
+	private sewerIntroPlayed = false;
+	private sewerIntroAudioPlayed = false;
+	private sewerIntroTime = 0;
 	private audio: AudioSystem;
 	private keyDownHandler: (event: KeyboardEvent) => void;
 	private keyUpHandler: (event: KeyboardEvent) => void;
@@ -507,6 +516,7 @@ export class StampKonijnGame {
 		this.events.on('hud', callbacks.onHud);
 		this.events.on('impact', ({ label, value }) => callbacks.onImpact(label, value));
 		this.events.on('feedback', ({ message }) => callbacks.onFeedback(message));
+		this.events.on('sewerIntro', ({ active }) => callbacks.onSewerIntro(active));
 		this.events.on('ready', callbacks.onReady);
 		this.events.on('error', ({ message }) => callbacks.onError(message));
 		this.audio = new AudioSystem();
@@ -578,6 +588,8 @@ export class StampKonijnGame {
 		this.camera.position.copy(CAMERA_HOME);
 		this.cameraLookTarget.copy(CAMERA_TARGET);
 		this.camera.lookAt(CAMERA_TARGET);
+		this.camera.fov = 46;
+		this.camera.updateProjectionMatrix();
 		this.rabbitTumble.rotation.set(0, 0, 0);
 		this.velocity.set(0, 0, 0);
 		this.rabbitInPoolWater = false;
@@ -613,6 +625,7 @@ export class StampKonijnGame {
 	}
 
 	cycleWeapon() {
+		if (this.sewerIntroActive) return;
 		this.weaponHeld = false;
 		const weapons: WeaponName[] = this.g36Unlocked ? ['poop', 'pistol', 'g36'] : ['poop', 'pistol'];
 		const currentIndex = Math.max(0, weapons.indexOf(this.weapon));
@@ -623,7 +636,7 @@ export class StampKonijnGame {
 	}
 
 	beginUseWeapon() {
-		if (this.phase !== 'playing' || this.paused) return;
+		if (this.phase !== 'playing' || this.paused || this.sewerIntroActive) return;
 		this.weaponHeld = true;
 		this.useWeapon();
 	}
@@ -633,7 +646,8 @@ export class StampKonijnGame {
 	}
 
 	useWeapon() {
-		if (this.phase !== 'playing' || this.paused || this.weaponCooldown > 0) return;
+		if (this.phase !== 'playing' || this.paused || this.sewerIntroActive || this.weaponCooldown > 0)
+			return;
 		this.audio.ensure();
 		this.weaponCooldown = WEAPON_COOLDOWNS[this.weapon];
 		if (this.weapon === 'poop') this.firePoopBoost();
@@ -642,6 +656,7 @@ export class StampKonijnGame {
 	}
 
 	setPointerTarget(clientX: number, clientY: number) {
+		if (this.sewerIntroActive) return;
 		const bounds = this.canvas.getBoundingClientRect();
 		if (bounds.width <= 0 || bounds.height <= 0) return;
 		this.pointerNdc.set(
@@ -656,7 +671,7 @@ export class StampKonijnGame {
 	}
 
 	beginStampAt(clientX: number, clientY: number) {
-		if (this.phase !== 'playing' || this.paused || this.stomping) return;
+		if (this.phase !== 'playing' || this.paused || this.sewerIntroActive || this.stomping) return;
 		this.setPointerTarget(clientX, clientY);
 		const target = this.raycastStampSurface();
 		if (!target) return;
@@ -691,7 +706,7 @@ export class StampKonijnGame {
 	}
 
 	togglePause() {
-		if (this.phase !== 'playing') return;
+		if (this.phase !== 'playing' || this.sewerIntroActive) return;
 		this.paused = !this.paused;
 		this.emitHud(true);
 	}
@@ -2950,6 +2965,10 @@ export class StampKonijnGame {
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
 		this.poolSplashCooldown = Math.max(0, this.poolSplashCooldown - delta);
 		this.audio.update(delta);
+		if (this.sewerIntroActive) {
+			this.updateSewerIntro(delta);
+			return;
+		}
 		for (let index = 0; index < this.upstairsLights.length; index += 1) {
 			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
 			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
@@ -3398,9 +3417,10 @@ export class StampKonijnGame {
 			this.playerInKitchen = false;
 			this.playerLeftRoom = null;
 			this.player.position.set(TOILET_X, SEWER_FLOOR_Y + 0.18, SEWER_CENTER_Z);
-			this.velocity.set(4.8, 2.6, 0);
+			this.velocity.set(0, 0, 0);
 			this.syncBiomeState();
-			this.emitFeedback('HET DONKERE RIOOL IN!');
+			this.startSewerIntro();
+			return;
 		} else if (topHatchOpening && this.player.position.y < -0.65) {
 			this.playerInBasement = true;
 			this.playerOutside = false;
@@ -4618,6 +4638,11 @@ export class StampKonijnGame {
 	private resetPoopieMonster() {
 		this.audio.stopPoopieMonsterSpeech();
 		this.poopieMonsterSpeechArmed = true;
+		this.sewerIntroActive = false;
+		this.sewerIntroPlayed = false;
+		this.sewerIntroAudioPlayed = false;
+		this.sewerIntroTime = 0;
+		this.events.emit('sewerIntro', { active: false });
 		this.poopieMonsterState = 'neutral';
 		this.poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
 		this.poopieMonsterPoopHits = 0;
@@ -6076,6 +6101,42 @@ export class StampKonijnGame {
 	}
 
 	private updateCamera(delta: number) {
+		if (this.sewerIntroActive) {
+			const focusProgress = this.reducedMotion
+				? 1
+				: THREE.MathUtils.clamp(this.sewerIntroTime / SEWER_INTRO_FOCUS_DURATION, 0, 1);
+			const focusEase = 1 - Math.pow(1 - focusProgress, 5);
+			this.cameraDesiredPosition.set(
+				POOPIE_MONSTER_X - 0.18,
+				SEWER_FLOOR_Y + 2.12,
+				SEWER_CENTER_Z + 3.15
+			);
+			this.cameraDesiredTarget.set(
+				POOPIE_MONSTER_X,
+				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.56,
+				SEWER_CENTER_Z
+			);
+			this.camera.position.lerpVectors(
+				this.sewerIntroCameraPosition,
+				this.cameraDesiredPosition,
+				focusEase
+			);
+			this.cameraLookTarget.lerpVectors(
+				this.sewerIntroCameraTarget,
+				this.cameraDesiredTarget,
+				focusEase
+			);
+			this.camera.fov = THREE.MathUtils.lerp(46, 29, focusEase);
+			if (!this.reducedMotion && this.sewerIntroTime > SEWER_INTRO_AUDIO_DELAY) {
+				const intensity = Math.min(1, (this.sewerIntroTime - SEWER_INTRO_AUDIO_DELAY) * 3);
+				this.camera.position.x += Math.sin(this.sewerIntroTime * 31) * 0.012 * intensity;
+				this.camera.position.y += Math.sin(this.sewerIntroTime * 24) * 0.009 * intensity;
+			}
+			this.camera.updateProjectionMatrix();
+			this.camera.lookAt(this.cameraLookTarget);
+			return;
+		}
+
 		if (this.playerInSewer) {
 			this.cameraDesiredPosition.set(
 				this.player.position.x,
@@ -6163,6 +6224,11 @@ export class StampKonijnGame {
 		const response = 1 - Math.exp(-3.2 * delta);
 		this.camera.position.lerp(this.cameraDesiredPosition, response);
 		this.cameraLookTarget.lerp(this.cameraDesiredTarget, response);
+		const restoredFov = THREE.MathUtils.lerp(this.camera.fov, 46, 1 - Math.exp(-5.4 * delta));
+		if (Math.abs(restoredFov - this.camera.fov) > 0.001) {
+			this.camera.fov = restoredFov;
+			this.camera.updateProjectionMatrix();
+		}
 		if (this.cameraShake > 0) {
 			this.cameraShake = Math.max(0, this.cameraShake - delta * 2.8);
 			if (!this.reducedMotion) {
@@ -6424,7 +6490,48 @@ export class StampKonijnGame {
 		}
 	}
 
+	private startSewerIntro() {
+		if (this.sewerIntroPlayed || this.poopieMonsterState !== 'neutral') return;
+		this.sewerIntroActive = true;
+		this.sewerIntroPlayed = true;
+		this.sewerIntroAudioPlayed = false;
+		this.sewerIntroTime = 0;
+		this.poopieMonsterSpeechArmed = false;
+		this.weaponHeld = false;
+		this.pointerActive = false;
+		this.cancelStamp();
+		this.velocity.set(0, 0, 0);
+		this.standRabbitUpright();
+
+		this.sewerIntroCameraPosition.set(TOILET_X + 0.65, SEWER_FLOOR_Y + 3.35, SEWER_CENTER_Z + 7.1);
+		this.sewerIntroCameraTarget.set(TOILET_X + 2.1, SEWER_FLOOR_Y + 1.05, SEWER_CENTER_Z);
+		this.camera.position.copy(this.sewerIntroCameraPosition);
+		this.cameraLookTarget.copy(this.sewerIntroCameraTarget);
+		this.camera.fov = 46;
+		this.camera.updateProjectionMatrix();
+		this.events.emit('sewerIntro', { active: true });
+	}
+
+	private updateSewerIntro(delta: number) {
+		this.sewerIntroTime = Math.min(SEWER_INTRO_DURATION, this.sewerIntroTime + delta);
+		this.velocity.set(0, 0, 0);
+		this.weaponHeld = false;
+
+		if (!this.sewerIntroAudioPlayed && this.sewerIntroTime >= SEWER_INTRO_AUDIO_DELAY) {
+			this.sewerIntroAudioPlayed = true;
+			this.audio.playPoopieMonsterSpeech();
+		}
+
+		if (this.sewerIntroTime < SEWER_INTRO_DURATION) return;
+		this.sewerIntroActive = false;
+		this.sewerIntroTime = 0;
+		this.velocity.set(0, 6.2, 0);
+		this.joltArms(0.75);
+		this.events.emit('sewerIntro', { active: false });
+	}
+
 	private updatePoopieMonsterSpeech() {
+		if (this.sewerIntroActive) return;
 		if (!this.playerInSewer || this.poopieMonsterState !== 'neutral') {
 			if (!this.playerInSewer) this.poopieMonsterSpeechArmed = true;
 			return;

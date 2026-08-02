@@ -32,6 +32,7 @@ export interface GameCallbacks {
 	onHud: (state: StampHudState) => void;
 	onImpact: (label: string, value: number) => void;
 	onFeedback: (message: string) => void;
+	onSewerIntro: (active: boolean) => void;
 	onReady: () => void;
 	onError: (message: string) => void;
 }

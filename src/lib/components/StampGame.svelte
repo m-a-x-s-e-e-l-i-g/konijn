@@ -49,6 +49,7 @@
 	let error = $state('');
 	let muted = $state(false);
 	let fullscreen = $state(false);
+	let sewerIntroActive = $state(false);
 	let impactText = $state('');
 	let impactNonce = $state(0);
 	let impactTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,6 +81,13 @@
 				showImpact(`${label} +€${scoreFormatter.format(value)}`);
 			},
 			onFeedback: (message) => showImpact(message, 900),
+			onSewerIntro: (active) => {
+				sewerIntroActive = active;
+				if (active) {
+					impactText = '';
+					if (impactTimer) clearTimeout(impactTimer);
+				}
+			},
 			onReady: () => {
 				ready = true;
 			},
@@ -196,6 +204,19 @@
 		oncontextmenu={preventCanvasMenu}
 		onwheel={changeWeaponWithWheel}
 	></canvas>
+
+	{#if sewerIntroActive}
+		<div class="sewer-cutscene" role="status" aria-live="assertive">
+			<div class="sewer-cutscene__speedlines" aria-hidden="true"></div>
+			<div class="sewer-cutscene__flash" aria-hidden="true"></div>
+			<div class="sewer-cutscene__bars" aria-hidden="true"></div>
+			<p class="sewer-cutscene__name">POOPIEMONSTER</p>
+			<p class="sewer-cutscene__dialogue">
+				<span>YOU SHALL NOT PASS</span>
+				<strong>THE POOPIEMONSTER!</strong>
+			</p>
+		</div>
+	{/if}
 
 	<header class="game-nav">
 		<a href="/" class="back-link" aria-label="Terug naar de Konine kunstgalerie">
@@ -401,6 +422,189 @@
 		outline: none;
 		cursor: crosshair;
 		touch-action: none;
+	}
+
+	.sewer-cutscene {
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		overflow: hidden;
+		pointer-events: none;
+		background:
+			radial-gradient(circle at 50% 47%, transparent 0 22%, oklch(12% 0.025 35 / 0.18) 57%),
+			oklch(10% 0.025 35 / 0.28);
+		color: var(--cream);
+		animation: sewer-cinematic 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.sewer-cutscene__speedlines {
+		position: absolute;
+		inset: -45%;
+		background: repeating-conic-gradient(
+			from 7deg at 50% 47%,
+			transparent 0deg 4deg,
+			oklch(95% 0.035 83 / 0.24) 4.2deg 4.55deg,
+			transparent 4.75deg 8deg
+		);
+		opacity: 0.72;
+		animation: sewer-speedlines 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.sewer-cutscene__flash {
+		position: absolute;
+		inset: 0;
+		background: oklch(94% 0.04 78);
+		animation: sewer-flash 4.95s linear both;
+	}
+
+	.sewer-cutscene__bars {
+		position: absolute;
+		inset: 0;
+		border-block: clamp(1.2rem, 6vh, 4.4rem) solid oklch(13% 0.02 38);
+		animation: sewer-bars 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.sewer-cutscene__name {
+		position: absolute;
+		top: clamp(4.8rem, 13vh, 8rem);
+		left: clamp(0.8rem, 5vw, 5rem);
+		margin: 0;
+		padding: 0.22em 0.42em 0.12em;
+		transform: rotate(-6deg);
+		clip-path: polygon(2% 13%, 100% 0, 96% 88%, 0 100%);
+		background: oklch(62% 0.2 35);
+		color: oklch(96% 0.03 80);
+		font-family: 'Road Rage', 'Chewy', system-ui, sans-serif;
+		font-size: clamp(2.8rem, 8vw, 7.5rem);
+		line-height: 0.78;
+		letter-spacing: 0.025em;
+		text-shadow: 0.06em 0.06em 0 oklch(15% 0.02 38);
+		animation: sewer-name 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.sewer-cutscene__dialogue {
+		position: absolute;
+		inset: auto clamp(0.8rem, 4vw, 4rem) clamp(3.6rem, 10vh, 7rem);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		margin: 0;
+		transform: rotate(-1.5deg);
+		font-family: 'Road Rage', 'Chewy', system-ui, sans-serif;
+		line-height: 0.78;
+		text-align: center;
+		filter: drop-shadow(0.18rem 0.22rem 0 oklch(12% 0.02 38));
+		animation: sewer-dialogue 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.sewer-cutscene__dialogue span {
+		font-size: clamp(2.1rem, 6vw, 5.4rem);
+		letter-spacing: 0.035em;
+		-webkit-text-stroke: 1px oklch(17% 0.025 38);
+	}
+
+	.sewer-cutscene__dialogue strong {
+		color: oklch(72% 0.18 53);
+		font-size: clamp(3.2rem, 9vw, 8.2rem);
+		font-weight: 400;
+		letter-spacing: 0.018em;
+		-webkit-text-stroke: 2px oklch(17% 0.025 38);
+	}
+
+	@keyframes sewer-cinematic {
+		0% {
+			opacity: 0;
+		}
+		4%,
+		90% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	@keyframes sewer-speedlines {
+		0% {
+			opacity: 0;
+			transform: scale(1.32) rotate(-3deg);
+		}
+		12% {
+			opacity: 0.72;
+		}
+		78% {
+			opacity: 0.28;
+			transform: scale(1) rotate(0);
+		}
+		100% {
+			opacity: 0;
+			transform: scale(0.98);
+		}
+	}
+
+	@keyframes sewer-flash {
+		0%,
+		2% {
+			opacity: 0;
+		}
+		3% {
+			opacity: 0.86;
+		}
+		9%,
+		100% {
+			opacity: 0;
+		}
+	}
+
+	@keyframes sewer-bars {
+		0% {
+			opacity: 0;
+			transform: scaleY(0.25);
+		}
+		10%,
+		92% {
+			opacity: 1;
+			transform: scaleY(1);
+		}
+		100% {
+			opacity: 0;
+			transform: scaleY(1);
+		}
+	}
+
+	@keyframes sewer-name {
+		0%,
+		8% {
+			opacity: 0;
+			transform: translateX(-5rem) rotate(-10deg) scale(1.18);
+		}
+		17%,
+		74% {
+			opacity: 1;
+			transform: translateX(0) rotate(-6deg) scale(1);
+		}
+		84%,
+		100% {
+			opacity: 0;
+			transform: translateX(-1.2rem) rotate(-7deg) scale(0.98);
+		}
+	}
+
+	@keyframes sewer-dialogue {
+		0%,
+		11% {
+			opacity: 0;
+			transform: translateY(2rem) rotate(-3deg) scale(0.84);
+		}
+		20%,
+		89% {
+			opacity: 1;
+			transform: translateY(0) rotate(-1.5deg) scale(1);
+		}
+		100% {
+			opacity: 0;
+			transform: translateY(-0.8rem) rotate(-1deg) scale(0.98);
+		}
 	}
 
 	.game-nav {
@@ -1005,6 +1209,18 @@
 			animation-duration: 1ms !important;
 			animation-iteration-count: 1 !important;
 			transition-duration: 1ms !important;
+		}
+
+		.sewer-cutscene,
+		.sewer-cutscene__bars,
+		.sewer-cutscene__name,
+		.sewer-cutscene__dialogue {
+			animation: none !important;
+		}
+
+		.sewer-cutscene__speedlines,
+		.sewer-cutscene__flash {
+			display: none;
 		}
 	}
 </style>
