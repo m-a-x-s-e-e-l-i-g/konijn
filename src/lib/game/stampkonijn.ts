@@ -177,6 +177,10 @@ const TOILET_Z = -4.05;
 const TOILET_POOPS_REQUIRED = 16;
 const TOILET_CATCH_RADIUS = 0.46;
 const TOILET_HOLE_RADIUS = 0.78;
+const TOILET_HOLE_VISUAL_RADIUS = TOILET_HOLE_RADIUS + 0.14;
+const TOILET_HOLE_EDGE_PROFILE = [
+	1.03, 0.91, 1.08, 0.94, 1.01, 0.89, 1.06, 0.95, 1.02, 0.9, 1.07, 0.93, 1.01, 0.88, 1.05, 0.94
+];
 const KITCHEN_HATCH_X = 12.65;
 const KITCHEN_HATCH_Z = 3.35;
 const KITCHEN_HATCH_WIDTH = 1.65;
@@ -333,6 +337,88 @@ function cylinder(
 	return mesh;
 }
 
+function getToiletHoleEdgePoints(extraRadius = 0) {
+	return TOILET_HOLE_EDGE_PROFILE.map((profile, index) => {
+		const angle = (index / TOILET_HOLE_EDGE_PROFILE.length) * Math.PI * 2;
+		const radius = TOILET_HOLE_VISUAL_RADIUS * profile + extraRadius;
+		return new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius);
+	});
+}
+
+function makeIrregularDiscGeometry(points: THREE.Vector2[]) {
+	const positions = [0, 0, 0];
+	for (const point of points) positions.push(point.x, 0, point.y);
+	const indices: number[] = [];
+	for (let index = 0; index < points.length; index += 1) {
+		const current = index + 1;
+		const next = ((index + 1) % points.length) + 1;
+		indices.push(0, next, current);
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setIndex(indices);
+	geometry.computeVertexNormals();
+	return geometry;
+}
+
+function makeIrregularRingGeometry(innerPoints: THREE.Vector2[], width: number) {
+	const positions: number[] = [];
+	for (const point of innerPoints) {
+		const outer = point.clone().setLength(point.length() + width);
+		positions.push(point.x, 0, point.y, outer.x, 0, outer.y);
+	}
+	const indices: number[] = [];
+	for (let index = 0; index < innerPoints.length; index += 1) {
+		const inner = index * 2;
+		const outer = inner + 1;
+		const nextInner = ((index + 1) % innerPoints.length) * 2;
+		const nextOuter = nextInner + 1;
+		indices.push(inner, nextInner, outer, outer, nextInner, nextOuter);
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setIndex(indices);
+	geometry.computeVertexNormals();
+	return geometry;
+}
+
+function makeToiletFloorCracks(edgePoints: THREE.Vector2[]) {
+	const positions: number[] = [];
+	const crackIndices = [0, 2, 4, 7, 9, 11, 13, 15];
+	for (const [crackNumber, edgeIndex] of crackIndices.entries()) {
+		const edge = edgePoints[edgeIndex];
+		const radial = edge.clone().normalize();
+		const tangent = new THREE.Vector2(-radial.y, radial.x);
+		const first = edge.clone().addScaledVector(radial, 0.17);
+		const second = first
+			.clone()
+			.addScaledVector(radial, 0.22 + (crackNumber % 3) * 0.035)
+			.addScaledVector(tangent, crackNumber % 2 === 0 ? 0.07 : -0.065);
+		const end = second
+			.clone()
+			.addScaledVector(radial, 0.22 + (crackNumber % 2) * 0.06)
+			.addScaledVector(tangent, crackNumber % 3 === 0 ? -0.05 : 0.045);
+		for (const [start, finish] of [
+			[edge, first],
+			[first, second],
+			[second, end]
+		] as const) {
+			positions.push(start.x, 0, start.y, finish.x, 0, finish.y);
+		}
+		const branch = second
+			.clone()
+			.addScaledVector(radial, 0.08)
+			.addScaledVector(tangent, crackNumber % 2 === 0 ? -0.16 : 0.16);
+		positions.push(second.x, 0, second.y, branch.x, 0, branch.y);
+	}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	return new THREE.LineSegments(
+		geometry,
+		new THREE.LineBasicMaterial({ color: 0x171512, transparent: true, opacity: 0.92 })
+	);
+}
+
 function disposeObject(object: THREE.Object3D) {
 	object.traverse((child) => {
 		if (!(child instanceof THREE.Mesh)) return;
@@ -447,6 +533,7 @@ export class StampKonijnGame {
 	private upstairsRoot: THREE.Object3D = new THREE.Group();
 	private upstairsBreakables: Breakable[] = [];
 	private toiletHole = new THREE.Group();
+	private toiletFloorPlug = new THREE.Group();
 	private kitchenHatchBreakable: Breakable | null = null;
 	private kitchenHatchDamage = new THREE.Group();
 	private kitchenHatchOpen = false;
@@ -957,21 +1044,75 @@ export class StampKonijnGame {
 	private createBasement() {
 		this.toiletHole = new THREE.Group();
 		this.toiletHole.position.set(TOILET_X, 0, TOILET_Z);
+		const toiletEdge = getToiletHoleEdgePoints();
+		this.toiletFloorPlug = new THREE.Group();
+		this.toiletFloorPlug.position.set(TOILET_X, -0.001, TOILET_Z);
+		const floorPlug = shadowMesh(makeIrregularDiscGeometry(toiletEdge), material(0xb9d1cf, 0.94));
+		floorPlug.receiveShadow = true;
+		this.toiletFloorPlug.add(floorPlug);
 		const toiletDarkness = new THREE.Mesh(
-			new THREE.CircleGeometry(TOILET_HOLE_RADIUS, 32),
-			new THREE.MeshBasicMaterial({ color: 0x171814, side: THREE.DoubleSide })
+			makeIrregularDiscGeometry(toiletEdge),
+			new THREE.MeshBasicMaterial({
+				color: 0x152019,
+				side: THREE.DoubleSide,
+				transparent: true,
+				opacity: 0.2,
+				depthWrite: false
+			})
 		);
-		toiletDarkness.rotation.x = -Math.PI / 2;
-		toiletDarkness.position.y = 0.024;
+		toiletDarkness.position.y = -0.12;
+		toiletDarkness.renderOrder = 3;
 		const toiletRim = shadowMesh(
-			new THREE.TorusGeometry(TOILET_HOLE_RADIUS, 0.09, 10, 32),
-			material(0x4a4841, 0.98)
+			makeIrregularRingGeometry(toiletEdge, 0.13),
+			material(0x47443d, 0.98)
 		);
-		toiletRim.rotation.x = Math.PI / 2;
 		toiletRim.position.y = 0.038;
-		this.toiletHole.add(toiletDarkness, toiletRim);
+
+		const cracks = makeToiletFloorCracks(toiletEdge);
+		cracks.position.y = 0.052;
+
+		const shaftWall = new THREE.Mesh(
+			new THREE.CylinderGeometry(1.12, 0.92, 7.7, 16, 1, true),
+			new THREE.MeshStandardMaterial({
+				color: 0x4a5142,
+				roughness: 1,
+				side: THREE.BackSide
+			})
+		);
+		shaftWall.position.y = -3.95;
+		shaftWall.receiveShadow = true;
+
+		const shaftBottom = new THREE.Mesh(
+			new THREE.CircleGeometry(1.12, 20),
+			new THREE.MeshBasicMaterial({ color: 0x29382e, side: THREE.DoubleSide })
+		);
+		shaftBottom.rotation.x = -Math.PI / 2;
+		shaftBottom.position.y = -7.78;
+
+		const shaftRings = [-0.78, -2.05, -3.35].map((height, index) => {
+			const ring = new THREE.Mesh(
+				new THREE.TorusGeometry(0.94 + index * 0.035, 0.045, 7, 20),
+				material(0x62594a, 0.96, 0.08)
+			);
+			ring.rotation.x = Math.PI / 2;
+			ring.position.y = height;
+			return ring;
+		});
+		const shaftLight = new THREE.PointLight(0x9fbd8b, 2.6, 8, 2);
+		shaftLight.position.set(0.08, -2.2, 0.12);
+
+		this.toiletHole.add(
+			shaftWall,
+			shaftBottom,
+			...shaftRings,
+			shaftLight,
+			toiletDarkness,
+			toiletRim,
+			cracks
+		);
 		this.toiletHole.visible = false;
-		this.scene.add(this.toiletHole);
+		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom') ?? this.scene;
+		bathroomRoot.add(this.toiletFloorPlug, this.toiletHole);
 
 		this.kitchenHatchHole = new THREE.Group();
 		this.kitchenHatchHole.position.set(KITCHEN_HATCH_X, 0, KITCHEN_HATCH_Z);
@@ -4613,6 +4754,7 @@ export class StampKonijnGame {
 		this.toiletHoleOpen = true;
 		this.toiletSinking = true;
 		this.toiletSinkAmount = 0;
+		this.toiletFloorPlug.visible = false;
 		this.toiletHole.visible = true;
 		this.breakObject(this.toiletBreakable, 'sink');
 		this.cameraShake = Math.max(this.cameraShake, 1.05);
@@ -6435,6 +6577,7 @@ export class StampKonijnGame {
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
 		this.poolWaveEnergy = 0;
+		this.toiletFloorPlug.visible = true;
 		this.toiletHole.visible = false;
 		this.kitchenHatchHole.visible = false;
 		this.kitchenHatchDamage.visible = false;

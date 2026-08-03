@@ -63,6 +63,10 @@ const BEDROOM_DOOR_Z = (BEDROOM_MIN_Z + ROOM_DEPTH / 2) / 2;
 const TOILET_X = -12.4;
 const TOILET_Z = -4.05;
 const TOILET_HOLE_RADIUS = 0.78;
+const TOILET_HOLE_VISUAL_RADIUS = TOILET_HOLE_RADIUS + 0.14;
+const TOILET_HOLE_EDGE_PROFILE = [
+	1.03, 0.91, 1.08, 0.94, 1.01, 0.89, 1.06, 0.95, 1.02, 0.9, 1.07, 0.93, 1.01, 0.88, 1.05, 0.94
+];
 const KITCHEN_HATCH_X = 12.65;
 const KITCHEN_HATCH_Z = 3.35;
 const KITCHEN_BACK_DOOR_X = 12.35;
@@ -362,6 +366,31 @@ function addSharedDoorWalls(living) {
 	}
 }
 
+function makeBathroomFloorGeometry(width, depth, centerZ) {
+	const floorShape = new THREE.Shape();
+	floorShape.moveTo(-width / 2, -depth / 2);
+	floorShape.lineTo(width / 2, -depth / 2);
+	floorShape.lineTo(width / 2, depth / 2);
+	floorShape.lineTo(-width / 2, depth / 2);
+	floorShape.closePath();
+
+	const hole = new THREE.Path();
+	const holeCenterX = TOILET_X - LEFT_ROOMS_CENTER_X;
+	// ShapeGeometry's local Y becomes negative world Z after rotating the floor flat.
+	const holeCenterY = -(TOILET_Z - centerZ);
+	for (let index = 0; index < TOILET_HOLE_EDGE_PROFILE.length; index += 1) {
+		const angle = -(index / TOILET_HOLE_EDGE_PROFILE.length) * Math.PI * 2;
+		const radius = TOILET_HOLE_VISUAL_RADIUS * TOILET_HOLE_EDGE_PROFILE[index];
+		const x = holeCenterX + Math.cos(angle) * radius;
+		const y = holeCenterY + Math.sin(angle) * radius;
+		if (index === 0) hole.moveTo(x, y);
+		else hole.lineTo(x, y);
+	}
+	hole.closePath();
+	floorShape.holes.push(hole);
+	return new THREE.ShapeGeometry(floorShape);
+}
+
 function addLeftRooms(bathroom, stairs, bedroom) {
 	for (const [parent, id, minZ, maxZ, color, impact] of [
 		[bathroom, 'bathroom', BACK_WALL_Z, BATHROOM_MAX_Z, 0xb9d1cf, 'concrete'],
@@ -369,13 +398,16 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 		[bedroom, 'bedroom', BEDROOM_MIN_Z, ROOM_DEPTH / 2, 0xc49087, 'wood']
 	]) {
 		const depth = maxZ - minZ;
+		const centerZ = (minZ + maxZ) / 2;
 		addCollider(
 			parent,
 			mesh(
 				`${id}_floor`,
-				new THREE.PlaneGeometry(LEFT_ROOMS_WIDTH, depth),
+				id === 'bathroom'
+					? makeBathroomFloorGeometry(LEFT_ROOMS_WIDTH, depth, centerZ)
+					: new THREE.PlaneGeometry(LEFT_ROOMS_WIDTH, depth),
 				color,
-				[LEFT_ROOMS_CENTER_X, -0.003, (minZ + maxZ) / 2],
+				[LEFT_ROOMS_CENTER_X, -0.003, centerZ],
 				{ rotation: [-Math.PI / 2, 0, 0], roughness: 0.94 }
 			),
 			'floor',
@@ -426,6 +458,7 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 
 	let seamIndex = 0;
 	for (let x = LEFT_ROOMS_MIN_X + 0.55; x < LEFT_ROOMS_MAX_X; x += 0.55) {
+		if (Math.abs(x - TOILET_X) < TOILET_HOLE_VISUAL_RADIUS + 0.08) continue;
 		addStatic(
 			bathroom,
 			box(
@@ -438,6 +471,7 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 	}
 	seamIndex = 0;
 	for (let z = BACK_WALL_Z + 0.55; z < BATHROOM_MAX_Z; z += 0.55) {
+		if (Math.abs(z - TOILET_Z) < TOILET_HOLE_VISUAL_RADIUS + 0.08) continue;
 		addStatic(
 			bathroom,
 			box(
