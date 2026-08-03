@@ -70,6 +70,15 @@ interface WaterDroplet {
 	maxLife: number;
 }
 
+interface PoolLeak {
+	root: THREE.Group;
+	stream: THREE.Mesh<THREE.TubeGeometry, THREE.MeshPhysicalMaterial>;
+	droplets: THREE.Mesh<THREE.SphereGeometry, THREE.MeshPhysicalMaterial>[];
+	start: THREE.Vector3;
+	outward: THREE.Vector3;
+	phase: number;
+}
+
 interface SurfaceCrack {
 	mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 	texture: THREE.CanvasTexture;
@@ -258,6 +267,7 @@ const POOL_WATER_Y = 0.62;
 const POOL_BOTTOM_Y = 0.09;
 const POOL_WATER_RADIUS = 1.86;
 const POOL_ENTRY_RADIUS = 1.56;
+const POOL_BULLETS_REQUIRED = 8;
 const WORLD_MIN_X = Math.min(-GARDEN_WIDTH / 2, LEFT_ROOMS_MIN_X, SEWER_MIN_X);
 const WORLD_MAX_X = Math.max(KITCHEN_MAX_X, SEWER_MAX_X);
 const PLAYER_RADIUS = 0.52;
@@ -522,6 +532,8 @@ export class StampKonijnGame {
 	private poolWaveEnergy = 0;
 	private rabbitInPoolWater = false;
 	private poolSplashCooldown = 0;
+	private poolBulletHits = 0;
+	private poolLeaks: PoolLeak[] = [];
 	private toiletFillRoot = new THREE.Group();
 	private toiletPoopCount = 0;
 	private toiletSinking = false;
@@ -4490,14 +4502,10 @@ export class StampKonijnGame {
 	}
 
 	private performPoolStamp(speed: number) {
-		this.spawnPoolSplash(speed, 1.35);
-		if (this.poolBreakable && !this.poolBreakable.broken) {
-			this.damageBreakable(this.poolBreakable, 'stamp');
-		}
+		this.spawnPoolSplash(speed, 1.65);
 		this.rabbitInPoolWater = false;
 		this.squash = 1;
-		this.cameraShake = Math.max(this.cameraShake, 0.82);
-		this.playStampImpactSample(Math.min(1, speed / 20));
+		this.cameraShake = Math.max(this.cameraShake, 0.62);
 	}
 
 	private resolveBreakables(delta: number) {
@@ -5029,7 +5037,10 @@ export class StampKonijnGame {
 					direction
 				)
 			);
-			this.damageBreakable(immediateObjectHit.breakable, 'bullet');
+			this.damageBreakable(immediateObjectHit.breakable, 'bullet', {
+				point: immediateObjectHit.point,
+				direction
+			});
 		} else if (immediateSurfaceHit) {
 			bullet.geometry.dispose();
 			bullet.material.dispose();
@@ -5468,8 +5479,25 @@ export class StampKonijnGame {
 		return playerTop >= objectBottom - 0.12 && playerBottom <= objectTop + 0.12;
 	}
 
-	private damageBreakable(breakable: Breakable, source: 'stamp' | 'bullet') {
+	private damageBreakable(
+		breakable: Breakable,
+		source: 'stamp' | 'bullet',
+		bulletHit?: { point: THREE.Vector3; direction: THREE.Vector3 }
+	) {
 		if (breakable.broken) return;
+		if (breakable === this.poolBreakable) {
+			if (source === 'bullet') {
+				this.damagePoolWithBullet(breakable, bulletHit?.point, bulletHit?.direction);
+				return;
+			}
+			if (breakable.lastStampSequence === this.stampSequence) return;
+			breakable.lastStampSequence = this.stampSequence;
+			this.spawnPoolSplash(Math.max(8, this.velocity.length()), 1.65);
+			this.rabbitInPoolWater = false;
+			this.poolWaveEnergy = Math.max(this.poolWaveEnergy, 1.35);
+			this.cameraShake = Math.max(this.cameraShake, 0.62);
+			return;
+		}
 		if (source === 'stamp') {
 			this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
 		}
@@ -5536,6 +5564,101 @@ export class StampKonijnGame {
 		this.pendingStampFeedback =
 			stampsLeft === 1 ? 'KRAK! NOG 1 STAMP!' : `KRAK! NOG ${stampsLeft} STAMPEN!`;
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
+	}
+
+	private damagePoolWithBullet(
+		pool: Breakable,
+		hitPoint = pool.group.position.clone().add(new THREE.Vector3(0, 0.42, 2.08)),
+		direction = new THREE.Vector3(0, 0, -1)
+	) {
+		this.poolBulletHits += 1;
+		this.poolWaveEnergy = Math.max(this.poolWaveEnergy, 0.7);
+		this.cameraShake = Math.max(this.cameraShake, 0.18);
+		this.audio.playWaterSplash(3.8);
+
+		if (this.poolBulletHits >= POOL_BULLETS_REQUIRED) {
+			this.breakObject(pool);
+			return;
+		}
+
+		this.spawnPoolLeak(pool, hitPoint, direction);
+		this.emitFeedback(`ZWEMBAD LEKT! ${this.poolBulletHits}/${POOL_BULLETS_REQUIRED} KOGELS!`);
+	}
+
+	private spawnPoolLeak(pool: Breakable, hitPoint: THREE.Vector3, bulletDirection: THREE.Vector3) {
+		pool.group.updateWorldMatrix(true, false);
+		const localHit = pool.group.worldToLocal(hitPoint.clone());
+		const outward = new THREE.Vector3(localHit.x, 0, localHit.z);
+		if (outward.lengthSq() < 0.02) {
+			outward.set(-bulletDirection.x, 0, -bulletDirection.z);
+		}
+		if (outward.lengthSq() < 0.02) {
+			const fallbackAngle = this.poolBulletHits * 2.31;
+			outward.set(Math.cos(fallbackAngle), 0, Math.sin(fallbackAngle));
+		}
+		outward.normalize();
+		const start = outward.clone().multiplyScalar(2.075);
+		start.y = THREE.MathUtils.clamp(localHit.y, 0.18, 0.61);
+		const end = start.clone().addScaledVector(outward, 0.42);
+		end.y = 0.055;
+
+		const root = new THREE.Group();
+		const hole = new THREE.Mesh(
+			new THREE.CircleGeometry(0.072, 14),
+			new THREE.MeshBasicMaterial({ color: 0x13242a, side: THREE.DoubleSide })
+		);
+		hole.position.copy(start).addScaledVector(outward, 0.018);
+		hole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward);
+		root.add(hole);
+
+		const curve = new THREE.CatmullRomCurve3([
+			start.clone().addScaledVector(outward, 0.035),
+			start
+				.clone()
+				.addScaledVector(outward, 0.18)
+				.add(new THREE.Vector3(0, -0.08, 0)),
+			end
+		]);
+		const stream = new THREE.Mesh(
+			new THREE.TubeGeometry(curve, 14, 0.029, 7, false),
+			new THREE.MeshPhysicalMaterial({
+				color: 0x62dbe9,
+				roughness: 0.12,
+				clearcoat: 0.7,
+				transparent: true,
+				opacity: 0.76,
+				depthWrite: false
+			})
+		);
+		stream.renderOrder = 2;
+		root.add(stream);
+
+		const droplets = Array.from({ length: this.reducedMotion ? 1 : 3 }, (_, index) => {
+			const droplet = new THREE.Mesh(
+				new THREE.SphereGeometry(0.025, 7, 5),
+				new THREE.MeshPhysicalMaterial({
+					color: 0x9aedf2,
+					roughness: 0.1,
+					transparent: true,
+					opacity: 0.82,
+					depthWrite: false
+				})
+			);
+			droplet.scale.set(0.72, 1.45, 0.72);
+			droplet.userData.flowOffset = index / 3;
+			root.add(droplet);
+			return droplet;
+		});
+
+		pool.group.add(root);
+		this.poolLeaks.push({
+			root,
+			stream,
+			droplets,
+			start,
+			outward,
+			phase: this.poolBulletHits * 0.37
+		});
 	}
 
 	private breakObject(breakable: Breakable, effect: 'smash' | 'sink' = 'smash') {
@@ -5876,7 +5999,10 @@ export class StampKonijnGame {
 						this.audio.playBulletImpact(
 							this.getBreakableBulletImpactMaterial(objectHit.breakable, objectHit.point, direction)
 						);
-						this.damageBreakable(objectHit.breakable, 'bullet');
+						this.damageBreakable(objectHit.breakable, 'bullet', {
+							point: objectHit.point,
+							direction
+						});
 						this.removeWeaponProjectile(index);
 						continue;
 					}
@@ -6366,6 +6492,24 @@ export class StampKonijnGame {
 			this.poolWater.geometry.computeVertexNormals();
 		}
 
+		if (!this.poolBreakable?.broken) {
+			for (const leak of this.poolLeaks) {
+				leak.phase += delta * 1.85;
+				leak.stream.material.opacity = 0.68 + Math.sin(leak.phase * Math.PI * 2) * 0.08;
+				for (const droplet of leak.droplets) {
+					const flow = (leak.phase + Number(droplet.userData.flowOffset ?? 0)) % 1;
+					droplet.position.copy(leak.start).addScaledVector(leak.outward, 0.04 + flow * 0.42);
+					droplet.position.y = THREE.MathUtils.lerp(
+						leak.start.y - 0.015,
+						0.055,
+						Math.pow(flow, 1.45)
+					);
+					const pulse = 0.72 + Math.sin(flow * Math.PI) * 0.34;
+					droplet.scale.set(0.72 * pulse, 1.45 * pulse, 0.72 * pulse);
+				}
+			}
+		}
+
 		for (let index = this.waterRipples.length - 1; index >= 0; index -= 1) {
 			const ripple = this.waterRipples[index];
 			ripple.life -= delta;
@@ -6576,6 +6720,7 @@ export class StampKonijnGame {
 		this.g36Pickup.visible = false;
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
+		this.poolBulletHits = 0;
 		this.poolWaveEnergy = 0;
 		this.toiletFloorPlug.visible = true;
 		this.toiletHole.visible = false;
@@ -6644,6 +6789,12 @@ export class StampKonijnGame {
 			droplet.mesh.material.dispose();
 		}
 		this.waterDroplets = [];
+		for (const leak of this.poolLeaks) {
+			leak.root.removeFromParent();
+			disposeObject(leak.root);
+		}
+		this.poolLeaks = [];
+		this.poolBulletHits = 0;
 	}
 
 	private clearSurfaceCracks() {
