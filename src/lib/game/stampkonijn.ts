@@ -231,6 +231,9 @@ const STAIR_DOOR_REST_LIFT = 0.12;
 const STAIR_BOTTOM_X = -7.46;
 const STAIR_TOP_X = STAIR_BOTTOM_X - (STAIR_STEP_COUNT - 1) * STAIR_STEP_RUN;
 const STAIR_TOP_Z = 0;
+const STAIR_DESCENT_SPAWN_INDEX = Math.floor((STAIR_STEP_COUNT - 1) / 2);
+const STAIR_DESCENT_SPAWN_X = STAIR_BOTTOM_X - STAIR_DESCENT_SPAWN_INDEX * STAIR_STEP_RUN;
+const STAIR_DESCENT_SPAWN_Y = STAIR_STEP_RISE * (STAIR_DESCENT_SPAWN_INDEX + 1);
 const UPSTAIRS_FLOOR_Y = ROOM_HEIGHT;
 const UPSTAIRS_MIN_X = LEFT_ROOMS_MIN_X;
 const UPSTAIRS_MAX_X = KITCHEN_MAX_X;
@@ -3282,14 +3285,10 @@ export class StampKonijnGame {
 			if (this.isAtUpstairsStairOpening()) {
 				this.playerUpstairs = false;
 				this.playerLeftRoom = 'stairs';
-				this.player.position.set(
-					STAIR_TOP_X + STAIR_STEP_RUN,
-					UPSTAIRS_FLOOR_Y - STAIR_STEP_RISE,
-					STAIR_TOP_Z
-				);
+				this.player.position.set(STAIR_DESCENT_SPAWN_X, STAIR_DESCENT_SPAWN_Y + 0.06, STAIR_TOP_Z);
 				this.velocity.set(
-					Math.max(2.2, Math.abs(this.velocity.x) * 0.72),
-					-1.2,
+					Math.max(2.6, Math.abs(this.velocity.x) * 0.72),
+					-1.6,
 					this.velocity.z * 0.24
 				);
 				this.syncUpstairsVisibility();
