@@ -1206,8 +1206,195 @@ function addSewer(sewer) {
 	}
 }
 
+function addNeighborHouse(parent, index, position, wallColor, roofColor, rotationY = 0) {
+	const house = new THREE.Group();
+	house.name = uniqueName(`suburb_house_${index}`);
+	house.position.set(...position);
+	house.rotation.y = rotationY;
+	const width = 4.8 + (index % 2) * 0.65;
+	const depth = 5.2 + (index % 3) * 0.48;
+	const wallHeight = 3.25 + (index % 2) * 0.3;
+	house.add(
+		box(
+			`suburb_house_${index}_body`,
+			[width, wallHeight, depth],
+			[0, wallHeight / 2, 0],
+			wallColor,
+			{
+				roughness: 0.96
+			}
+		),
+		box(
+			`suburb_house_${index}_roof_left`,
+			[width * 0.61, 0.22, depth + 0.4],
+			[-width * 0.235, wallHeight + 0.48, 0],
+			roofColor,
+			{ rotation: [0, 0, 0.55], roughness: 0.92 }
+		),
+		box(
+			`suburb_house_${index}_roof_right`,
+			[width * 0.61, 0.22, depth + 0.4],
+			[width * 0.235, wallHeight + 0.48, 0],
+			roofColor,
+			{ rotation: [0, 0, -0.55], roughness: 0.92 }
+		),
+		box(
+			`suburb_house_${index}_door`,
+			[0.88, 1.72, 0.08],
+			[width * 0.2, 0.86, -depth / 2 - 0.045],
+			index % 2 ? 0x506c78 : 0x94543f
+		)
+	);
+
+	for (const [windowIndex, x] of [-width * 0.25, width * 0.24].entries()) {
+		house.add(
+			box(
+				`suburb_house_${index}_window_${windowIndex}`,
+				[1.05, 0.86, 0.06],
+				[x, 2.12, -depth / 2 - 0.055],
+				windowIndex === 0 ? 0xaed0d7 : 0xe7c783,
+				{ roughness: 0.28, metalness: 0.02 }
+			)
+		);
+	}
+	if (index % 2 === 0) {
+		house.add(
+			box(
+				`suburb_house_${index}_chimney`,
+				[0.5, 1.2, 0.62],
+				[-width * 0.24, wallHeight + 0.96, 0.55],
+				0x8f6655,
+				{ roughness: 0.98 }
+			)
+		);
+	}
+	addStatic(parent, house);
+}
+
+function addSuburbTree(parent, index, x, z, scale = 1) {
+	const tree = new THREE.Group();
+	tree.name = uniqueName(`suburb_tree_${index}`);
+	tree.position.set(x, 0, z);
+	tree.add(
+		cylinder(
+			`suburb_tree_${index}_trunk`,
+			[0.18 * scale, 0.28 * scale],
+			2.6 * scale,
+			[0, 1.3 * scale, 0],
+			0x6f543b,
+			{ segments: 9 }
+		)
+	);
+	for (const [crownIndex, [offsetX, offsetY, offsetZ, radius]] of [
+		[0, 3.18, 0, 1.18],
+		[-0.72, 2.9, 0.08, 0.88],
+		[0.74, 2.95, -0.05, 0.92]
+	].entries()) {
+		tree.add(
+			mesh(
+				`suburb_tree_${index}_crown_${crownIndex}`,
+				new THREE.DodecahedronGeometry(radius * scale, 1),
+				crownIndex % 2 === 0 ? 0x557d49 : 0x668d53,
+				[offsetX * scale, offsetY * scale, offsetZ * scale],
+				{ roughness: 1 }
+			)
+		);
+	}
+	addStatic(parent, tree);
+}
+
+function addSuburbScenery(garden) {
+	const gardenCenterZ = BACK_WALL_Z - GARDEN_DEPTH / 2;
+	addStatic(
+		garden,
+		mesh(
+			'suburb_surrounding_ground',
+			new THREE.PlaneGeometry(68, 42),
+			0x78925a,
+			[0, -0.055, gardenCenterZ - 4],
+			{ rotation: [-Math.PI / 2, 0, 0], roughness: 1 }
+		)
+	);
+	for (const [sideIndex, x] of [-17.4, 17.4].entries()) {
+		addStatic(
+			garden,
+			mesh(
+				`suburb_side_street_${sideIndex}`,
+				new THREE.PlaneGeometry(4.5, GARDEN_DEPTH + 15),
+				0x73787a,
+				[x, -0.035, gardenCenterZ + 1],
+				{ rotation: [-Math.PI / 2, 0, 0], roughness: 0.98 }
+			)
+		);
+		addStatic(
+			garden,
+			mesh(
+				`suburb_sidewalk_${sideIndex}`,
+				new THREE.PlaneGeometry(1.35, GARDEN_DEPTH + 15),
+				0xc5bba8,
+				[x + (sideIndex === 0 ? 2.65 : -2.65), -0.026, gardenCenterZ + 1],
+				{ rotation: [-Math.PI / 2, 0, 0], roughness: 0.96 }
+			)
+		);
+	}
+
+	const housePalette = [
+		[0xd8c7af, 0x934f42],
+		[0xc3d0c5, 0x5b6872],
+		[0xe0bd9d, 0x76524d],
+		[0xb9c9d0, 0x4f5d62],
+		[0xd4c1c2, 0x85584f],
+		[0xcbd0aa, 0x675a4d]
+	];
+	for (const [index, [x, z, rotation]] of [
+		[-22.1, -5.8, 0.07],
+		[-22.4, -13.2, -0.04],
+		[-22, -20.6, 0.06],
+		[22.1, -6.2, -0.06],
+		[22.4, -13.6, 0.04],
+		[22, -21, -0.05]
+	].entries()) {
+		const colors = housePalette[index];
+		addNeighborHouse(garden, index, [x, 0, z], colors[0], colors[1], rotation);
+	}
+
+	for (const [index, [x, z, scale]] of [
+		[-14.9, -6.2, 0.9],
+		[-15.4, -16.4, 1.12],
+		[-15.1, -23.4, 0.82],
+		[15, -8.4, 1.04],
+		[15.3, -17.7, 0.88],
+		[14.9, -23.7, 1.08]
+	].entries()) {
+		addSuburbTree(garden, index, x, z, scale);
+	}
+
+	for (const [index, [x, z]] of [
+		[-17.4, -8.5],
+		[17.4, -18.2]
+	].entries()) {
+		addStatic(
+			garden,
+			cylinder(`suburb_lamppost_${index}`, [0.07, 0.1], 4.2, [x, 2.1, z], 0x3e4545, {
+				segments: 10
+			})
+		);
+		addStatic(
+			garden,
+			mesh(
+				`suburb_lamppost_${index}_light`,
+				new THREE.SphereGeometry(0.24, 10, 7),
+				0xf1d9a0,
+				[x, 4.05, z],
+				{ roughness: 0.28 }
+			)
+		);
+	}
+}
+
 function addGarden(garden) {
 	const gardenCenterZ = BACK_WALL_Z - GARDEN_DEPTH / 2;
+	addSuburbScenery(garden);
 	addCollider(
 		garden,
 		mesh(

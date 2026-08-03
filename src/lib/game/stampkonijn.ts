@@ -505,6 +505,8 @@ export class StampKonijnGame {
 	private groundHemisphere: THREE.HemisphereLight | null = null;
 	private groundSun: THREE.DirectionalLight | null = null;
 	private groundWindowGlow: THREE.PointLight | null = null;
+	private outsideAtmosphere = new THREE.Group();
+	private outsideEnvironmentActive = false;
 	private windowBreakaway = new THREE.Group();
 	private windowStampSurfaces: THREE.Object3D[] = [];
 	private windowHits = 0;
@@ -882,6 +884,80 @@ export class StampKonijnGame {
 		this.scene.add(this.muzzleLight);
 	}
 
+	private createOutsideAtmosphere() {
+		this.outsideAtmosphere = new THREE.Group();
+		this.outsideAtmosphere.name = 'outside-atmosphere';
+		const sky = new THREE.Mesh(
+			new THREE.SphereGeometry(72, 32, 18),
+			new THREE.ShaderMaterial({
+				vertexShader: `
+					varying vec3 vSkyDirection;
+					void main() {
+						vSkyDirection = position;
+						gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+					}
+				`,
+				fragmentShader: `
+					varying vec3 vSkyDirection;
+					void main() {
+						vec3 direction = normalize(vSkyDirection);
+						float heightMix = smoothstep(-0.16, 0.72, direction.y);
+						vec3 horizon = vec3(0.78, 0.88, 0.89);
+						vec3 zenith = vec3(0.29, 0.62, 0.82);
+						vec3 skyColor = mix(horizon, zenith, heightMix);
+						vec3 sunDirection = normalize(vec3(-0.38, 0.52, 0.76));
+						float sun = pow(max(dot(direction, sunDirection), 0.0), 180.0);
+						float glow = pow(max(dot(direction, sunDirection), 0.0), 12.0);
+						skyColor += vec3(1.0, 0.68, 0.34) * sun * 1.5;
+						skyColor += vec3(1.0, 0.82, 0.58) * glow * 0.11;
+						gl_FragColor = vec4(skyColor, 1.0);
+					}
+				`,
+				side: THREE.BackSide,
+				depthWrite: false,
+				fog: false
+			})
+		);
+		sky.name = 'outside-sky-dome';
+		sky.frustumCulled = false;
+		sky.renderOrder = -100;
+		this.outsideAtmosphere.add(sky);
+
+		const cloudMaterial = new THREE.MeshBasicMaterial({
+			color: 0xf7f4e9,
+			transparent: true,
+			opacity: 0.88,
+			depthWrite: false,
+			fog: false
+		});
+		for (const [cloudIndex, [x, y, z, scale]] of [
+			[-19, 14.5, 18, 1.25],
+			[17, 12.8, 10, 0.96],
+			[-2, 16.5, 27, 1.45],
+			[26, 17.5, -8, 1.18]
+		].entries()) {
+			const cloud = new THREE.Group();
+			cloud.name = `outside-cloud-${cloudIndex}`;
+			cloud.position.set(x, y, z);
+			for (const [puffIndex, [offsetX, offsetY, puffScale]] of [
+				[-0.9, 0, 0.78],
+				[0, 0.22, 1],
+				[0.95, -0.02, 0.72]
+			].entries()) {
+				const puff = new THREE.Mesh(new THREE.SphereGeometry(1.25, 12, 8), cloudMaterial);
+				puff.name = `outside-cloud-${cloudIndex}-puff-${puffIndex}`;
+				puff.position.set(offsetX * scale, offsetY * scale, 0);
+				puff.scale.set(1.35 * puffScale * scale, 0.5 * puffScale * scale, 0.66 * scale);
+				puff.castShadow = false;
+				puff.receiveShadow = false;
+				cloud.add(puff);
+			}
+			this.outsideAtmosphere.add(cloud);
+		}
+		this.outsideAtmosphere.visible = false;
+		this.scene.add(this.outsideAtmosphere);
+	}
+
 	private async loadWorldGeometry() {
 		const world = await this.worldLoader.load('/game/levels/stampkonijn-house.level.json');
 		this.scene.add(world.root);
@@ -896,8 +972,9 @@ export class StampKonijnGame {
 
 		world.root.traverse((child) => {
 			if (!(child instanceof THREE.Mesh)) return;
-			child.castShadow = true;
-			child.receiveShadow = true;
+			const distantScenery = child.name.startsWith('suburb_');
+			child.castShadow = !distantScenery;
+			child.receiveShadow = !distantScenery;
 		});
 		world.root.updateMatrixWorld(true);
 		this.registerWorldSurfaces(world);
@@ -957,6 +1034,7 @@ export class StampKonijnGame {
 	}
 
 	private createRoom() {
+		this.createOutsideAtmosphere();
 		this.windowBreakaway = new THREE.Group();
 		const glass = new THREE.Mesh(
 			new THREE.PlaneGeometry(WINDOW_OPENING_WIDTH, WINDOW_OPENING_HEIGHT),
@@ -3339,6 +3417,7 @@ export class StampKonijnGame {
 			this.velocity.z = 0;
 		}
 		this.resolveRoomCollisions();
+		this.syncOutsideEnvironment();
 		this.resolveBreakables(delta);
 		this.updateG36Pickup(delta);
 		this.updateArmRagdolls(delta);
@@ -4119,6 +4198,28 @@ export class StampKonijnGame {
 			this.basementLights[index].intensity = basementIntensities[index];
 		}
 		this.sewerLight.intensity = biome === 'sewer' ? 8.5 : 0;
+		this.syncOutsideEnvironment(true);
+	}
+
+	private syncOutsideEnvironment(force = false) {
+		const groundActive = this.getActiveBiome() === 'ground';
+		const outsideActive = groundActive && this.playerOutside;
+		if (!force && outsideActive === this.outsideEnvironmentActive) return;
+		this.outsideEnvironmentActive = outsideActive;
+		this.outsideAtmosphere.visible = outsideActive;
+		this.audio.setOutside(outsideActive);
+		if (!groundActive) return;
+
+		const color = outsideActive ? 0xaccfdd : 0xc9d8d1;
+		this.scene.background = new THREE.Color(color);
+		if (this.scene.fog instanceof THREE.Fog) {
+			this.scene.fog.color.setHex(color);
+			this.scene.fog.near = outsideActive ? 22 : 13;
+			this.scene.fog.far = outsideActive ? 52 : 27;
+		} else {
+			this.scene.fog = new THREE.Fog(color, outsideActive ? 22 : 13, outsideActive ? 52 : 27);
+		}
+		this.renderer.toneMappingExposure = outsideActive ? 1.08 : 1.05;
 	}
 
 	private isInsideLeftDoorTarget(door: LeftRoomDoor) {
@@ -6683,6 +6784,9 @@ export class StampKonijnGame {
 					)
 				);
 			}
+		}
+		if (this.outsideAtmosphere.visible) {
+			this.outsideAtmosphere.position.set(this.camera.position.x, 0, this.camera.position.z);
 		}
 		this.camera.lookAt(this.cameraLookTarget);
 	}

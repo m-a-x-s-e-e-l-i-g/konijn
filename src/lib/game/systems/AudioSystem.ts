@@ -25,6 +25,10 @@ export class AudioSystem {
 	private poopieMonsterVoiceQueue: HTMLAudioElement[] = [];
 	private swimSoundCooldown = 0;
 	private lastSwimSampleIndex = -1;
+	private outsideActive = false;
+	private outsideGain: GainNode | null = null;
+	private outsideSources: AudioScheduledSourceNode[] = [];
+	private outsideBirdCooldown = 1.2;
 
 	private readonly impactSample = this.createSample(AUDIO_PATHS.impact);
 	private readonly fartSample = this.createSample(AUDIO_PATHS.fart);
@@ -47,6 +51,8 @@ export class AudioSystem {
 	setMuted(muted: boolean) {
 		this.muted = muted;
 		for (const sample of this.activeSamples) sample.muted = muted;
+		if (!muted && this.outsideActive) this.ensure();
+		this.syncOutsideAmbienceGain(0.16);
 		if (!muted) this.playNextPoopieMonsterVoice();
 	}
 
@@ -54,6 +60,17 @@ export class AudioSystem {
 		if (this.muted) return;
 		this.context ??= new AudioContext();
 		if (this.context.state === 'suspended') void this.context.resume();
+		if (this.outsideActive) this.ensureOutsideAmbience();
+	}
+
+	setOutside(active: boolean) {
+		if (active === this.outsideActive) return;
+		this.outsideActive = active;
+		if (active) {
+			this.ensure();
+			this.outsideBirdCooldown = Math.min(this.outsideBirdCooldown, 1.35);
+		}
+		this.syncOutsideAmbienceGain(0.75);
 	}
 
 	async preloadGunshotBuffers() {
@@ -76,11 +93,19 @@ export class AudioSystem {
 
 	update(delta: number) {
 		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
+		if (!this.outsideActive || this.muted || !this.outsideGain) return;
+		this.outsideBirdCooldown -= delta;
+		if (this.outsideBirdCooldown <= 0) {
+			this.playOutsideBird();
+			this.outsideBirdCooldown = 2.8 + Math.random() * 5.4;
+		}
 	}
 
 	reset() {
 		this.swimSoundCooldown = 0;
 		this.lastSwimSampleIndex = -1;
+		this.setOutside(false);
+		this.outsideBirdCooldown = 1.2;
 		this.stopPoopieMonsterSpeech();
 		this.stopPoopieMonsterVoiceQueue();
 	}
@@ -92,6 +117,17 @@ export class AudioSystem {
 		this.poopieMonsterVoicePlaying = null;
 		this.poopieMonsterVoiceQueue = [];
 		this.gunshotBuffers = {};
+		for (const source of this.outsideSources) {
+			try {
+				source.stop();
+			} catch {
+				// The audio context may already have stopped this source.
+			}
+			source.disconnect();
+		}
+		this.outsideSources = [];
+		this.outsideGain?.disconnect();
+		this.outsideGain = null;
 		void this.context?.close();
 		this.context = null;
 	}
@@ -342,6 +378,110 @@ export class AudioSystem {
 		plop.connect(plopGain).connect(audio.destination);
 		plop.start(now);
 		plop.stop(now + duration);
+	}
+
+	private ensureOutsideAmbience() {
+		const audio = this.context;
+		if (!audio || this.outsideGain) return;
+
+		this.outsideGain = audio.createGain();
+		this.outsideGain.gain.value = 0;
+		this.outsideGain.connect(audio.destination);
+
+		const duration = 5;
+		const noiseBuffer = audio.createBuffer(1, audio.sampleRate * duration, audio.sampleRate);
+		const noise = noiseBuffer.getChannelData(0);
+		let smoothNoise = 0;
+		for (let index = 0; index < noise.length; index += 1) {
+			smoothNoise = smoothNoise * 0.72 + (Math.random() * 2 - 1) * 0.28;
+			noise[index] = smoothNoise;
+		}
+
+		const wind = audio.createBufferSource();
+		const windFilter = audio.createBiquadFilter();
+		const windGain = audio.createGain();
+		wind.buffer = noiseBuffer;
+		wind.loop = true;
+		windFilter.type = 'bandpass';
+		windFilter.frequency.value = 720;
+		windFilter.Q.value = 0.42;
+		windGain.gain.value = 0.045;
+		wind.connect(windFilter).connect(windGain).connect(this.outsideGain);
+
+		const windPulse = audio.createOscillator();
+		const windPulseDepth = audio.createGain();
+		windPulse.type = 'sine';
+		windPulse.frequency.value = 0.085;
+		windPulseDepth.gain.value = 0.014;
+		windPulse.connect(windPulseDepth).connect(windGain.gain);
+
+		const traffic = audio.createBufferSource();
+		const trafficFilter = audio.createBiquadFilter();
+		const trafficGain = audio.createGain();
+		traffic.buffer = noiseBuffer;
+		traffic.loop = true;
+		traffic.playbackRate.value = 0.63;
+		trafficFilter.type = 'lowpass';
+		trafficFilter.frequency.value = 185;
+		trafficFilter.Q.value = 0.5;
+		trafficGain.gain.value = 0.055;
+		traffic.connect(trafficFilter).connect(trafficGain).connect(this.outsideGain);
+
+		wind.start();
+		windPulse.start();
+		traffic.start(audio.currentTime + 0.17);
+		this.outsideSources.push(wind, windPulse, traffic);
+		this.syncOutsideAmbienceGain(0.75);
+	}
+
+	private syncOutsideAmbienceGain(duration: number) {
+		const audio = this.context;
+		const gain = this.outsideGain;
+		if (!audio || !gain) return;
+		const now = audio.currentTime;
+		const target = this.outsideActive && !this.muted ? 0.34 : 0;
+		gain.gain.cancelScheduledValues(now);
+		gain.gain.setValueAtTime(gain.gain.value, now);
+		gain.gain.linearRampToValueAtTime(target, now + duration);
+	}
+
+	private playOutsideBird() {
+		const audio = this.context;
+		const output = this.outsideGain;
+		if (!audio || !output) return;
+		const now = audio.currentTime;
+		const baseFrequency = 1800 + Math.random() * 850;
+		const chirpCount = Math.random() > 0.62 ? 3 : 2;
+		for (let index = 0; index < chirpCount; index += 1) {
+			const start = now + index * (0.105 + Math.random() * 0.035);
+			const duration = 0.085 + Math.random() * 0.045;
+			const oscillator = audio.createOscillator();
+			const gain = audio.createGain();
+			oscillator.type = index % 2 === 0 ? 'sine' : 'triangle';
+			oscillator.frequency.setValueAtTime(baseFrequency * (0.96 + index * 0.08), start);
+			oscillator.frequency.exponentialRampToValueAtTime(
+				baseFrequency * (1.28 + Math.random() * 0.22),
+				start + duration * 0.48
+			);
+			oscillator.frequency.exponentialRampToValueAtTime(
+				baseFrequency * (1.02 + Math.random() * 0.08),
+				start + duration
+			);
+			gain.gain.setValueAtTime(0.0001, start);
+			gain.gain.exponentialRampToValueAtTime(0.05, start + duration * 0.18);
+			gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+			oscillator.connect(gain).connect(output);
+			oscillator.start(start);
+			oscillator.stop(start + duration);
+			oscillator.addEventListener(
+				'ended',
+				() => {
+					oscillator.disconnect();
+					gain.disconnect();
+				},
+				{ once: true }
+			);
+		}
 	}
 
 	private createSample(path: string) {
