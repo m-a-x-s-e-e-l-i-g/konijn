@@ -605,12 +605,6 @@
       "shape": "mesh"
     },
     {
-      "id": "sewer_obstacle_0",
-      "node": "sewer_obstacle_0",
-      "zone": "sewer",
-      "shape": "mesh"
-    },
-    {
       "id": "sewer_obstacle_1",
       "node": "sewer_obstacle_1",
       "zone": "sewer",

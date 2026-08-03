@@ -209,7 +209,7 @@ const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const POOPIE_MONSTER_X = TOILET_X + 4.85;
 const POOPIE_MONSTER_RADIUS = 1.04;
 const POOPIE_MONSTER_HEIGHT = 2.06;
-const POOPIE_MONSTER_JUMP_HEIGHT = 0.55;
+const POOPIE_MONSTER_HITBOX_TOP_PADDING = 0.12;
 const POOPIE_MONSTER_BLOCK_KNOCKBACK = 5.4;
 const POOPIE_MONSTER_BULLET_HITS = 3;
 const POOPIE_MONSTER_POOP_HITS = 3;
@@ -459,6 +459,9 @@ export class StampKonijnGame {
 	private poopieMonsterHeart: THREE.Mesh<THREE.ShapeGeometry, THREE.MeshStandardMaterial> | null =
 		null;
 	private poopieMonsterWarning: THREE.Sprite | null = null;
+	private poopieMonsterStatus: THREE.Sprite | null = null;
+	private poopieMonsterStatusTexture: THREE.CanvasTexture | null = null;
+	private poopieMonsterIntroLines: THREE.Sprite | null = null;
 	private poopieMonsterArms: THREE.Object3D[] = [];
 	private poopieMonsterMaterials: THREE.MeshStandardMaterial[] = [];
 	private poopieMonsterState: PoopieMonsterState = 'neutral';
@@ -740,6 +743,13 @@ export class StampKonijnGame {
 		this.muzzleGlowTexture = null;
 		this.muzzleSmokeTexture?.dispose();
 		this.muzzleSmokeTexture = null;
+		if (this.poopieMonsterIntroLines) {
+			this.poopieMonsterIntroLines.material.map?.dispose();
+			this.poopieMonsterIntroLines.material.dispose();
+		}
+		this.poopieMonsterStatus?.material.dispose();
+		this.poopieMonsterStatusTexture?.dispose();
+		this.poopieMonsterStatusTexture = null;
 		this.clearBulletHoles();
 		disposeObject(this.scene);
 		this.renderer.dispose();
@@ -990,6 +1000,31 @@ export class StampKonijnGame {
 		const shaftGlow = new THREE.PointLight(0xb9d19b, 5.5, 8, 2);
 		shaftGlow.position.set(TOILET_X, -1.3, SEWER_CENTER_Z + 0.2);
 		this.sewerRoot.add(shaftGlow);
+		const rayTopY = -0.32;
+		const rayBottomY = SEWER_FLOOR_Y + 0.18;
+		const rayHeight = rayTopY - rayBottomY;
+		for (const [index, offset] of [-0.2, 0.04, 0.24].entries()) {
+			const ray = new THREE.Mesh(
+				new THREE.CylinderGeometry(0.07, 0.72 - index * 0.12, rayHeight, 18, 1, true),
+				new THREE.MeshBasicMaterial({
+					color: index === 1 ? 0xd8e8bb : 0xb9d19b,
+					transparent: true,
+					opacity: index === 1 ? 0.095 : 0.052,
+					depthWrite: false,
+					blending: THREE.AdditiveBlending,
+					side: THREE.DoubleSide,
+					toneMapped: false
+				})
+			);
+			ray.position.set(
+				TOILET_X + offset,
+				(rayTopY + rayBottomY) / 2,
+				SEWER_CENTER_Z + (index - 1) * 0.18
+			);
+			ray.rotation.z = (index - 1) * 0.025;
+			ray.renderOrder = 1;
+			this.sewerRoot.add(ray);
+		}
 		this.createPoopieMonster();
 
 		const distantGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
@@ -1013,10 +1048,17 @@ export class StampKonijnGame {
 		this.poopieMonsterPose.add(this.poopieMonsterFacing);
 		this.poopieMonsterMaterials = [];
 		this.poopieMonsterArms = [];
+		this.poopieMonsterIntroLines = this.makePoopieMonsterIntroLines();
+		this.poopieMonsterIntroLines.position.set(0.78, POOPIE_MONSTER_HEIGHT * 0.58, 0);
+		this.poopieMonsterIntroLines.visible = false;
+		this.poopieMonsterRoot.add(this.poopieMonsterIntroLines);
 
 		this.poopieMonsterWarning = this.makePoopieMonsterWarning();
 		this.poopieMonsterWarning.position.set(0, POOPIE_MONSTER_HEIGHT + 0.98, 0.72);
 		this.poopieMonsterRoot.add(this.poopieMonsterWarning);
+		this.poopieMonsterStatus = this.makePoopieMonsterStatus();
+		this.poopieMonsterStatus.position.set(0, POOPIE_MONSTER_HEIGHT + 0.68, -0.58);
+		this.poopieMonsterRoot.add(this.poopieMonsterStatus);
 
 		const heartShape = new THREE.Shape();
 		heartShape.moveTo(0, -0.26);
@@ -1079,6 +1121,119 @@ export class StampKonijnGame {
 		warning.scale.set(4.2, 1.05, 1);
 		warning.renderOrder = 8;
 		return warning;
+	}
+
+	private makePoopieMonsterIntroLines() {
+		const canvas = document.createElement('canvas');
+		canvas.width = 1024;
+		canvas.height = 1024;
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.translate(canvas.width / 2, canvas.height / 2);
+			for (let index = 0; index < 86; index += 1) {
+				const noise = Math.abs(Math.sin(index * 12.9898) * 43758.5453) % 1;
+				const angle = (index / 86) * Math.PI * 2 + (noise - 0.5) * 0.035;
+				const innerRadius = 84 + noise * 92;
+				const outerRadius = 650;
+				const halfWidth = 0.006 + noise * 0.012;
+				context.fillStyle = `rgba(246, 220, 164, ${0.15 + noise * 0.34})`;
+				context.beginPath();
+				context.moveTo(
+					Math.cos(angle - halfWidth) * innerRadius,
+					Math.sin(angle - halfWidth) * innerRadius
+				);
+				context.lineTo(
+					Math.cos(angle + halfWidth) * innerRadius,
+					Math.sin(angle + halfWidth) * innerRadius
+				);
+				context.lineTo(
+					Math.cos(angle + halfWidth * 0.18) * outerRadius,
+					Math.sin(angle + halfWidth * 0.18) * outerRadius
+				);
+				context.lineTo(
+					Math.cos(angle - halfWidth * 0.18) * outerRadius,
+					Math.sin(angle - halfWidth * 0.18) * outerRadius
+				);
+				context.closePath();
+				context.fill();
+			}
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		const sprite = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: texture,
+				transparent: true,
+				depthTest: true,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				toneMapped: false
+			})
+		);
+		sprite.name = 'poopiemonster-intro-speedlines';
+		sprite.scale.set(6.2, 6.2, 1);
+		return sprite;
+	}
+
+	private makePoopieMonsterStatus() {
+		const canvas = document.createElement('canvas');
+		canvas.width = 768;
+		canvas.height = 224;
+		this.poopieMonsterStatusTexture = new THREE.CanvasTexture(canvas);
+		this.poopieMonsterStatusTexture.colorSpace = THREE.SRGBColorSpace;
+		const status = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: this.poopieMonsterStatusTexture,
+				transparent: true,
+				depthTest: true,
+				depthWrite: false,
+				toneMapped: false
+			})
+		);
+		status.name = 'poopiemonster-status';
+		status.scale.set(3.35, 0.98, 1);
+		status.renderOrder = 4;
+		this.updatePoopieMonsterStatus();
+		return status;
+	}
+
+	private updatePoopieMonsterStatus() {
+		const texture = this.poopieMonsterStatusTexture;
+		const canvas = texture?.image as HTMLCanvasElement | undefined;
+		const context = canvas?.getContext('2d');
+		if (!texture || !canvas || !context) return;
+
+		context.clearRect(0, 0, canvas.width, canvas.height);
+		context.fillStyle = 'rgba(28, 20, 16, 0.9)';
+		context.beginPath();
+		context.roundRect(12, 12, canvas.width - 24, canvas.height - 24, 34);
+		context.fill();
+		context.strokeStyle = '#d29a58';
+		context.lineWidth = 8;
+		context.stroke();
+
+		const drawBar = (label: string, progress: number, y: number, color: string) => {
+			context.fillStyle = '#f4e5c7';
+			context.font = '900 42px Arial Black, Arial, sans-serif';
+			context.textAlign = 'right';
+			context.textBaseline = 'middle';
+			context.fillText(label, 174, y + 24);
+			context.fillStyle = '#40342c';
+			context.beginPath();
+			context.roundRect(198, y, 520, 48, 18);
+			context.fill();
+			const width = 520 * THREE.MathUtils.clamp(progress, 0, 1);
+			if (width > 0) {
+				context.fillStyle = color;
+				context.beginPath();
+				context.roundRect(198, y, width, 48, Math.min(18, width / 2));
+				context.fill();
+			}
+		};
+
+		drawBar('HP', this.poopieMonsterHealth / POOPIE_MONSTER_BULLET_HITS, 48, '#db4d42');
+		drawBar('LOVE', this.poopieMonsterPoopHits / POOPIE_MONSTER_POOP_HITS, 128, '#ec7895');
+		texture.needsUpdate = true;
 	}
 
 	private attachPoopieMonster(source: THREE.Group) {
@@ -4509,6 +4664,7 @@ export class StampKonijnGame {
 
 		if (hitKind === 'bullet') {
 			this.poopieMonsterHealth -= 1;
+			this.updatePoopieMonsterStatus();
 			if (this.poopieMonsterHealth <= 0) {
 				this.poopieMonsterState = 'dead';
 				this.poopieMonsterDeathInProgress = true;
@@ -4518,24 +4674,20 @@ export class StampKonijnGame {
 				this.poopieMonsterDeathStartScale.copy(this.poopieMonsterPose.scale);
 				this.audio.playPoopieMonsterDeath();
 				this.cameraShake = Math.max(this.cameraShake, 0.72);
-				this.emitFeedback('POOPIEMONSTER VERSLAGEN!');
 			} else {
 				this.audio.playBulletImpact('body');
 				this.audio.playPoopieMonsterHit();
-				this.emitFeedback(`POOPIEMONSTER: AUCH! ${this.poopieMonsterHealth} KOGELS OVER`);
 			}
 			return;
 		}
 
 		this.poopieMonsterPoopHits += 1;
+		this.updatePoopieMonsterStatus();
 		this.audio.playPoopieMonsterEat();
 		if (this.poopieMonsterPoopHits >= POOPIE_MONSTER_POOP_HITS) {
 			this.poopieMonsterState = 'friend';
 			if (this.poopieMonsterHeart) this.poopieMonsterHeart.visible = true;
 			this.audio.playPoopieMonsterFriend();
-			this.emitFeedback('POOPIEMONSTER: AIGHT, THANKS. YOU PASS. ♥');
-		} else {
-			this.emitFeedback('POOPIEMONSTER: NOM NOM NOM... POOPIES!');
 		}
 	}
 
@@ -4551,7 +4703,16 @@ export class StampKonijnGame {
 
 		const response = 1 - Math.exp(-7 * delta);
 		if (this.poopieMonsterWarning) {
-			this.poopieMonsterWarning.visible = this.poopieMonsterState === 'neutral';
+			this.poopieMonsterWarning.visible =
+				this.poopieMonsterState === 'neutral' && !this.sewerIntroPlayed;
+		}
+		if (this.poopieMonsterIntroLines) {
+			this.poopieMonsterIntroLines.visible = this.sewerIntroActive;
+			const linesMaterial = this.poopieMonsterIntroLines.material;
+			linesMaterial.rotation = this.reducedMotion ? 0 : this.sewerIntroTime * 0.025;
+		}
+		if (this.poopieMonsterStatus) {
+			this.poopieMonsterStatus.visible = this.sewerIntroPlayed && !this.sewerIntroActive;
 		}
 		if (this.poopieMonsterState === 'dead') {
 			if (this.poopieMonsterDeathInProgress) {
@@ -4607,19 +4768,12 @@ export class StampKonijnGame {
 
 		const friendly = this.poopieMonsterState === 'friend';
 		const motion = this.reducedMotion ? 0 : 1;
-		const jumpWave = Math.abs(Math.sin(this.poopieMonsterTime * (friendly ? 2.8 : 5.2)));
-		const jumpHeight =
-			Math.pow(jumpWave, 1.45) * (friendly ? 0.1 : POOPIE_MONSTER_JUMP_HEIGHT) * motion;
-		const landingSquash = Math.pow(1 - jumpWave, 8) * (friendly ? 0.025 : 0.085) * motion;
-		this.poopieMonsterPose.position.y = jumpHeight;
-		this.poopieMonsterPose.scale.set(
-			1 + landingSquash * 0.7,
-			1 - landingSquash,
-			1 + landingSquash * 0.7
-		);
+		const breath = Math.sin(this.poopieMonsterTime * (friendly ? 2.2 : 1.55)) * 0.012 * motion;
+		this.poopieMonsterPose.position.y = 0;
+		this.poopieMonsterPose.scale.set(1 - breath * 0.2, 1 + breath, 1 - breath * 0.2);
 		this.poopieMonsterPose.rotation.z =
 			Math.sin(this.poopieMonsterTime * (friendly ? 3.1 : 1.5)) *
-			(friendly ? 0.055 : 0.035) *
+			(friendly ? 0.04 : 0.018) *
 			motion;
 		const armWave =
 			Math.sin(this.poopieMonsterTime * (friendly ? 6.2 : 2.4)) * (friendly ? 0.34 : 0.07) * motion;
@@ -4646,6 +4800,7 @@ export class StampKonijnGame {
 		this.poopieMonsterState = 'neutral';
 		this.poopieMonsterHealth = POOPIE_MONSTER_BULLET_HITS;
 		this.poopieMonsterPoopHits = 0;
+		this.updatePoopieMonsterStatus();
 		this.poopieMonsterTime = 0;
 		this.poopieMonsterHitFlash = 0;
 		this.poopieMonsterDeathInProgress = false;
@@ -4665,6 +4820,8 @@ export class StampKonijnGame {
 			this.poopieMonsterHeart.scale.setScalar(0.32);
 		}
 		if (this.poopieMonsterWarning) this.poopieMonsterWarning.visible = true;
+		if (this.poopieMonsterStatus) this.poopieMonsterStatus.visible = false;
+		if (this.poopieMonsterIntroLines) this.poopieMonsterIntroLines.visible = false;
 		for (const poopieMaterial of this.poopieMonsterMaterials) {
 			poopieMaterial.emissive.setHex(0x140906);
 			poopieMaterial.emissiveIntensity = 0.08;
@@ -5137,7 +5294,7 @@ export class StampKonijnGame {
 			),
 			new THREE.Vector3(
 				POOPIE_MONSTER_X + POOPIE_MONSTER_RADIUS,
-				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_JUMP_HEIGHT,
+				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT + POOPIE_MONSTER_HITBOX_TOP_PADDING,
 				SEWER_CENTER_Z + POOPIE_MONSTER_RADIUS + 0.15
 			)
 		);
@@ -6107,13 +6264,13 @@ export class StampKonijnGame {
 				: THREE.MathUtils.clamp(this.sewerIntroTime / SEWER_INTRO_FOCUS_DURATION, 0, 1);
 			const focusEase = 1 - Math.pow(1 - focusProgress, 5);
 			this.cameraDesiredPosition.set(
-				POOPIE_MONSTER_X - 0.18,
-				SEWER_FLOOR_Y + 2.12,
-				SEWER_CENTER_Z + 3.15
+				POOPIE_MONSTER_X - 2.08,
+				SEWER_FLOOR_Y + 1.48,
+				SEWER_CENTER_Z + 0.08
 			);
 			this.cameraDesiredTarget.set(
 				POOPIE_MONSTER_X,
-				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.56,
+				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.69,
 				SEWER_CENTER_Z
 			);
 			this.camera.position.lerpVectors(
@@ -6126,7 +6283,7 @@ export class StampKonijnGame {
 				this.cameraDesiredTarget,
 				focusEase
 			);
-			this.camera.fov = THREE.MathUtils.lerp(46, 29, focusEase);
+			this.camera.fov = THREE.MathUtils.lerp(38, 24, focusEase);
 			if (!this.reducedMotion && this.sewerIntroTime > SEWER_INTRO_AUDIO_DELAY) {
 				const intensity = Math.min(1, (this.sewerIntroTime - SEWER_INTRO_AUDIO_DELAY) * 3);
 				this.camera.position.x += Math.sin(this.sewerIntroTime * 31) * 0.012 * intensity;
@@ -6503,11 +6660,19 @@ export class StampKonijnGame {
 		this.velocity.set(0, 0, 0);
 		this.standRabbitUpright();
 
-		this.sewerIntroCameraPosition.set(TOILET_X + 0.65, SEWER_FLOOR_Y + 3.35, SEWER_CENTER_Z + 7.1);
-		this.sewerIntroCameraTarget.set(TOILET_X + 2.1, SEWER_FLOOR_Y + 1.05, SEWER_CENTER_Z);
+		this.sewerIntroCameraPosition.set(
+			POOPIE_MONSTER_X - 3.45,
+			SEWER_FLOOR_Y + 1.64,
+			SEWER_CENTER_Z + 0.52
+		);
+		this.sewerIntroCameraTarget.set(
+			POOPIE_MONSTER_X,
+			SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.68,
+			SEWER_CENTER_Z
+		);
 		this.camera.position.copy(this.sewerIntroCameraPosition);
 		this.cameraLookTarget.copy(this.sewerIntroCameraTarget);
-		this.camera.fov = 46;
+		this.camera.fov = 38;
 		this.camera.updateProjectionMatrix();
 		this.events.emit('sewerIntro', { active: true });
 	}

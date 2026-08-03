@@ -207,7 +207,6 @@
 
 	{#if sewerIntroActive}
 		<div class="sewer-cutscene" role="status" aria-live="assertive">
-			<div class="sewer-cutscene__speedlines" aria-hidden="true"></div>
 			<div class="sewer-cutscene__flash" aria-hidden="true"></div>
 			<div class="sewer-cutscene__bars" aria-hidden="true"></div>
 			<p class="sewer-cutscene__name">POOPIEMONSTER</p>
@@ -437,19 +436,6 @@
 		animation: sewer-cinematic 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	.sewer-cutscene__speedlines {
-		position: absolute;
-		inset: -45%;
-		background: repeating-conic-gradient(
-			from 7deg at 50% 47%,
-			transparent 0deg 4deg,
-			oklch(95% 0.035 83 / 0.24) 4.2deg 4.55deg,
-			transparent 4.75deg 8deg
-		);
-		opacity: 0.72;
-		animation: sewer-speedlines 4.95s cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
 	.sewer-cutscene__flash {
 		position: absolute;
 		inset: 0;
@@ -521,24 +507,6 @@
 		}
 		100% {
 			opacity: 0;
-		}
-	}
-
-	@keyframes sewer-speedlines {
-		0% {
-			opacity: 0;
-			transform: scale(1.32) rotate(-3deg);
-		}
-		12% {
-			opacity: 0.72;
-		}
-		78% {
-			opacity: 0.28;
-			transform: scale(1) rotate(0);
-		}
-		100% {
-			opacity: 0;
-			transform: scale(0.98);
 		}
 	}
 
@@ -1218,7 +1186,6 @@
 			animation: none !important;
 		}
 
-		.sewer-cutscene__speedlines,
 		.sewer-cutscene__flash {
 			display: none;
 		}

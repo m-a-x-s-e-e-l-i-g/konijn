@@ -1139,6 +1139,7 @@ function addSewer(sewer) {
 		);
 	}
 	for (let index = 0; index < 16; index += 1) {
+		if (index === 0) continue;
 		const x = TOILET_X + 6.5 + index * 4.55;
 		if (x > SEWER_MAX_X - 5) break;
 		const fromFloor = index % 2 === 0 || index % 5 === 3;
