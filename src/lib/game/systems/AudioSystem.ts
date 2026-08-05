@@ -40,7 +40,9 @@ export class AudioSystem {
 	private outsideSources: AudioScheduledSourceNode[] = [];
 	private outsideBirdCooldown = 1.2;
 	private sewerActive = false;
-	private sewerDripCooldown = 0.25;
+	private sewerAmbience: HTMLAudioElement | null = null;
+	private sewerAmbienceSource: MediaElementAudioSourceNode | null = null;
+	private sewerAmbienceGain: GainNode | null = null;
 
 	private readonly impactSample = this.createSample(AUDIO_PATHS.impact);
 	private readonly fartSample = this.createSample(AUDIO_PATHS.fart);
@@ -49,6 +51,7 @@ export class AudioSystem {
 	private readonly weaponChangeSample = this.createSample(AUDIO_PATHS.weaponChange);
 	private readonly vaseBreakSample = this.createSample(AUDIO_PATHS.vaseBreak);
 	private readonly chairBreakSample = this.createSample(AUDIO_PATHS.chairBreak);
+	private readonly sewerAmbienceSample = this.createSample(AUDIO_PATHS.sewerAmbience);
 	private readonly poopieMonsterSpeechSample = this.createSample(AUDIO_PATHS.poopieMonsterSpeech);
 	private readonly poopieMonsterEatSample = this.createSample(AUDIO_PATHS.poopieMonsterEat);
 	private readonly poopieMonsterFriendSample = this.createSample(AUDIO_PATHS.poopieMonsterFriend);
@@ -66,6 +69,7 @@ export class AudioSystem {
 		if (!muted && (this.outsideActive || this.sewerActive)) this.ensure();
 		this.syncMasterGain(0.1);
 		this.syncOutsideAmbienceGain(0.16);
+		this.syncSewerAmbienceGain(0.16);
 		if (!muted) this.playNextPoopieMonsterVoice();
 	}
 
@@ -75,6 +79,7 @@ export class AudioSystem {
 		this.ensureMixGraph();
 		if (this.context.state === 'suspended') void this.context.resume();
 		if (this.outsideActive) this.ensureOutsideAmbience();
+		if (this.sewerActive) this.ensureSewerAmbience();
 	}
 
 	setSewer(active: boolean) {
@@ -82,9 +87,9 @@ export class AudioSystem {
 		this.sewerActive = active;
 		if (active) {
 			this.ensure();
-			this.sewerDripCooldown = 0.18 + Math.random() * 0.35;
 		}
 		this.syncSewerMix(0.45);
+		this.syncSewerAmbienceGain(0.75);
 	}
 
 	setOutside(active: boolean) {
@@ -117,13 +122,6 @@ export class AudioSystem {
 
 	update(delta: number) {
 		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
-		if (this.sewerActive && !this.muted) {
-			this.sewerDripCooldown -= delta;
-			if (this.sewerDripCooldown <= 0) {
-				this.playSewerDrip();
-				this.sewerDripCooldown = 0.55 + Math.random() * 1.55;
-			}
-		}
 		if (!this.outsideActive || this.muted || !this.outsideGain) return;
 		this.outsideBirdCooldown -= delta;
 		if (this.outsideBirdCooldown <= 0) {
@@ -138,7 +136,6 @@ export class AudioSystem {
 		this.setOutside(false);
 		this.setSewer(false);
 		this.outsideBirdCooldown = 1.2;
-		this.sewerDripCooldown = 0.25;
 		this.stopPoopieMonsterSpeech();
 		this.stopPoopieMonsterVoiceQueue();
 	}
@@ -163,6 +160,12 @@ export class AudioSystem {
 		this.outsideSources = [];
 		this.outsideGain?.disconnect();
 		this.outsideGain = null;
+		this.sewerAmbience?.pause();
+		this.sewerAmbienceSource?.disconnect();
+		this.sewerAmbienceGain?.disconnect();
+		this.sewerAmbience = null;
+		this.sewerAmbienceSource = null;
+		this.sewerAmbienceGain = null;
 		this.mixInput?.disconnect();
 		this.mixDryGain?.disconnect();
 		this.mixMasterGain?.disconnect();
@@ -703,6 +706,40 @@ export class AudioSystem {
 		this.rampGain(this.sewerReverbGain.gain, this.sewerActive ? 0.24 : 0, now, duration);
 	}
 
+	private ensureSewerAmbience() {
+		const audio = this.context;
+		if (!audio || this.sewerAmbience) return;
+
+		const sample = this.sewerAmbienceSample.cloneNode(true) as HTMLAudioElement;
+		const source = audio.createMediaElementSource(sample);
+		const gain = audio.createGain();
+		sample.loop = true;
+		sample.volume = 1;
+		source.connect(gain).connect(this.getAudioOutput(audio));
+		gain.gain.value = 0;
+		this.sewerAmbience = sample;
+		this.sewerAmbienceSource = source;
+		this.sewerAmbienceGain = gain;
+		this.syncSewerAmbienceGain(0);
+
+		void sample.play().catch(() => {
+			source.disconnect();
+			gain.disconnect();
+			if (this.sewerAmbience !== sample) return;
+			this.sewerAmbience = null;
+			this.sewerAmbienceSource = null;
+			this.sewerAmbienceGain = null;
+		});
+	}
+
+	private syncSewerAmbienceGain(duration: number) {
+		const audio = this.context;
+		const gain = this.sewerAmbienceGain;
+		if (!audio || !gain) return;
+		const target = this.sewerActive && !this.muted ? 0.5 : 0;
+		this.rampGain(gain.gain, target, audio.currentTime, duration);
+	}
+
 	private syncMasterGain(duration: number) {
 		const audio = this.context;
 		const gain = this.mixMasterGain;
@@ -740,45 +777,6 @@ export class AudioSystem {
 		if (!source) return;
 		source.disconnect();
 		this.mediaSources.delete(sample);
-	}
-
-	private playSewerDrip() {
-		const audio = this.context;
-		if (!audio || this.muted || !this.sewerActive) return;
-		const output = this.getAudioOutput(audio);
-		const now = audio.currentTime;
-		const dripCount = Math.random() > 0.74 ? 2 : 1;
-		const pan = audio.createStereoPanner();
-		pan.pan.value = -0.85 + Math.random() * 1.7;
-		pan.connect(output);
-
-		for (let index = 0; index < dripCount; index += 1) {
-			const start = now + index * (0.09 + Math.random() * 0.07);
-			const duration = 0.16 + Math.random() * 0.08;
-			const oscillator = audio.createOscillator();
-			const gain = audio.createGain();
-			oscillator.type = 'sine';
-			oscillator.frequency.setValueAtTime(1150 + Math.random() * 760, start);
-			oscillator.frequency.exponentialRampToValueAtTime(
-				280 + Math.random() * 180,
-				start + duration
-			);
-			gain.gain.setValueAtTime(0.0001, start);
-			gain.gain.exponentialRampToValueAtTime(0.055 + Math.random() * 0.035, start + 0.008);
-			gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-			oscillator.connect(gain).connect(pan);
-			oscillator.start(start);
-			oscillator.stop(start + duration);
-			oscillator.addEventListener(
-				'ended',
-				() => {
-					oscillator.disconnect();
-					gain.disconnect();
-					if (index === dripCount - 1) pan.disconnect();
-				},
-				{ once: true }
-			);
-		}
 	}
 
 	private createSample(path: string) {
