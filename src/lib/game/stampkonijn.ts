@@ -4198,6 +4198,7 @@ export class StampKonijnGame {
 			this.basementLights[index].intensity = basementIntensities[index];
 		}
 		this.sewerLight.intensity = biome === 'sewer' ? 8.5 : 0;
+		this.audio.setSewer(biome === 'sewer');
 		this.syncOutsideEnvironment(true);
 	}
 

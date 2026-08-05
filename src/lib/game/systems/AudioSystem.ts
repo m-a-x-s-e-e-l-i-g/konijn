@@ -20,6 +20,16 @@ export class AudioSystem {
 	private context: AudioContext | null = null;
 	private gunshotBuffers: Partial<Record<GunWeapon, AudioBuffer>> = {};
 	private activeSamples = new Set<HTMLAudioElement>();
+	private mediaSources = new Map<HTMLAudioElement, MediaElementAudioSourceNode>();
+	private mixInput: GainNode | null = null;
+	private mixDryGain: GainNode | null = null;
+	private mixMasterGain: GainNode | null = null;
+	private sewerEchoDelay: DelayNode | null = null;
+	private sewerEchoFilter: BiquadFilterNode | null = null;
+	private sewerEchoFeedback: GainNode | null = null;
+	private sewerEchoGain: GainNode | null = null;
+	private sewerReverb: ConvolverNode | null = null;
+	private sewerReverbGain: GainNode | null = null;
 	private speechPlaying: HTMLAudioElement | null = null;
 	private poopieMonsterVoicePlaying: HTMLAudioElement | null = null;
 	private poopieMonsterVoiceQueue: HTMLAudioElement[] = [];
@@ -29,6 +39,8 @@ export class AudioSystem {
 	private outsideGain: GainNode | null = null;
 	private outsideSources: AudioScheduledSourceNode[] = [];
 	private outsideBirdCooldown = 1.2;
+	private sewerActive = false;
+	private sewerDripCooldown = 0.25;
 
 	private readonly impactSample = this.createSample(AUDIO_PATHS.impact);
 	private readonly fartSample = this.createSample(AUDIO_PATHS.fart);
@@ -51,7 +63,8 @@ export class AudioSystem {
 	setMuted(muted: boolean) {
 		this.muted = muted;
 		for (const sample of this.activeSamples) sample.muted = muted;
-		if (!muted && this.outsideActive) this.ensure();
+		if (!muted && (this.outsideActive || this.sewerActive)) this.ensure();
+		this.syncMasterGain(0.1);
 		this.syncOutsideAmbienceGain(0.16);
 		if (!muted) this.playNextPoopieMonsterVoice();
 	}
@@ -59,8 +72,19 @@ export class AudioSystem {
 	ensure() {
 		if (this.muted) return;
 		this.context ??= new AudioContext();
+		this.ensureMixGraph();
 		if (this.context.state === 'suspended') void this.context.resume();
 		if (this.outsideActive) this.ensureOutsideAmbience();
+	}
+
+	setSewer(active: boolean) {
+		if (active === this.sewerActive) return;
+		this.sewerActive = active;
+		if (active) {
+			this.ensure();
+			this.sewerDripCooldown = 0.18 + Math.random() * 0.35;
+		}
+		this.syncSewerMix(0.45);
 	}
 
 	setOutside(active: boolean) {
@@ -93,6 +117,13 @@ export class AudioSystem {
 
 	update(delta: number) {
 		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
+		if (this.sewerActive && !this.muted) {
+			this.sewerDripCooldown -= delta;
+			if (this.sewerDripCooldown <= 0) {
+				this.playSewerDrip();
+				this.sewerDripCooldown = 0.55 + Math.random() * 1.55;
+			}
+		}
 		if (!this.outsideActive || this.muted || !this.outsideGain) return;
 		this.outsideBirdCooldown -= delta;
 		if (this.outsideBirdCooldown <= 0) {
@@ -105,7 +136,9 @@ export class AudioSystem {
 		this.swimSoundCooldown = 0;
 		this.lastSwimSampleIndex = -1;
 		this.setOutside(false);
+		this.setSewer(false);
 		this.outsideBirdCooldown = 1.2;
+		this.sewerDripCooldown = 0.25;
 		this.stopPoopieMonsterSpeech();
 		this.stopPoopieMonsterVoiceQueue();
 	}
@@ -113,6 +146,8 @@ export class AudioSystem {
 	destroy() {
 		for (const sample of this.activeSamples) sample.pause();
 		this.activeSamples.clear();
+		for (const source of this.mediaSources.values()) source.disconnect();
+		this.mediaSources.clear();
 		this.speechPlaying = null;
 		this.poopieMonsterVoicePlaying = null;
 		this.poopieMonsterVoiceQueue = [];
@@ -128,6 +163,24 @@ export class AudioSystem {
 		this.outsideSources = [];
 		this.outsideGain?.disconnect();
 		this.outsideGain = null;
+		this.mixInput?.disconnect();
+		this.mixDryGain?.disconnect();
+		this.mixMasterGain?.disconnect();
+		this.sewerEchoDelay?.disconnect();
+		this.sewerEchoFilter?.disconnect();
+		this.sewerEchoFeedback?.disconnect();
+		this.sewerEchoGain?.disconnect();
+		this.sewerReverb?.disconnect();
+		this.sewerReverbGain?.disconnect();
+		this.mixInput = null;
+		this.mixDryGain = null;
+		this.mixMasterGain = null;
+		this.sewerEchoDelay = null;
+		this.sewerEchoFilter = null;
+		this.sewerEchoFeedback = null;
+		this.sewerEchoGain = null;
+		this.sewerReverb = null;
+		this.sewerReverbGain = null;
 		void this.context?.close();
 		this.context = null;
 	}
@@ -146,11 +199,13 @@ export class AudioSystem {
 		sample.volume = 0.9;
 		const cleanup = () => {
 			this.activeSamples.delete(sample);
+			this.disconnectSampleFromMix(sample);
 			if (this.speechPlaying === sample) this.speechPlaying = null;
 		};
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.speechPlaying = sample;
 		this.activeSamples.add(sample);
+		this.connectSampleToMix(sample);
 		void sample.play().catch(cleanup);
 	}
 
@@ -160,6 +215,7 @@ export class AudioSystem {
 		sample.pause();
 		sample.currentTime = 0;
 		this.activeSamples.delete(sample);
+		this.disconnectSampleFromMix(sample);
 		this.speechPlaying = null;
 	}
 
@@ -196,7 +252,7 @@ export class AudioSystem {
 		output.ratio.setValueAtTime(5, now);
 		output.attack.setValueAtTime(0.004, now);
 		output.release.setValueAtTime(0.28, now);
-		output.connect(audio.destination);
+		output.connect(this.getAudioOutput(audio));
 
 		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
 		const noise = buffer.getChannelData(0);
@@ -231,6 +287,7 @@ export class AudioSystem {
 
 	playGunshot(weapon: GunWeapon) {
 		if (this.muted) return;
+		this.ensure();
 		const buffer = this.gunshotBuffers[weapon];
 		const audio = this.context;
 		if (buffer && audio) {
@@ -238,7 +295,7 @@ export class AudioSystem {
 			const gain = audio.createGain();
 			source.buffer = buffer;
 			gain.gain.value = weapon === 'g36' ? 0.74 : 0.86;
-			source.connect(gain).connect(audio.destination);
+			source.connect(gain).connect(this.getAudioOutput(audio));
 			source.addEventListener(
 				'ended',
 				() => {
@@ -317,7 +374,7 @@ export class AudioSystem {
 		oscillator.frequency.exponentialRampToValueAtTime(to, now + duration);
 		gain.gain.setValueAtTime(0.07, now);
 		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		oscillator.connect(gain).connect(audio.destination);
+		oscillator.connect(gain).connect(this.getAudioOutput(audio));
 		oscillator.start(now);
 		oscillator.stop(now + duration);
 	}
@@ -365,7 +422,8 @@ export class AudioSystem {
 		filter.Q.setValueAtTime(0.7, now);
 		gain.gain.setValueAtTime(0.035 + strength * 0.055, now);
 		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		source.connect(filter).connect(gain).connect(audio.destination);
+		const output = this.getAudioOutput(audio);
+		source.connect(filter).connect(gain).connect(output);
 		source.start(now);
 
 		const plop = audio.createOscillator();
@@ -375,7 +433,7 @@ export class AudioSystem {
 		plop.frequency.exponentialRampToValueAtTime(72, now + duration * 0.8);
 		plopGain.gain.setValueAtTime(0.025 + strength * 0.025, now);
 		plopGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		plop.connect(plopGain).connect(audio.destination);
+		plop.connect(plopGain).connect(output);
 		plop.start(now);
 		plop.stop(now + duration);
 	}
@@ -407,7 +465,7 @@ export class AudioSystem {
 		output.ratio.value = 3.5;
 		output.attack.value = 0.004;
 		output.release.value = 0.34;
-		output.connect(audio.destination);
+		output.connect(this.getAudioOutput(audio));
 
 		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
 		const noise = buffer.getChannelData(0);
@@ -471,7 +529,7 @@ export class AudioSystem {
 
 		this.outsideGain = audio.createGain();
 		this.outsideGain.gain.value = 0;
-		this.outsideGain.connect(audio.destination);
+		this.outsideGain.connect(this.getAudioOutput(audio));
 
 		const duration = 5;
 		const noiseBuffer = audio.createBuffer(1, audio.sampleRate * duration, audio.sampleRate);
@@ -569,6 +627,156 @@ export class AudioSystem {
 		}
 	}
 
+	private ensureMixGraph() {
+		const audio = this.context;
+		if (!audio || this.mixInput) return;
+
+		this.mixInput = audio.createGain();
+		this.mixDryGain = audio.createGain();
+		this.mixMasterGain = audio.createGain();
+		this.sewerEchoDelay = audio.createDelay(1);
+		this.sewerEchoFilter = audio.createBiquadFilter();
+		this.sewerEchoFeedback = audio.createGain();
+		this.sewerEchoGain = audio.createGain();
+		this.sewerReverb = audio.createConvolver();
+		this.sewerReverbGain = audio.createGain();
+
+		this.mixDryGain.gain.value = 1;
+		this.mixMasterGain.gain.value = this.muted ? 0 : 1;
+		this.sewerEchoDelay.delayTime.value = 0.215;
+		this.sewerEchoFilter.type = 'lowpass';
+		this.sewerEchoFilter.frequency.value = 1850;
+		this.sewerEchoFilter.Q.value = 0.55;
+		this.sewerEchoFeedback.gain.value = 0;
+		this.sewerEchoGain.gain.value = 0;
+		this.sewerReverb.buffer = this.createSewerImpulse(audio);
+		this.sewerReverbGain.gain.value = 0;
+
+		this.mixInput.connect(this.mixDryGain).connect(this.mixMasterGain);
+		this.mixInput.connect(this.sewerEchoDelay);
+		this.sewerEchoDelay.connect(this.sewerEchoFilter);
+		this.sewerEchoFilter.connect(this.sewerEchoGain).connect(this.mixMasterGain);
+		this.sewerEchoFilter.connect(this.sewerEchoFeedback).connect(this.sewerEchoDelay);
+		this.mixInput
+			.connect(this.sewerReverb)
+			.connect(this.sewerReverbGain)
+			.connect(this.mixMasterGain);
+		this.mixMasterGain.connect(audio.destination);
+		this.syncSewerMix(0);
+	}
+
+	private createSewerImpulse(audio: AudioContext) {
+		const duration = 1.85;
+		const buffer = audio.createBuffer(2, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+			const data = buffer.getChannelData(channel);
+			for (let index = 0; index < data.length; index += 1) {
+				const progress = index / data.length;
+				const earlyReflection =
+					index % Math.max(1, Math.round(audio.sampleRate * 0.037)) < 3 ? 0.24 : 0;
+				data[index] =
+					((Math.random() * 2 - 1) * 0.78 + earlyReflection) * Math.pow(1 - progress, 2.35);
+			}
+		}
+		return buffer;
+	}
+
+	private syncSewerMix(duration: number) {
+		const audio = this.context;
+		if (
+			!audio ||
+			!this.mixDryGain ||
+			!this.sewerEchoFeedback ||
+			!this.sewerEchoGain ||
+			!this.sewerReverbGain
+		) {
+			return;
+		}
+		const now = audio.currentTime;
+		this.rampGain(this.mixDryGain.gain, this.sewerActive ? 0.88 : 1, now, duration);
+		this.rampGain(this.sewerEchoFeedback.gain, this.sewerActive ? 0.31 : 0, now, duration);
+		this.rampGain(this.sewerEchoGain.gain, this.sewerActive ? 0.3 : 0, now, duration);
+		this.rampGain(this.sewerReverbGain.gain, this.sewerActive ? 0.24 : 0, now, duration);
+	}
+
+	private syncMasterGain(duration: number) {
+		const audio = this.context;
+		const gain = this.mixMasterGain;
+		if (!audio || !gain) return;
+		this.rampGain(gain.gain, this.muted ? 0 : 1, audio.currentTime, duration);
+	}
+
+	private rampGain(parameter: AudioParam, target: number, now: number, duration: number) {
+		parameter.cancelScheduledValues(now);
+		parameter.setValueAtTime(parameter.value, now);
+		if (duration <= 0) parameter.setValueAtTime(target, now);
+		else parameter.linearRampToValueAtTime(target, now + duration);
+	}
+
+	private getAudioOutput(audio: AudioContext): AudioNode {
+		this.ensureMixGraph();
+		return this.mixInput ?? audio.destination;
+	}
+
+	private connectSampleToMix(sample: HTMLAudioElement) {
+		this.ensure();
+		const audio = this.context;
+		if (!audio || this.mediaSources.has(sample)) return;
+		try {
+			const source = audio.createMediaElementSource(sample);
+			source.connect(this.getAudioOutput(audio));
+			this.mediaSources.set(sample, source);
+		} catch {
+			// If a browser rejects media-element routing, the sample still plays through its native output.
+		}
+	}
+
+	private disconnectSampleFromMix(sample: HTMLAudioElement) {
+		const source = this.mediaSources.get(sample);
+		if (!source) return;
+		source.disconnect();
+		this.mediaSources.delete(sample);
+	}
+
+	private playSewerDrip() {
+		const audio = this.context;
+		if (!audio || this.muted || !this.sewerActive) return;
+		const output = this.getAudioOutput(audio);
+		const now = audio.currentTime;
+		const dripCount = Math.random() > 0.74 ? 2 : 1;
+		const pan = audio.createStereoPanner();
+		pan.pan.value = -0.85 + Math.random() * 1.7;
+		pan.connect(output);
+
+		for (let index = 0; index < dripCount; index += 1) {
+			const start = now + index * (0.09 + Math.random() * 0.07);
+			const duration = 0.16 + Math.random() * 0.08;
+			const oscillator = audio.createOscillator();
+			const gain = audio.createGain();
+			oscillator.type = 'sine';
+			oscillator.frequency.setValueAtTime(1150 + Math.random() * 760, start);
+			oscillator.frequency.exponentialRampToValueAtTime(
+				280 + Math.random() * 180,
+				start + duration
+			);
+			gain.gain.setValueAtTime(0.0001, start);
+			gain.gain.exponentialRampToValueAtTime(0.055 + Math.random() * 0.035, start + 0.008);
+			gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+			oscillator.connect(gain).connect(pan);
+			oscillator.start(start);
+			oscillator.stop(start + duration);
+			oscillator.addEventListener(
+				'ended',
+				() => {
+					oscillator.disconnect();
+					gain.disconnect();
+					if (index === dripCount - 1) pan.disconnect();
+				},
+				{ once: true }
+			);
+		}
+	}
+
 	private createSample(path: string) {
 		const sample = new Audio(path);
 		sample.preload = 'auto';
@@ -589,9 +797,13 @@ export class AudioSystem {
 		if (this.muted) return;
 		const sample = source.cloneNode(true) as HTMLAudioElement;
 		configure(sample);
-		const cleanup = () => this.activeSamples.delete(sample);
+		const cleanup = () => {
+			this.activeSamples.delete(sample);
+			this.disconnectSampleFromMix(sample);
+		};
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.activeSamples.add(sample);
+		this.connectSampleToMix(sample);
 		void sample.play().catch(cleanup);
 	}
 
@@ -612,12 +824,14 @@ export class AudioSystem {
 		sample.volume = 0.9;
 		const cleanup = () => {
 			this.activeSamples.delete(sample);
+			this.disconnectSampleFromMix(sample);
 			if (this.poopieMonsterVoicePlaying === sample) this.poopieMonsterVoicePlaying = null;
 			this.playNextPoopieMonsterVoice();
 		};
 		sample.addEventListener('ended', cleanup, { once: true });
 		this.poopieMonsterVoicePlaying = sample;
 		this.activeSamples.add(sample);
+		this.connectSampleToMix(sample);
 		void sample.play().catch(cleanup);
 	}
 
@@ -628,6 +842,7 @@ export class AudioSystem {
 		sample.pause();
 		sample.currentTime = 0;
 		this.activeSamples.delete(sample);
+		this.disconnectSampleFromMix(sample);
 		this.poopieMonsterVoicePlaying = null;
 	}
 
@@ -656,7 +871,8 @@ export class AudioSystem {
 		filter.Q.setValueAtTime(1.4, now);
 		noiseGain.gain.setValueAtTime(profile.gain, now);
 		noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + profile.duration);
-		source.connect(filter).connect(noiseGain).connect(audio.destination);
+		const output = this.getAudioOutput(audio);
+		source.connect(filter).connect(noiseGain).connect(output);
 		source.start(now);
 
 		profile.tones.forEach((frequency, index) => {
@@ -671,7 +887,7 @@ export class AudioSystem {
 			);
 			toneGain.gain.setValueAtTime(profile.gain / Math.max(2, profile.tones.length), start);
 			toneGain.gain.exponentialRampToValueAtTime(0.0001, start + profile.duration);
-			oscillator.connect(toneGain).connect(audio.destination);
+			oscillator.connect(toneGain).connect(output);
 			oscillator.start(start);
 			oscillator.stop(start + profile.duration);
 		});
