@@ -447,6 +447,7 @@ export class StampKonijnGame {
 	private renderer: THREE.WebGLRenderer;
 	private timer = new THREE.Timer();
 	private loader = new GLTFLoader();
+	private textureLoader = new THREE.TextureLoader();
 	private worldLoader = new WorldLoader();
 	private player = new THREE.Group();
 	private rabbitTumble = new THREE.Group();
@@ -613,6 +614,9 @@ export class StampKonijnGame {
 	private sewerIntroPlayed = false;
 	private sewerIntroAudioPlayed = false;
 	private sewerIntroTime = 0;
+	private hiddenAreaWarmupStarted = false;
+	private hiddenTextureLoads: Promise<void>[] = [];
+	private destroyed = false;
 	private audio: AudioSystem;
 	private keyDownHandler: (event: KeyboardEvent) => void;
 	private keyUpHandler: (event: KeyboardEvent) => void;
@@ -673,6 +677,7 @@ export class StampKonijnGame {
 			this.animate();
 			this.emitHud(true);
 			this.events.emit('ready', undefined);
+			this.scheduleHiddenAreaWarmup();
 		} catch (error) {
 			console.error(error);
 			this.events.emit('error', {
@@ -829,6 +834,7 @@ export class StampKonijnGame {
 	}
 
 	destroy() {
+		this.destroyed = true;
 		cancelAnimationFrame(this.frame);
 		this.events.clear();
 		this.timer.dispose();
@@ -2660,11 +2666,17 @@ export class StampKonijnGame {
 		const picture = new THREE.Mesh(new THREE.PlaneGeometry(1.36, 1.7), pictureMaterial);
 		picture.position.z = 0.08;
 		group.add(picture);
-		new THREE.TextureLoader().load(source, (texture) => {
-			texture.colorSpace = THREE.SRGBColorSpace;
-			pictureMaterial.map = texture;
-			pictureMaterial.needsUpdate = true;
-		});
+		const textureLoad = this.textureLoader
+			.loadAsync(source)
+			.then((texture) => {
+				texture.colorSpace = THREE.SRGBColorSpace;
+				pictureMaterial.map = texture;
+				pictureMaterial.needsUpdate = true;
+			})
+			.catch((error) => {
+				console.warn(`Could not load artwork texture '${source}'.`, error);
+			});
+		if (source.includes('/artwork/toilet/')) this.hiddenTextureLoads.push(textureLoad);
 		return group;
 	}
 
@@ -2676,11 +2688,41 @@ export class StampKonijnGame {
 			scale: number;
 			rotation: number;
 		}> = [
-			{ source: '/images/artwork/3.webp', x: -13.25, y: 1.48, scale: 0.27, rotation: -0.08 },
-			{ source: '/images/artwork/7.webp', x: -12.48, y: 1.65, scale: 0.31, rotation: 0.05 },
-			{ source: '/images/artwork/14.webp', x: -11.62, y: 1.45, scale: 0.26, rotation: -0.04 },
-			{ source: '/images/artwork/18.webp', x: -9.78, y: 1.62, scale: 0.3, rotation: 0.08 },
-			{ source: '/images/artwork/24.webp', x: -9.02, y: 1.46, scale: 0.25, rotation: -0.06 }
+			{
+				source: '/images/artwork/toilet/3.webp',
+				x: -13.25,
+				y: 1.48,
+				scale: 0.27,
+				rotation: -0.08
+			},
+			{
+				source: '/images/artwork/toilet/7.webp',
+				x: -12.48,
+				y: 1.65,
+				scale: 0.31,
+				rotation: 0.05
+			},
+			{
+				source: '/images/artwork/toilet/14.webp',
+				x: -11.62,
+				y: 1.45,
+				scale: 0.26,
+				rotation: -0.04
+			},
+			{
+				source: '/images/artwork/toilet/18.webp',
+				x: -9.78,
+				y: 1.62,
+				scale: 0.3,
+				rotation: 0.08
+			},
+			{
+				source: '/images/artwork/toilet/24.webp',
+				x: -9.02,
+				y: 1.46,
+				scale: 0.25,
+				rotation: -0.06
+			}
 		];
 		for (const art of rabbitArt) {
 			const frame = this.makeArtwork(art.source);
@@ -2690,7 +2732,7 @@ export class StampKonijnGame {
 			parent.add(frame);
 		}
 
-		const sideArt = this.makeArtwork('/images/artwork/29.webp');
+		const sideArt = this.makeArtwork('/images/artwork/toilet/29.webp');
 		sideArt.position.set(LEFT_ROOMS_MIN_X + 0.18, 1.34, -3.18);
 		sideArt.scale.setScalar(0.3);
 		sideArt.rotation.set(0, Math.PI / 2, -0.05);
@@ -5353,6 +5395,107 @@ export class StampKonijnGame {
 		return this.muzzleSmokeTexture;
 	}
 
+	private scheduleHiddenAreaWarmup() {
+		if (this.hiddenAreaWarmupStarted) return;
+		this.hiddenAreaWarmupStarted = true;
+		void this.prepareHiddenAreas();
+	}
+
+	private async prepareHiddenAreas() {
+		await waitForWarmupSlot();
+		if (this.destroyed) return;
+		void this.audio.preloadHiddenAreaAudio();
+
+		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom');
+		const bathroomBreakables = this.breakables
+			.filter((breakable) => {
+				const position = breakable.group.position;
+				return (
+					breakable.biome === 'ground' &&
+					position.x >= LEFT_ROOMS_MIN_X &&
+					position.x <= LEFT_ROOMS_MAX_X &&
+					position.z >= BACK_WALL_Z &&
+					position.z < BATHROOM_MAX_Z
+				);
+			})
+			.map((breakable) => breakable.group);
+		const sewerBreakables = this.breakables
+			.filter((breakable) => breakable.biome === 'sewer')
+			.map((breakable) => breakable.group);
+		const remainingRoomRoots = [
+			this.kitchenInteriorRoot,
+			this.leftRoomInteriorRoots.get('stairs'),
+			this.leftRoomInteriorRoots.get('bedroom'),
+			this.basementRoot,
+			this.upstairsRoot,
+			this.outsideAtmosphere,
+			this.breakablesRoot,
+			this.player
+		].filter((root): root is THREE.Object3D => Boolean(root));
+		const stages: Array<{ label: string; roots: THREE.Object3D[] }> = [
+			{
+				label: 'toilet',
+				roots: [...(bathroomRoot ? [bathroomRoot] : []), ...bathroomBreakables]
+			},
+			{ label: 'sewer', roots: [this.sewerRoot, ...sewerBreakables] },
+			{ label: 'remaining hidden areas', roots: remainingRoomRoots }
+		];
+		const textureLoads = Promise.allSettled(this.hiddenTextureLoads);
+
+		for (const stage of stages) {
+			await waitForWarmupSlot();
+			if (this.destroyed) return;
+			if (stage.label === 'toilet') await textureLoads;
+			if (this.destroyed) return;
+			await this.warmHiddenArea(stage.label, stage.roots);
+		}
+	}
+
+	private async warmHiddenArea(label: string, roots: THREE.Object3D[]) {
+		const warmupRoot = new THREE.Group();
+		for (const root of roots) {
+			const clone = root.clone(true);
+			clone.traverse((child) => {
+				child.visible = true;
+			});
+			warmupRoot.add(clone);
+		}
+
+		try {
+			await this.renderer.compileAsync(warmupRoot, this.camera, this.scene);
+			if (!this.destroyed) this.initializeObjectTextures(roots);
+		} catch (error) {
+			console.warn(`${label} shader warmup failed; the area will compile on entry.`, error);
+		} finally {
+			warmupRoot.clear();
+		}
+	}
+
+	private initializeObjectTextures(roots: THREE.Object3D[]) {
+		const textures = new Set<THREE.Texture>();
+		for (const root of roots) {
+			root.traverse((child) => {
+				if (
+					!(
+						child instanceof THREE.Mesh ||
+						child instanceof THREE.Sprite ||
+						child instanceof THREE.Line ||
+						child instanceof THREE.Points
+					)
+				) {
+					return;
+				}
+				const materials = Array.isArray(child.material) ? child.material : [child.material];
+				for (const childMaterial of materials) {
+					for (const value of Object.values(childMaterial)) {
+						if (value instanceof THREE.Texture) textures.add(value);
+					}
+				}
+			});
+		}
+		for (const texture of textures) this.renderer.initTexture(texture);
+	}
+
 	private async prepareWeaponEffects() {
 		if (this.weaponWarmupRoot) return;
 
@@ -7139,4 +7282,14 @@ export class StampKonijnGame {
 		this.lastHudSignature = signature;
 		this.events.emit('hud', state);
 	}
+}
+
+function waitForWarmupSlot() {
+	return new Promise<void>((resolve) => {
+		if (typeof window.requestIdleCallback === 'function') {
+			window.requestIdleCallback(() => resolve(), { timeout: 1200 });
+			return;
+		}
+		window.setTimeout(resolve, 120);
+	});
 }

@@ -40,8 +40,9 @@ export class AudioSystem {
 	private outsideSources: AudioScheduledSourceNode[] = [];
 	private outsideBirdCooldown = 1.2;
 	private sewerActive = false;
-	private sewerAmbience: HTMLAudioElement | null = null;
-	private sewerAmbienceSource: MediaElementAudioSourceNode | null = null;
+	private sewerAmbienceBuffer: AudioBuffer | null = null;
+	private sewerAmbienceLoad: Promise<void> | null = null;
+	private sewerAmbienceSource: AudioBufferSourceNode | null = null;
 	private sewerAmbienceGain: GainNode | null = null;
 
 	private readonly impactSample = this.createSample(AUDIO_PATHS.impact);
@@ -51,7 +52,6 @@ export class AudioSystem {
 	private readonly weaponChangeSample = this.createSample(AUDIO_PATHS.weaponChange);
 	private readonly vaseBreakSample = this.createSample(AUDIO_PATHS.vaseBreak);
 	private readonly chairBreakSample = this.createSample(AUDIO_PATHS.chairBreak);
-	private readonly sewerAmbienceSample = this.createSample(AUDIO_PATHS.sewerAmbience);
 	private readonly poopieMonsterSpeechSample = this.createSample(AUDIO_PATHS.poopieMonsterSpeech);
 	private readonly poopieMonsterEatSample = this.createSample(AUDIO_PATHS.poopieMonsterEat);
 	private readonly poopieMonsterFriendSample = this.createSample(AUDIO_PATHS.poopieMonsterFriend);
@@ -120,6 +120,42 @@ export class AudioSystem {
 		}
 	}
 
+	preloadHiddenAreaAudio() {
+		if (this.sewerAmbienceBuffer) return Promise.resolve();
+		if (this.sewerAmbienceLoad) return this.sewerAmbienceLoad;
+
+		this.context ??= new AudioContext();
+		const audio = this.context;
+		this.ensureMixGraph();
+		for (const sample of [
+			this.poopieMonsterSpeechSample,
+			this.poopieMonsterEatSample,
+			this.poopieMonsterFriendSample,
+			this.poopieMonsterHitSample,
+			this.poopieMonsterDeathSample,
+			this.poopieMonsterDeathThudSample
+		]) {
+			sample.load();
+		}
+
+		this.sewerAmbienceLoad = fetch(AUDIO_PATHS.sewerAmbience)
+			.then((response) => {
+				if (!response.ok) {
+					throw new Error(`Could not preload ${AUDIO_PATHS.sewerAmbience}: ${response.status}`);
+				}
+				return response.arrayBuffer();
+			})
+			.then((data) => audio.decodeAudioData(data))
+			.then((buffer) => {
+				if (this.context === audio) this.sewerAmbienceBuffer = buffer;
+			})
+			.catch((error) => {
+				console.warn('Sewer ambience warmup failed; audio will retry on entry.', error);
+				this.sewerAmbienceLoad = null;
+			});
+		return this.sewerAmbienceLoad;
+	}
+
 	update(delta: number) {
 		this.swimSoundCooldown = Math.max(0, this.swimSoundCooldown - delta);
 		if (!this.outsideActive || this.muted || !this.outsideGain) return;
@@ -160,10 +196,15 @@ export class AudioSystem {
 		this.outsideSources = [];
 		this.outsideGain?.disconnect();
 		this.outsideGain = null;
-		this.sewerAmbience?.pause();
+		try {
+			this.sewerAmbienceSource?.stop();
+		} catch {
+			// A source can already have ended while the game is being torn down.
+		}
 		this.sewerAmbienceSource?.disconnect();
 		this.sewerAmbienceGain?.disconnect();
-		this.sewerAmbience = null;
+		this.sewerAmbienceBuffer = null;
+		this.sewerAmbienceLoad = null;
 		this.sewerAmbienceSource = null;
 		this.sewerAmbienceGain = null;
 		this.mixInput?.disconnect();
@@ -619,28 +660,34 @@ export class AudioSystem {
 
 	private ensureSewerAmbience() {
 		const audio = this.context;
-		if (!audio || this.sewerAmbience) return;
+		if (!audio) return;
+		if (!this.sewerAmbienceGain) {
+			this.sewerAmbienceGain = audio.createGain();
+			this.sewerAmbienceGain.gain.value = 0;
+			this.sewerAmbienceGain.connect(this.getAudioOutput(audio));
+			this.syncSewerAmbienceGain(0);
+		}
+		if (this.sewerAmbienceSource) return;
+		if (!this.sewerAmbienceBuffer) {
+			void this.preloadHiddenAreaAudio().then(() => {
+				if (this.sewerActive && this.sewerAmbienceBuffer) this.ensureSewerAmbience();
+			});
+			return;
+		}
 
-		const sample = this.sewerAmbienceSample.cloneNode(true) as HTMLAudioElement;
-		const source = audio.createMediaElementSource(sample);
-		const gain = audio.createGain();
-		sample.loop = true;
-		sample.volume = 1;
-		source.connect(gain).connect(this.getAudioOutput(audio));
-		gain.gain.value = 0;
-		this.sewerAmbience = sample;
+		const source = audio.createBufferSource();
+		source.buffer = this.sewerAmbienceBuffer;
+		source.loop = true;
+		source.connect(this.sewerAmbienceGain);
+		source.addEventListener(
+			'ended',
+			() => {
+				if (this.sewerAmbienceSource === source) this.sewerAmbienceSource = null;
+			},
+			{ once: true }
+		);
 		this.sewerAmbienceSource = source;
-		this.sewerAmbienceGain = gain;
-		this.syncSewerAmbienceGain(0);
-
-		void sample.play().catch(() => {
-			source.disconnect();
-			gain.disconnect();
-			if (this.sewerAmbience !== sample) return;
-			this.sewerAmbience = null;
-			this.sewerAmbienceSource = null;
-			this.sewerAmbienceGain = null;
-		});
+		source.start();
 	}
 
 	private syncSewerAmbienceGain(duration: number) {
