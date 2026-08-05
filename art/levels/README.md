@@ -6,7 +6,8 @@ The game loads its static room geometry, placement, zone roots and gameplay surf
 
 ## Blender setup
 
-1. Put each unlockable area below an Empty used as its zone root.
+1. Put each unlockable area below an Empty used as its zone root. Keep exterior walls under an
+   always-visible `house_shell` zone so hiding an undiscovered room never removes the facade.
 2. Give that Empty the custom property `zone_id`, for example `living_room`.
 3. Give it a `biome` property: `ground`, `outside`, `upstairs`, `basement` or `sewer`.
 4. An initially hidden zone may have `enabled_by`, containing the gameplay unlock id.

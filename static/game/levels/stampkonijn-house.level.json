@@ -4,6 +4,11 @@
   "model": "./stampkonijn-house.glb",
   "zones": [
     {
+      "id": "house_shell",
+      "node": "zone_house_shell",
+      "biome": "ground"
+    },
+    {
       "id": "living_room",
       "node": "zone_living_room",
       "biome": "ground"
@@ -157,7 +162,7 @@
     {
       "id": "bathroom_outer_wall",
       "node": "bathroom_outer_wall",
-      "zone": "bathroom",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
@@ -169,7 +174,7 @@
     {
       "id": "stairs_outer_wall",
       "node": "stairs_outer_wall",
-      "zone": "stairs",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
@@ -181,13 +186,13 @@
     {
       "id": "bedroom_outer_wall",
       "node": "bedroom_outer_wall",
-      "zone": "bedroom",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "bathroom_back_wall",
       "node": "bathroom_back_wall",
-      "zone": "bathroom",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
@@ -355,25 +360,25 @@
     {
       "id": "kitchen_outer_wall",
       "node": "kitchen_outer_wall",
-      "zone": "kitchen",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "kitchen_back_wall_left",
       "node": "kitchen_back_wall_left",
-      "zone": "kitchen",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "kitchen_back_wall_right",
       "node": "kitchen_back_wall_right",
-      "zone": "kitchen",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "kitchen_back_wall_header",
       "node": "kitchen_back_wall_header",
-      "zone": "kitchen",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
@@ -421,19 +426,19 @@
     {
       "id": "upstairs_left_wall",
       "node": "upstairs_left_wall",
-      "zone": "upstairs",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "upstairs_right_wall",
       "node": "upstairs_right_wall",
-      "zone": "upstairs",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {
       "id": "upstairs_back_wall",
       "node": "upstairs_back_wall",
-      "zone": "upstairs",
+      "zone": "house_shell",
       "shape": "mesh"
     },
     {

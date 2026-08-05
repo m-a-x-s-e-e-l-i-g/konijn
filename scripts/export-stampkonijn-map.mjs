@@ -391,7 +391,7 @@ function makeBathroomFloorGeometry(width, depth, centerZ) {
 	return new THREE.ShapeGeometry(floorShape);
 }
 
-function addLeftRooms(bathroom, stairs, bedroom) {
+function addLeftRooms(houseShell, bathroom, stairs, bedroom) {
 	for (const [parent, id, minZ, maxZ, color, impact] of [
 		[bathroom, 'bathroom', BACK_WALL_Z, BATHROOM_MAX_Z, 0xb9d1cf, 'concrete'],
 		[stairs, 'stairs', BATHROOM_MAX_Z, BEDROOM_MIN_Z, 0x9a704e, 'wood'],
@@ -414,7 +414,7 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 			impact
 		);
 		addCollider(
-			parent,
+			houseShell,
 			box(
 				`${id}_outer_wall`,
 				[0.18, ROOM_HEIGHT, depth],
@@ -426,7 +426,7 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 	}
 
 	addCollider(
-		bathroom,
+		houseShell,
 		box(
 			'bathroom_back_wall',
 			[LEFT_ROOMS_WIDTH, ROOM_HEIGHT, 0.18],
@@ -609,7 +609,7 @@ function addLeftRooms(bathroom, stairs, bedroom) {
 	);
 }
 
-function addKitchen(kitchen) {
+function addKitchen(houseShell, kitchen) {
 	addCollider(
 		kitchen,
 		mesh(
@@ -647,7 +647,7 @@ function addKitchen(kitchen) {
 	}
 
 	addCollider(
-		kitchen,
+		houseShell,
 		box(
 			'kitchen_outer_wall',
 			[0.18, ROOM_HEIGHT, ROOM_DEPTH],
@@ -679,7 +679,7 @@ function addKitchen(kitchen) {
 			]
 		]
 	]) {
-		addCollider(kitchen, box(name, size, position, 0xe7d6bd), 'wall');
+		addCollider(houseShell, box(name, size, position, 0xe7d6bd), 'wall');
 	}
 
 	for (const [index, x] of [8.15, 9.45, 10.75].entries()) {
@@ -719,7 +719,7 @@ function addKitchen(kitchen) {
 	);
 }
 
-function addUpstairs(upstairs) {
+function addUpstairs(houseShell, upstairs) {
 	const upstairsWidth = UPSTAIRS_MAX_X - UPSTAIRS_MIN_X;
 	const stairwellWidth = UPSTAIRS_STAIRWELL_MAX_X - UPSTAIRS_STAIRWELL_MIN_X;
 	const stairwellSideDepth = ROOM_DEPTH / 2 - UPSTAIRS_STAIRWELL_HALF_Z;
@@ -792,7 +792,7 @@ function addUpstairs(upstairs) {
 			0x383d38
 		]
 	]) {
-		addCollider(upstairs, box(name, size, position, color), 'wall');
+		addCollider(houseShell, box(name, size, position, color), 'wall');
 	}
 	for (const [sideIndex, z] of [-UPSTAIRS_STAIRWELL_HALF_Z, UPSTAIRS_STAIRWELL_HALF_Z].entries()) {
 		addStatic(
@@ -1483,6 +1483,7 @@ function addGarden(garden) {
 	);
 }
 
+const houseShell = zone('house_shell', 'ground');
 const living = zone('living_room', 'ground');
 const bathroom = zone('bathroom', 'ground', 'left_door_bathroom');
 const stairs = zone('stairs', 'ground', 'left_door_stairs');
@@ -1494,10 +1495,10 @@ const basement = zone('basement', 'basement', 'kitchen_hatch');
 const sewer = zone('sewer', 'sewer', 'toilet');
 
 addLivingRoom(living);
-addLeftRooms(bathroom, stairs, bedroom);
-addKitchen(kitchen);
+addLeftRooms(houseShell, bathroom, stairs, bedroom);
+addKitchen(houseShell, kitchen);
 addGarden(garden);
-addUpstairs(upstairs);
+addUpstairs(houseShell, upstairs);
 addBasement(basement);
 addSewer(sewer);
 
