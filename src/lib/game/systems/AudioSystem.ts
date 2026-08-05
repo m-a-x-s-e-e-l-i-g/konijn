@@ -443,83 +443,87 @@ export class AudioSystem {
 		const firstIndex = Math.floor(Math.random() * this.swimSamples.length);
 		const secondIndex = (firstIndex + 1 + Math.floor(Math.random() * 3)) % this.swimSamples.length;
 		this.playSample(this.swimSamples[firstIndex], (sample) => {
-			sample.volume = 0.82;
+			sample.volume = 0.92;
 			sample.preservesPitch = false;
-			sample.playbackRate = 0.86 + Math.random() * 0.08;
+			sample.playbackRate = 1.04 + Math.random() * 0.1;
 		});
 		this.playSample(this.swimSamples[secondIndex], (sample) => {
-			sample.volume = 0.58;
+			sample.volume = 0.68;
 			sample.preservesPitch = false;
-			sample.playbackRate = 0.74 + Math.random() * 0.08;
+			sample.playbackRate = 1.16 + Math.random() * 0.12;
+		});
+		const waterImpacts = this.bulletImpactSamples.water;
+		this.playSample(waterImpacts[Math.floor(Math.random() * waterImpacts.length)], (sample) => {
+			sample.volume = 0.78;
+			sample.preservesPitch = false;
+			sample.playbackRate = 0.9 + Math.random() * 0.14;
 		});
 
 		this.ensure();
 		const audio = this.context;
 		if (!audio) return;
-		const strength = clamp(impactSpeed / 16, 0.72, 1.35);
+		const strength = clamp(impactSpeed / 16, 0.85, 1.4);
 		const now = audio.currentTime;
-		const duration = 0.62 + strength * 0.16;
+		const duration = 0.78 + strength * 0.15;
 		const output = audio.createDynamicsCompressor();
-		output.threshold.value = -16;
-		output.knee.value = 10;
-		output.ratio.value = 3.5;
-		output.attack.value = 0.004;
-		output.release.value = 0.34;
+		output.threshold.value = -14;
+		output.knee.value = 8;
+		output.ratio.value = 4.2;
+		output.attack.value = 0.002;
+		output.release.value = 0.26;
 		output.connect(this.getAudioOutput(audio));
 
-		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
-		const noise = buffer.getChannelData(0);
-		for (let index = 0; index < noise.length; index += 1) {
-			const progress = index / noise.length;
-			const attack = Math.min(1, progress * 34);
-			const body = Math.pow(1 - progress, 1.65);
-			noise[index] = (Math.random() * 2 - 1) * attack * body;
+		const buffer = audio.createBuffer(2, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+			const noise = buffer.getChannelData(channel);
+			for (let index = 0; index < noise.length; index += 1) {
+				const progress = index / noise.length;
+				const attack = Math.min(1, progress * 75);
+				const initialCrash = Math.exp(-progress * 6.5);
+				const fallingSpray = Math.pow(1 - progress, 1.05) * 0.46;
+				noise[index] = (Math.random() * 2 - 1) * attack * (initialCrash + fallingSpray);
+			}
 		}
 
-		const crash = audio.createBufferSource();
-		const splashFilter = audio.createBiquadFilter();
-		const splashGain = audio.createGain();
-		const bodyFilter = audio.createBiquadFilter();
-		const bodyGain = audio.createGain();
-		crash.buffer = buffer;
-		splashFilter.type = 'bandpass';
-		splashFilter.frequency.setValueAtTime(980 + strength * 210, now);
-		splashFilter.frequency.exponentialRampToValueAtTime(310, now + duration);
-		splashFilter.Q.value = 0.55;
-		splashGain.gain.setValueAtTime(0.15 * strength, now);
-		splashGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		bodyFilter.type = 'lowpass';
-		bodyFilter.frequency.setValueAtTime(420, now);
-		bodyFilter.frequency.exponentialRampToValueAtTime(95, now + duration);
-		bodyGain.gain.setValueAtTime(0.12 * strength, now);
-		bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		crash.connect(splashFilter).connect(splashGain).connect(output);
-		crash.connect(bodyFilter).connect(bodyGain).connect(output);
-		crash.start(now);
-
-		const sub = audio.createOscillator();
-		const subGain = audio.createGain();
-		sub.type = 'sine';
-		sub.frequency.setValueAtTime(118, now);
-		sub.frequency.exponentialRampToValueAtTime(38, now + duration * 0.72);
-		subGain.gain.setValueAtTime(0.11 * strength, now);
-		subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-		sub.connect(subGain).connect(output);
-		sub.start(now);
-		sub.stop(now + duration);
-
-		for (let index = 0; index < 3; index += 1) {
-			const start = now + 0.08 + index * 0.075;
-			const bubble = audio.createOscillator();
-			const bubbleGain = audio.createGain();
-			bubble.type = 'sine';
-			bubble.frequency.setValueAtTime(170 - index * 24, start);
-			bubble.frequency.exponentialRampToValueAtTime(62 - index * 7, start + 0.18);
-			bubbleGain.gain.setValueAtTime(0.045 * strength, start);
-			bubbleGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
-			bubble.connect(bubbleGain).connect(output);
-			bubble.start(start);
-			bubble.stop(start + 0.2);
+		const layers: Array<{
+			type: BiquadFilterType;
+			from: number;
+			to: number;
+			gain: number;
+			delay: number;
+			pan: number;
+		}> = [
+			{ type: 'highpass', from: 3400, to: 1050, gain: 0.24, delay: 0, pan: -0.28 },
+			{ type: 'bandpass', from: 1550, to: 430, gain: 0.22, delay: 0.018, pan: 0.3 },
+			{ type: 'lowpass', from: 920, to: 260, gain: 0.14, delay: 0.045, pan: 0 }
+		];
+		for (const layer of layers) {
+			const source = audio.createBufferSource();
+			const filter = audio.createBiquadFilter();
+			const gain = audio.createGain();
+			const pan = audio.createStereoPanner();
+			const start = now + layer.delay;
+			source.buffer = buffer;
+			filter.type = layer.type;
+			filter.frequency.setValueAtTime(layer.from + strength * 180, start);
+			filter.frequency.exponentialRampToValueAtTime(layer.to, start + duration);
+			filter.Q.value = layer.type === 'bandpass' ? 0.65 : 0.35;
+			gain.gain.setValueAtTime(0.0001, start);
+			gain.gain.exponentialRampToValueAtTime(layer.gain * strength, start + 0.008);
+			gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+			pan.pan.value = layer.pan;
+			source.connect(filter).connect(gain).connect(pan).connect(output);
+			source.start(start);
+			source.addEventListener(
+				'ended',
+				() => {
+					source.disconnect();
+					filter.disconnect();
+					gain.disconnect();
+					pan.disconnect();
+				},
+				{ once: true }
+			);
 		}
 	}
 
