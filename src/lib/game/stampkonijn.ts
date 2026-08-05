@@ -4603,10 +4603,10 @@ export class StampKonijnGame {
 	}
 
 	private performPoolStamp(speed: number) {
-		this.spawnPoolSplash(speed, 1.65);
+		this.spawnPoolSplash(speed, 2.25, true);
 		this.rabbitInPoolWater = false;
 		this.squash = 1;
-		this.cameraShake = Math.max(this.cameraShake, 0.62);
+		this.cameraShake = Math.max(this.cameraShake, 0.95);
 	}
 
 	private resolveBreakables(delta: number) {
@@ -6233,10 +6233,14 @@ export class StampKonijnGame {
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });
 	}
 
-	private spawnPoolSplash(impactSpeed: number, strengthScale: number) {
+	private spawnPoolSplash(impactSpeed: number, strengthScale: number, bigSplash = false) {
 		const pool = this.poolBreakable;
 		if (!pool || pool.broken || this.poolSplashCooldown > 0) return;
-		const intensity = THREE.MathUtils.clamp((impactSpeed / 10) * strengthScale, 0.32, 1.35);
+		const intensity = THREE.MathUtils.clamp(
+			(impactSpeed / 10) * strengthScale,
+			0.32,
+			bigSplash ? 2.35 : 1.35
+		);
 		const surfaceY = pool.group.position.y + POOL_WATER_Y;
 		const offset = new THREE.Vector2(
 			this.player.position.x - pool.group.position.x,
@@ -6246,15 +6250,19 @@ export class StampKonijnGame {
 		const splashX = pool.group.position.x + offset.x;
 		const splashZ = pool.group.position.z + offset.y;
 
-		const rippleCount = this.reducedMotion ? 1 : 2;
+		const rippleCount = bigSplash ? (this.reducedMotion ? 2 : 4) : this.reducedMotion ? 1 : 2;
 		for (let index = 0; index < rippleCount; index += 1) {
-			const maxLife = 0.48 + index * 0.14;
+			const maxLife = (bigSplash ? 0.68 : 0.48) + index * (bigSplash ? 0.12 : 0.14);
 			const ripple = new THREE.Mesh(
-				new THREE.RingGeometry(0.68, 0.82, 40),
+				new THREE.RingGeometry(
+					bigSplash ? 0.82 + index * 0.06 : 0.68,
+					bigSplash ? 1.02 + index * 0.07 : 0.82,
+					40
+				),
 				new THREE.MeshBasicMaterial({
 					color: index === 0 ? 0xc9f5f4 : 0x71ddeb,
 					transparent: true,
-					opacity: 0.7 - index * 0.16,
+					opacity: bigSplash ? Math.max(0.28, 0.82 - index * 0.14) : 0.7 - index * 0.16,
 					side: THREE.DoubleSide,
 					depthWrite: false,
 					blending: THREE.AdditiveBlending
@@ -6269,14 +6277,26 @@ export class StampKonijnGame {
 				mesh: ripple,
 				life: maxLife,
 				maxLife,
-				expansion: (1.65 + intensity * 0.85) * (1 - index * 0.16)
+				expansion:
+					((bigSplash ? 2.25 : 1.65) + intensity * (bigSplash ? 1.05 : 0.85)) *
+					(1 - index * (bigSplash ? 0.1 : 0.16))
 			});
 		}
 
-		const dropletCount = this.reducedMotion ? 4 : Math.round(7 + intensity * 8);
+		const dropletCount = bigSplash
+			? this.reducedMotion
+				? 10
+				: Math.round(24 + intensity * 10)
+			: this.reducedMotion
+				? 4
+				: Math.round(7 + intensity * 8);
 		for (let index = 0; index < dropletCount; index += 1) {
 			const droplet = new THREE.Mesh(
-				new THREE.SphereGeometry(0.025 + Math.random() * 0.025, 7, 5),
+				new THREE.SphereGeometry(
+					(bigSplash ? 0.034 : 0.025) + Math.random() * (bigSplash ? 0.034 : 0.025),
+					7,
+					5
+				),
 				new THREE.MeshStandardMaterial({
 					color: index % 3 === 0 ? 0xd1f7f4 : 0x67d7e8,
 					roughness: 0.18,
@@ -6285,20 +6305,27 @@ export class StampKonijnGame {
 				})
 			);
 			const angle = Math.random() * Math.PI * 2;
-			const radialSpeed = 0.8 + Math.random() * (1.4 + intensity * 1.4);
-			const maxLife = 0.5 + Math.random() * 0.32;
+			const radialSpeed =
+				(bigSplash ? 1.1 : 0.8) +
+				Math.random() * ((bigSplash ? 2.1 : 1.4) + intensity * (bigSplash ? 1.75 : 1.4));
+			const maxLife = (bigSplash ? 0.78 : 0.5) + Math.random() * (bigSplash ? 0.46 : 0.32);
 			droplet.position.set(
-				splashX + Math.cos(angle) * Math.random() * 0.16,
+				splashX + Math.cos(angle) * Math.random() * (bigSplash ? 0.28 : 0.16),
 				surfaceY + 0.035,
-				splashZ + Math.sin(angle) * Math.random() * 0.16
+				splashZ + Math.sin(angle) * Math.random() * (bigSplash ? 0.28 : 0.16)
 			);
-			droplet.scale.set(0.72, 1.45 + Math.random() * 0.55, 0.72);
+			droplet.scale.set(
+				bigSplash ? 0.82 : 0.72,
+				(bigSplash ? 1.85 : 1.45) + Math.random() * (bigSplash ? 0.95 : 0.55),
+				bigSplash ? 0.82 : 0.72
+			);
 			this.scene.add(droplet);
 			this.waterDroplets.push({
 				mesh: droplet,
 				velocity: new THREE.Vector3(
 					Math.cos(angle) * radialSpeed,
-					2.1 + Math.random() * (2.2 + intensity * 1.5),
+					(bigSplash ? 3.8 : 2.1) +
+						Math.random() * ((bigSplash ? 3.2 : 2.2) + intensity * (bigSplash ? 1.9 : 1.5)),
 					Math.sin(angle) * radialSpeed
 				),
 				life: maxLife,
@@ -6307,8 +6334,9 @@ export class StampKonijnGame {
 		}
 
 		this.poolWaveEnergy = Math.max(this.poolWaveEnergy, intensity);
-		this.poolSplashCooldown = 0.11;
-		this.audio.playWaterSplash(impactSpeed * strengthScale);
+		this.poolSplashCooldown = bigSplash ? 0.2 : 0.11;
+		if (bigSplash) this.audio.playBigWaterSplash(impactSpeed * strengthScale);
+		else this.audio.playWaterSplash(impactSpeed * strengthScale);
 	}
 
 	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number, emphasizeWindow = false) {
