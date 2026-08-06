@@ -27,6 +27,7 @@ interface Breakable {
 	group: THREE.Group;
 	label: string;
 	value: number;
+	destructible: boolean;
 	radius: number;
 	height: number;
 	color: THREE.Color;
@@ -583,7 +584,10 @@ export class StampKonijnGame {
 	private ko9LockdownAmount = 0;
 	private ko9LockdownShutters = new THREE.Group();
 	private ko9ShutterPanels: THREE.Mesh[] = [];
-	private ko9AlarmLights: THREE.PointLight[] = [];
+	private ko9AlarmLights: THREE.SpotLight[] = [];
+	private ko9AlarmLightTargets: THREE.Object3D[] = [];
+	private ko9AlarmFillLights: THREE.PointLight[] = [];
+	private ko9AlarmRotors: THREE.Group[] = [];
 	private ko9AlarmBeacons: Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>> = [];
 	private ko9AlarmAudioCooldown = 0;
 	private ko9LockersBreakable: Breakable | null = null;
@@ -1226,31 +1230,64 @@ export class StampKonijnGame {
 		this.upstairsRoot.add(this.ko9LockdownShutters);
 
 		this.ko9AlarmLights = [];
+		this.ko9AlarmLightTargets = [];
+		this.ko9AlarmFillLights = [];
+		this.ko9AlarmRotors = [];
 		this.ko9AlarmBeacons = [];
-		for (const [x, z] of [
-			[-6.4, -0.8],
-			[2.2, 2.4],
-			[10.2, -0.8]
-		] as Array<[number, number]>) {
+		for (const [x, z, mountRotation] of [
+			[UPSTAIRS_MIN_X + 0.32, -1.35, -Math.PI / 2],
+			[4, BACK_WALL_Z + 0.32, 0],
+			[UPSTAIRS_MAX_X - 0.32, -1.35, Math.PI / 2]
+		] as Array<[number, number, number]>) {
+			const mount = new THREE.Group();
+			mount.position.set(x, UPSTAIRS_FLOOR_Y + 4.16, z);
+			mount.rotation.y = mountRotation;
+			mount.add(box([0.54, 0.62, 0.12], [0, -0.12, -0.12], 0x202724));
+			mount.add(box([0.48, 0.09, 0.5], [0, -0.2, 0.13], 0x3c4842));
+			mount.add(cylinder(0.25, 0.29, 0.12, [0, -0.1, 0.13], 0x171d1a, 18));
+
 			const beacon = new THREE.Mesh(
-				new THREE.CylinderGeometry(0.22, 0.29, 0.34, 16),
+				new THREE.CylinderGeometry(0.21, 0.25, 0.42, 18),
 				new THREE.MeshStandardMaterial({
 					color: 0xa12d29,
 					emissive: 0xff1f19,
 					emissiveIntensity: 0,
-					roughness: 0.26,
+					roughness: 0.2,
 					transparent: true,
-					opacity: 0.9
+					opacity: 0.72
 				})
 			);
 			beacon.castShadow = true;
 			beacon.receiveShadow = true;
-			beacon.position.set(x, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT - 0.28, z);
-			const light = new THREE.PointLight(0xff3024, 0, 8, 2);
-			light.position.copy(beacon.position).add(new THREE.Vector3(0, -0.25, 0));
+			beacon.position.set(0, 0.09, 0.13);
+			mount.add(beacon);
+
+			const rotor = new THREE.Group();
+			rotor.position.set(0, 0.09, 0.13);
+			const reflector = box([0.1, 0.28, 0.24], [0, 0, 0.025], 0xff2b20);
+			const reflectorMaterial = reflector.material;
+			if (reflectorMaterial instanceof THREE.MeshStandardMaterial) {
+				reflectorMaterial.emissive.setHex(0xff160f);
+				reflectorMaterial.emissiveIntensity = 2.2;
+			}
+			rotor.add(reflector);
+			mount.add(rotor);
+
+			const light = new THREE.SpotLight(0xff2419, 0, 18, 0.38, 0.68, 1.25);
+			light.position.set(x, UPSTAIRS_FLOOR_Y + 4.32, z);
+			light.castShadow = false;
+			const target = new THREE.Object3D();
+			target.position.set(x, UPSTAIRS_FLOOR_Y + 2.8, z + 5);
+			light.target = target;
+			const fill = new THREE.PointLight(0xff2118, 0, 4.8, 2);
+			fill.position.copy(light.position);
+
 			this.ko9AlarmBeacons.push(beacon);
 			this.ko9AlarmLights.push(light);
-			this.upstairsRoot.add(beacon, light);
+			this.ko9AlarmLightTargets.push(target);
+			this.ko9AlarmFillLights.push(fill);
+			this.ko9AlarmRotors.push(rotor);
+			this.upstairsRoot.add(mount, light, target, fill);
 		}
 	}
 
@@ -2354,13 +2391,16 @@ export class StampKonijnGame {
 		this.upstairsBreakables.push(this.ko9ServerBreakable);
 		this.ko9LockersBreakable = this.addBreakable(
 			'KO-9 AGENT LOCKERS',
-			520,
+			0,
 			this.makeKo9AgentLockers(),
 			[-7.2, UPSTAIRS_FLOOR_Y, 4.18],
 			1.6,
 			2.5,
 			'metal',
-			2
+			1,
+			'ground',
+			false,
+			false
 		);
 		this.upstairsBreakables.push(this.ko9LockersBreakable);
 		this.ko9RadioBreakable = this.addBreakable(
@@ -2512,7 +2552,8 @@ export class StampKonijnGame {
 		breakMaterial: BreakMaterial,
 		stampsRequired = 1,
 		biome: BiomeName = 'ground',
-		showPrice = true
+		showPrice = true,
+		destructible = true
 	) {
 		group.position.set(...position);
 		group.traverse((child) => {
@@ -2531,6 +2572,7 @@ export class StampKonijnGame {
 			group,
 			label,
 			value,
+			destructible,
 			radius,
 			height,
 			color,
@@ -4027,15 +4069,8 @@ export class StampKonijnGame {
 			this.updateSewerIntro(delta);
 			return;
 		}
-		for (let index = 0; index < this.upstairsLights.length; index += 1) {
-			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] : 0;
-			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
-				this.upstairsLights[index].intensity,
-				target,
-				1 - Math.exp(-4.5 * delta)
-			);
-		}
 		this.updateKo9Hq(delta);
+		this.updateKo9Lighting(delta);
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -4164,13 +4199,19 @@ export class StampKonijnGame {
 		}
 
 		this.ko9AlarmAudioCooldown = Math.max(0, this.ko9AlarmAudioCooldown - delta);
-		const alarmPulse = this.ko9LockdownActive
-			? 0.25 + Math.pow(Math.max(0, Math.sin(this.poolWaterTime * 8.2)), 7) * 0.75
-			: 0;
+		const alarmStrength = this.playerUpstairs ? this.ko9LockdownAmount : 0;
+		const rotationSpeed = this.reducedMotion ? 0.55 : 1.9;
 		for (let index = 0; index < this.ko9AlarmLights.length; index += 1) {
-			this.ko9AlarmLights[index].intensity = this.playerUpstairs ? alarmPulse * 12 : 0;
-			this.ko9AlarmBeacons[index].material.emissiveIntensity = alarmPulse * 3.6;
-			this.ko9AlarmBeacons[index].rotation.y += delta * (3.2 + index * 0.35);
+			const angle = this.poolWaterTime * rotationSpeed + index * ((Math.PI * 2) / 3);
+			this.ko9AlarmRotors[index].rotation.y = angle;
+			this.ko9AlarmBeacons[index].material.emissiveIntensity = alarmStrength * 2.8;
+			this.ko9AlarmLights[index].intensity = alarmStrength * 90;
+			this.ko9AlarmFillLights[index].intensity = alarmStrength * 8.5;
+			this.ko9AlarmLightTargets[index].position.set(
+				this.ko9AlarmLights[index].position.x + Math.sin(angle) * 8.5,
+				UPSTAIRS_FLOOR_Y + 2.65,
+				this.ko9AlarmLights[index].position.z + Math.cos(angle) * 8.5
+			);
 		}
 		if (this.playerUpstairs && this.ko9LockdownActive && this.ko9AlarmAudioCooldown <= 0) {
 			this.ko9AlarmAudioCooldown = 0.76;
@@ -4201,6 +4242,50 @@ export class StampKonijnGame {
 			if (visible) visibleSparks += 1;
 		}
 		this.ko9ServerSparkLight.intensity = visibleSparks > 0 ? 3.5 + visibleSparks * 0.7 : 0;
+	}
+
+	private updateKo9Lighting(delta: number) {
+		const lockdownStrength = this.playerUpstairs ? this.ko9LockdownAmount : 0;
+		const roomLightScale = 1 - lockdownStrength * 0.8;
+		const response = 1 - Math.exp(-4.8 * delta);
+		for (let index = 0; index < this.upstairsLights.length; index += 1) {
+			const target = this.playerUpstairs ? UPSTAIRS_LIGHT_INTENSITIES[index] * roomLightScale : 0;
+			this.upstairsLights[index].intensity = THREE.MathUtils.lerp(
+				this.upstairsLights[index].intensity,
+				target,
+				response
+			);
+		}
+
+		if (this.getActiveBiome() !== 'ground') return;
+		const worldLightScale = 1 - lockdownStrength * 0.75;
+		if (this.groundHemisphere) {
+			this.groundHemisphere.intensity = THREE.MathUtils.lerp(
+				this.groundHemisphere.intensity,
+				2.1 * worldLightScale,
+				response
+			);
+		}
+		if (this.groundSun) {
+			this.groundSun.intensity = THREE.MathUtils.lerp(
+				this.groundSun.intensity,
+				3.2 * (1 - lockdownStrength * 0.85),
+				response
+			);
+		}
+		if (this.groundWindowGlow) {
+			this.groundWindowGlow.intensity = THREE.MathUtils.lerp(
+				this.groundWindowGlow.intensity,
+				28 * (1 - lockdownStrength * 0.9),
+				response
+			);
+		}
+		const normalExposure = this.playerOutside ? 1.08 : 1.05;
+		this.renderer.toneMappingExposure = THREE.MathUtils.lerp(
+			this.renderer.toneMappingExposure,
+			normalExposure * (1 - lockdownStrength * 0.16),
+			response
+		);
 	}
 
 	private syncGroundRoomVisibility() {
@@ -6453,6 +6538,16 @@ export class StampKonijnGame {
 		bulletHit?: { point: THREE.Vector3; direction: THREE.Vector3 }
 	) {
 		if (breakable.broken) return;
+		if (!breakable.destructible) {
+			if (source === 'stamp') {
+				this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
+				this.pendingStampFeedback = 'KO-9 LOCKERS ZITTEN MUURVAST!';
+				this.cameraShake = Math.max(this.cameraShake, 0.24);
+			} else {
+				this.emitFeedback('KO-9 LOCKERS: KOGELVAST AGENTENSTAAL.');
+			}
+			return;
+		}
 		if (breakable === this.poolBreakable) {
 			if (source === 'bullet') {
 				this.damagePoolWithBullet(breakable, bulletHit?.point, bulletHit?.direction);
@@ -6731,9 +6826,6 @@ export class StampKonijnGame {
 				this.ko9LockdownActive = false;
 			}
 		}
-		if (breakable === this.ko9LockersBreakable) {
-			this.canCustomize = false;
-		}
 		breakable.group.visible = effect === 'sink';
 		const points = breakable.value;
 		this.score += points;
@@ -6762,13 +6854,20 @@ export class StampKonijnGame {
 	}
 
 	private finishIfEverythingIsDestroyed() {
-		if (this.phase === 'playing' && this.destroyedCount === this.breakables.length) {
+		if (this.phase === 'playing' && this.destroyedCount === this.getDestructionTargetCount()) {
 			this.phase = 'finished';
 			this.weaponHeld = false;
 			this.velocity.set(0, 0, 0);
 			this.audio.playCue('finish');
 			this.emitHud(true);
 		}
+	}
+
+	private getDestructionTargetCount() {
+		return this.breakables.reduce(
+			(total, breakable) => total + (breakable.destructible ? 1 : 0),
+			0
+		);
 	}
 
 	private spawnDebris(breakable: Breakable) {
@@ -7900,7 +7999,9 @@ export class StampKonijnGame {
 		this.ko9ServerSparkLight.intensity = 0;
 		for (let index = 0; index < this.ko9AlarmLights.length; index += 1) {
 			this.ko9AlarmLights[index].intensity = 0;
+			this.ko9AlarmFillLights[index].intensity = 0;
 			this.ko9AlarmBeacons[index].material.emissiveIntensity = 0;
+			this.ko9AlarmRotors[index].rotation.y = 0;
 		}
 		this.basementEntryCooldown = 0;
 		this.toiletHoleOpen = false;
@@ -8219,7 +8320,7 @@ export class StampKonijnGame {
 			paused: this.paused,
 			score: this.score,
 			destroyed: this.destroyedCount,
-			total: this.breakables.length,
+			total: this.getDestructionTargetCount(),
 			lastHit: this.lastHit,
 			lastValue: this.lastValue,
 			weapon: this.weapon,
