@@ -1040,6 +1040,8 @@ function addBasement(basement) {
 }
 
 function addSewer(sewer) {
+	const gateWidth = 3.4;
+	const gateRight = SEWER_MIN_X + gateWidth;
 	addCollider(
 		sewer,
 		mesh(
@@ -1054,26 +1056,93 @@ function addSewer(sewer) {
 	);
 	for (const [name, size, position, color] of [
 		[
-			'sewer_left_wall',
-			[0.18, SEWER_HEIGHT, SEWER_DEPTH],
-			[SEWER_MIN_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
-			0x343c36
-		],
-		[
 			'sewer_right_wall',
 			[0.28, SEWER_HEIGHT, SEWER_DEPTH],
 			[SEWER_MAX_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_CENTER_Z],
 			0x5a4b3b
 		],
 		[
-			'sewer_back_wall',
-			[SEWER_WIDTH, SEWER_HEIGHT, 0.18],
-			[SEWER_CENTER_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
+			'sewer_back_wall_main',
+			[SEWER_MAX_X - gateRight, SEWER_HEIGHT, 0.18],
+			[(gateRight + SEWER_MAX_X) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
 			0x3a423b
 		]
 	]) {
 		addCollider(sewer, box(name, size, position, color), 'wall');
 	}
+
+	const gateZ = SEWER_MIN_Z + 0.025;
+	addStatic(
+		sewer,
+		box(
+			'sewer_left_gate_darkness',
+			[gateWidth - 0.08, SEWER_HEIGHT - 0.12, 0.12],
+			[(SEWER_MIN_X + gateRight) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z - 0.38],
+			0x111913,
+			{ roughness: 1 }
+		)
+	);
+	for (const [index, x] of [SEWER_MIN_X, gateRight].entries()) {
+		addStatic(
+			sewer,
+			box(
+				`sewer_left_gate_post_${index}`,
+				[0.2, SEWER_HEIGHT, 0.2],
+				[x, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ],
+				0x865d42,
+				{ roughness: 0.58, metalness: 0.62 }
+			)
+		);
+	}
+	for (let index = 0; index < 8; index += 1) {
+		const x = SEWER_MIN_X + 0.22 + (index * (gateWidth - 0.44)) / 7;
+		addStatic(
+			sewer,
+			box(
+				`sewer_left_gate_bar_${index}`,
+				[0.085, SEWER_HEIGHT - 0.24, 0.09],
+				[x, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ + 0.02],
+				index % 3 === 0 ? 0x93694a : 0x725343,
+				{ roughness: 0.5, metalness: 0.7 }
+			)
+		);
+	}
+	for (const [index, y] of [SEWER_FLOOR_Y + 0.42, SEWER_CEILING_Y - 0.48].entries()) {
+		addStatic(
+			sewer,
+			box(
+				`sewer_left_gate_rail_${index}`,
+				[gateWidth, 0.13, 0.12],
+				[(SEWER_MIN_X + gateRight) / 2, y, gateZ + 0.04],
+				0x805c45,
+				{ roughness: 0.55, metalness: 0.66 }
+			)
+		);
+	}
+	addStatic(
+		sewer,
+		box(
+			'sewer_left_gate_brace',
+			[Math.hypot(gateWidth - 0.5, SEWER_HEIGHT - 0.85), 0.11, 0.1],
+			[(SEWER_MIN_X + gateRight) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ + 0.07],
+			0x896247,
+			{
+				roughness: 0.54,
+				metalness: 0.64,
+				rotation: [0, 0, Math.atan2(SEWER_HEIGHT - 0.85, gateWidth - 0.5)]
+			}
+		)
+	);
+	addStatic(
+		sewer,
+		box(
+			'sewer_left_gate_lock',
+			[0.34, 0.42, 0.16],
+			[gateRight - 0.4, SEWER_FLOOR_Y + SEWER_HEIGHT * 0.52, gateZ + 0.13],
+			0x8a6b43,
+			{ roughness: 0.48, metalness: 0.72 }
+		)
+	);
 	const shaftMinX = TOILET_X - SEWER_SHAFT_HALF_WIDTH;
 	const shaftMaxX = TOILET_X + SEWER_SHAFT_HALF_WIDTH;
 	for (const [index, [minX, maxX]] of [
@@ -1141,20 +1210,69 @@ function addSewer(sewer) {
 			)
 		);
 	}
-	addStatic(
-		sewer,
-		mesh(
-			'sewer_water',
-			new THREE.PlaneGeometry(SEWER_WIDTH - 0.3, 0.58),
-			0x627047,
-			[SEWER_CENTER_X, SEWER_FLOOR_Y + 0.025, SEWER_CENTER_Z - 0.72],
-			{
-				rotation: [-Math.PI / 2, 0, 0],
-				roughness: 0.58,
-				metalness: 0.04
-			}
-		)
+	const sludgeShape = new THREE.Shape();
+	const sludgeHalfWidth = SEWER_WIDTH / 2 - 0.3;
+	const sludgeBackEdge = [-0.72, -0.82, -0.7, -0.88, -0.74, -0.8, -0.66, -0.76, -0.7];
+	const sludgeFrontEdge = [0.84, 0.7, 0.92, 0.78, 0.96, 0.73, 0.88, 0.77, 0.9];
+	for (let index = 0; index < sludgeBackEdge.length; index += 1) {
+		const x = THREE.MathUtils.lerp(
+			-sludgeHalfWidth,
+			sludgeHalfWidth,
+			index / (sludgeBackEdge.length - 1)
+		);
+		if (index === 0) sludgeShape.moveTo(x, sludgeBackEdge[index]);
+		else sludgeShape.lineTo(x, sludgeBackEdge[index]);
+	}
+	for (let index = sludgeFrontEdge.length - 1; index >= 0; index -= 1) {
+		const x = THREE.MathUtils.lerp(
+			-sludgeHalfWidth,
+			sludgeHalfWidth,
+			index / (sludgeFrontEdge.length - 1)
+		);
+		sludgeShape.lineTo(x, sludgeFrontEdge[index]);
+	}
+	sludgeShape.closePath();
+	const sludge = new THREE.Mesh(
+		new THREE.ShapeGeometry(sludgeShape),
+		new THREE.MeshPhysicalMaterial({
+			color: 0x586437,
+			roughness: 0.16,
+			metalness: 0.04,
+			clearcoat: 0.86,
+			clearcoatRoughness: 0.14,
+			emissive: 0x111609,
+			emissiveIntensity: 0.28
+		})
 	);
+	sludge.name = uniqueName('sewer_sludge');
+	sludge.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y + 0.032, SEWER_CENTER_Z + 0.05);
+	sludge.rotation.x = -Math.PI / 2;
+	addStatic(sewer, sludge);
+	for (const [index, [x, z, radiusX, radiusZ]] of [
+		[SEWER_MIN_X + 1.1, SEWER_CENTER_Z + 0.58, 0.72, 0.46],
+		[TOILET_X + 6.8, SEWER_CENTER_Z - 0.67, 1.15, 0.4],
+		[TOILET_X + 19.4, SEWER_CENTER_Z + 0.72, 0.92, 0.36],
+		[TOILET_X + 33.2, SEWER_CENTER_Z - 0.7, 1.28, 0.42],
+		[SEWER_MAX_X - 4.1, SEWER_CENTER_Z + 0.68, 1.05, 0.4]
+	].entries()) {
+		const puddle = new THREE.Mesh(
+			new THREE.CircleGeometry(1, 24),
+			new THREE.MeshPhysicalMaterial({
+				color: index % 2 === 0 ? 0x687444 : 0x59663a,
+				roughness: 0.22,
+				metalness: 0.03,
+				clearcoat: 0.68,
+				clearcoatRoughness: 0.2,
+				emissive: 0x101509,
+				emissiveIntensity: 0.2
+			})
+		);
+		puddle.name = uniqueName(`sewer_sludge_puddle_${index}`);
+		puddle.position.set(x, SEWER_FLOOR_Y + 0.038 + index * 0.0005, z);
+		puddle.rotation.x = -Math.PI / 2;
+		puddle.scale.set(radiusX, radiusZ, 1);
+		addStatic(sewer, puddle);
+	}
 	let pipeIndex = 0;
 	for (let x = SEWER_MIN_X + 2; x < SEWER_MAX_X; x += 5.2) {
 		addStatic(

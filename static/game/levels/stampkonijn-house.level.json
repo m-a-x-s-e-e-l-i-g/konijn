@@ -585,20 +585,14 @@
       "shape": "mesh"
     },
     {
-      "id": "sewer_left_wall",
-      "node": "sewer_left_wall",
-      "zone": "sewer",
-      "shape": "mesh"
-    },
-    {
       "id": "sewer_right_wall",
       "node": "sewer_right_wall",
       "zone": "sewer",
       "shape": "mesh"
     },
     {
-      "id": "sewer_back_wall",
-      "node": "sewer_back_wall",
+      "id": "sewer_back_wall_main",
+      "node": "sewer_back_wall_main",
       "zone": "sewer",
       "shape": "mesh"
     },
