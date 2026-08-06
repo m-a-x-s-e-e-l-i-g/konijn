@@ -2545,7 +2545,11 @@ export class StampKonijnGame {
 			'KO-9 NOODKNOP',
 			0,
 			this.makeKo9EmergencyButton(),
-			[11.7, UPSTAIRS_FLOOR_Y, 3.95],
+			[
+				UPSTAIRS_STAIRWELL_MAX_X + 0.95,
+				UPSTAIRS_FLOOR_Y,
+				STAIR_TOP_Z - UPSTAIRS_STAIRWELL_HALF_Z - 0.45
+			],
 			0.72,
 			1.28,
 			'metal',
