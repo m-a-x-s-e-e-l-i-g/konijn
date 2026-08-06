@@ -52,6 +52,7 @@ export class AudioSystem {
 	private readonly weaponChangeSample = this.createSample(AUDIO_PATHS.weaponChange);
 	private readonly vaseBreakSample = this.createSample(AUDIO_PATHS.vaseBreak);
 	private readonly chairBreakSample = this.createSample(AUDIO_PATHS.chairBreak);
+	private readonly bigWaterSplashSample = this.createSample(AUDIO_PATHS.bigWaterSplash);
 	private readonly poopieMonsterSpeechSample = this.createSample(AUDIO_PATHS.poopieMonsterSpeech);
 	private readonly poopieMonsterEatSample = this.createSample(AUDIO_PATHS.poopieMonsterEat);
 	private readonly poopieMonsterFriendSample = this.createSample(AUDIO_PATHS.poopieMonsterFriend);
@@ -128,6 +129,7 @@ export class AudioSystem {
 		const audio = this.context;
 		this.ensureMixGraph();
 		for (const sample of [
+			this.bigWaterSplashSample,
 			this.poopieMonsterSpeechSample,
 			this.poopieMonsterEatSample,
 			this.poopieMonsterFriendSample,
@@ -480,6 +482,16 @@ export class AudioSystem {
 		plop.connect(plopGain).connect(output);
 		plop.start(now);
 		plop.stop(now + duration);
+	}
+
+	playBigWaterSplash(impactSpeed: number) {
+		this.playWaterSplash(impactSpeed);
+		this.playSample(this.bigWaterSplashSample, (sample) => {
+			const strength = clamp(impactSpeed / 12, 0.45, 1);
+			sample.volume = 0.48 + strength * 0.18;
+			sample.preservesPitch = false;
+			sample.playbackRate = 0.97 + Math.random() * 0.05;
+		});
 	}
 
 	private ensureOutsideAmbience() {

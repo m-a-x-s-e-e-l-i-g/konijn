@@ -535,6 +535,7 @@ export class StampKonijnGame {
 	private poolWaveEnergy = 0;
 	private rabbitInPoolWater = false;
 	private poolSplashCooldown = 0;
+	private poolStompSoundCooldown = 0;
 	private poolBulletHits = 0;
 	private poolLeaks: PoolLeak[] = [];
 	private toiletFillRoot = new THREE.Group();
@@ -706,6 +707,7 @@ export class StampKonijnGame {
 		this.velocity.set(0, 0, 0);
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
+		this.poolStompSoundCooldown = 0;
 		this.poolWaveEnergy = 0;
 		this.pointerActive = false;
 		this.stomping = false;
@@ -3395,6 +3397,7 @@ export class StampKonijnGame {
 		this.weaponCooldown = Math.max(0, this.weaponCooldown - delta);
 		this.basementEntryCooldown = Math.max(0, this.basementEntryCooldown - delta);
 		this.poolSplashCooldown = Math.max(0, this.poolSplashCooldown - delta);
+		this.poolStompSoundCooldown = Math.max(0, this.poolStompSoundCooldown - delta);
 		this.audio.update(delta);
 		if (this.sewerIntroActive) {
 			this.updateSewerIntro(delta);
@@ -4646,7 +4649,7 @@ export class StampKonijnGame {
 	}
 
 	private performPoolStamp(speed: number) {
-		this.spawnPoolSplash(speed, 1.65);
+		this.spawnPoolSplash(speed, 1.65, true);
 		this.rabbitInPoolWater = false;
 		this.squash = 1;
 		this.cameraShake = Math.max(this.cameraShake, 0.62);
@@ -5737,7 +5740,7 @@ export class StampKonijnGame {
 			}
 			if (breakable.lastStampSequence === this.stampSequence) return;
 			breakable.lastStampSequence = this.stampSequence;
-			this.spawnPoolSplash(Math.max(8, this.velocity.length()), 1.65);
+			this.spawnPoolSplash(Math.max(8, this.velocity.length()), 1.65, true);
 			this.rabbitInPoolWater = false;
 			this.poolWaveEnergy = Math.max(this.poolWaveEnergy, 1.35);
 			this.cameraShake = Math.max(this.cameraShake, 0.62);
@@ -6377,9 +6380,15 @@ export class StampKonijnGame {
 		this.impactRings.push({ mesh: ring, life: Math.max(0.35, radius * 0.19) });
 	}
 
-	private spawnPoolSplash(impactSpeed: number, strengthScale: number) {
+	private spawnPoolSplash(impactSpeed: number, strengthScale: number, isStomp = false) {
 		const pool = this.poolBreakable;
-		if (!pool || pool.broken || this.poolSplashCooldown > 0) return;
+		if (!pool || pool.broken) return;
+		const splashSpeed = impactSpeed * strengthScale;
+		if (isStomp && this.poolStompSoundCooldown <= 0) {
+			this.audio.playBigWaterSplash(splashSpeed);
+			this.poolStompSoundCooldown = 0.2;
+		}
+		if (this.poolSplashCooldown > 0) return;
 		const intensity = THREE.MathUtils.clamp((impactSpeed / 10) * strengthScale, 0.32, 1.35);
 		const surfaceY = pool.group.position.y + POOL_WATER_Y;
 		const offset = new THREE.Vector2(
@@ -6452,7 +6461,7 @@ export class StampKonijnGame {
 
 		this.poolWaveEnergy = Math.max(this.poolWaveEnergy, intensity);
 		this.poolSplashCooldown = 0.11;
-		this.audio.playWaterSplash(impactSpeed * strengthScale);
+		if (!isStomp) this.audio.playWaterSplash(splashSpeed);
 	}
 
 	private spawnSurfaceCrack(surfaceNormal: THREE.Vector3, speed: number, emphasizeWindow = false) {
@@ -6968,6 +6977,7 @@ export class StampKonijnGame {
 		this.g36Pickup.visible = false;
 		this.rabbitInPoolWater = false;
 		this.poolSplashCooldown = 0;
+		this.poolStompSoundCooldown = 0;
 		this.poolBulletHits = 0;
 		this.poolWaveEnergy = 0;
 		this.toiletFloorPlug.visible = true;

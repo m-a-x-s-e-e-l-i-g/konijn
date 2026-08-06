@@ -6,6 +6,7 @@ export const AUDIO_PATHS = {
 	weaponChange: '/audio/weapons/change.ogg',
 	vaseBreak: '/audio/vase-break.ogg',
 	chairBreak: '/audio/chair-break.ogg',
+	bigWaterSplash: '/audio/pool/big-water-splash.ogg',
 	sewerAmbience: '/audio/ambience/sewer.ogg',
 	poopieMonsterSpeech: '/audio/characters/poopiemonster.ogg',
 	poopieMonsterEat: '/audio/characters/poopiemonster-eat.ogg',
