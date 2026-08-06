@@ -1443,19 +1443,27 @@ export class StampKonijnGame {
 		this.basementRoot.add(...this.basementLights);
 	}
 	private createSewer() {
-		const shaftGlow = new THREE.PointLight(0xb9d19b, 5.5, 8, 2);
+		const shaftGlow = new THREE.PointLight(0xb9d19b, 4.2, 7.5, 2);
 		shaftGlow.position.set(TOILET_X, -1.3, SEWER_CENTER_Z + 0.2);
-		this.sewerRoot.add(shaftGlow);
+		const shaftFloorTarget = new THREE.Object3D();
+		shaftFloorTarget.position.set(TOILET_X, SEWER_FLOOR_Y + 0.02, SEWER_CENTER_Z);
+		const shaftSpot = new THREE.SpotLight(0xcde3ac, 28, 11, Math.PI * 0.17, 0.82, 1.7);
+		shaftSpot.position.set(TOILET_X, -0.38, SEWER_CENTER_Z + 0.16);
+		shaftSpot.target = shaftFloorTarget;
+		shaftSpot.castShadow = false;
+		this.sewerRoot.add(shaftGlow, shaftSpot, shaftFloorTarget);
 		const rayTopY = -0.32;
-		const rayBottomY = SEWER_FLOOR_Y + 0.18;
+		// Continue the translucent geometry below the floor so its open lower edge
+		// is occluded instead of reading as a floating ring in the sewer.
+		const rayBottomY = SEWER_FLOOR_Y - 1.6;
 		const rayHeight = rayTopY - rayBottomY;
 		for (const [index, offset] of [-0.2, 0.04, 0.24].entries()) {
 			const ray = new THREE.Mesh(
-				new THREE.CylinderGeometry(0.07, 0.72 - index * 0.12, rayHeight, 18, 1, true),
+				new THREE.CylinderGeometry(0.05, 0.64 - index * 0.1, rayHeight, 24, 1, true),
 				new THREE.MeshBasicMaterial({
 					color: index === 1 ? 0xd8e8bb : 0xb9d19b,
 					transparent: true,
-					opacity: index === 1 ? 0.095 : 0.052,
+					opacity: index === 1 ? 0.06 : 0.028,
 					depthWrite: false,
 					blending: THREE.AdditiveBlending,
 					side: THREE.DoubleSide,
