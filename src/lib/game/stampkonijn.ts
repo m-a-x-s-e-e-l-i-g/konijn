@@ -720,10 +720,15 @@ export class StampKonijnGame {
 			this.createBreakables();
 			this.syncUpstairsVisibility();
 			this.syncBiomeState(true);
-			await Promise.all([this.loadModels(), this.audio.preloadGunshotBuffers()]);
+			await Promise.all([
+				this.loadModels(),
+				this.audio.preloadGunshotBuffers(),
+				this.audio.preloadHiddenAreaAudio()
+			]);
 
 			this.camera.position.copy(CAMERA_HOME);
 			this.camera.lookAt(CAMERA_TARGET);
+			await this.prepareCriticalHiddenAreas();
 			this.resizeObserver = new ResizeObserver(() => this.resize());
 			this.resizeObserver.observe(this.canvas.parentElement ?? this.canvas);
 			window.addEventListener('keydown', this.keyDownHandler, { passive: false });
@@ -6407,11 +6412,7 @@ export class StampKonijnGame {
 		void this.prepareHiddenAreas();
 	}
 
-	private async prepareHiddenAreas() {
-		await waitForWarmupSlot();
-		if (this.destroyed) return;
-		void this.audio.preloadHiddenAreaAudio();
-
+	private async prepareCriticalHiddenAreas() {
 		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom');
 		const bathroomBreakables = this.breakables
 			.filter((breakable) => {
@@ -6428,6 +6429,20 @@ export class StampKonijnGame {
 		const sewerBreakables = this.breakables
 			.filter((breakable) => breakable.biome === 'sewer')
 			.map((breakable) => breakable.group);
+
+		await Promise.allSettled(this.hiddenTextureLoads);
+		if (this.destroyed) return;
+		await this.warmHiddenArea('toilet', [
+			...(bathroomRoot ? [bathroomRoot] : []),
+			...bathroomBreakables
+		]);
+		if (this.destroyed) return;
+		await this.warmHiddenArea('sewer', [this.sewerRoot, ...sewerBreakables]);
+	}
+
+	private async prepareHiddenAreas() {
+		await waitForWarmupSlot();
+		if (this.destroyed) return;
 		const remainingRoomRoots = [
 			this.kitchenInteriorRoot,
 			this.leftRoomInteriorRoots.get('stairs'),
@@ -6438,23 +6453,10 @@ export class StampKonijnGame {
 			this.breakablesRoot,
 			this.player
 		].filter((root): root is THREE.Object3D => Boolean(root));
-		const stages: Array<{ label: string; roots: THREE.Object3D[] }> = [
-			{
-				label: 'toilet',
-				roots: [...(bathroomRoot ? [bathroomRoot] : []), ...bathroomBreakables]
-			},
-			{ label: 'sewer', roots: [this.sewerRoot, ...sewerBreakables] },
-			{ label: 'remaining hidden areas', roots: remainingRoomRoots }
-		];
-		const textureLoads = Promise.allSettled(this.hiddenTextureLoads);
 
-		for (const stage of stages) {
-			await waitForWarmupSlot();
-			if (this.destroyed) return;
-			if (stage.label === 'toilet') await textureLoads;
-			if (this.destroyed) return;
-			await this.warmHiddenArea(stage.label, stage.roots);
-		}
+		await waitForWarmupSlot();
+		if (this.destroyed) return;
+		await this.warmHiddenArea('remaining hidden areas', remainingRoomRoots);
 	}
 
 	private async warmHiddenArea(label: string, roots: THREE.Object3D[]) {
