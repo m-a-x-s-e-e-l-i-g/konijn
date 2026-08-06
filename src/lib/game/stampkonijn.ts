@@ -237,6 +237,7 @@ const SEWER_SHAFT_HALF_WIDTH = TOILET_HOLE_RADIUS - 0.06;
 const POOPIE_MONSTER_X = TOILET_X + 4.85;
 const POOPIE_MONSTER_RADIUS = 1.04;
 const POOPIE_MONSTER_HEIGHT = 2.06;
+const POOPIE_MONSTER_FACE_Y = POOPIE_MONSTER_HEIGHT * 0.86;
 const POOPIE_MONSTER_HITBOX_TOP_PADDING = 0.12;
 const POOPIE_MONSTER_BLOCK_KNOCKBACK = 5.4;
 const POOPIE_MONSTER_BULLET_HITS = 3;
@@ -8022,20 +8023,13 @@ export class StampKonijnGame {
 
 	private updateCamera(delta: number) {
 		if (this.sewerIntroActive) {
+			const faceY = SEWER_FLOOR_Y + POOPIE_MONSTER_FACE_Y;
 			const focusProgress = this.reducedMotion
 				? 1
 				: THREE.MathUtils.clamp(this.sewerIntroTime / SEWER_INTRO_FOCUS_DURATION, 0, 1);
 			const focusEase = 1 - Math.pow(1 - focusProgress, 5);
-			this.cameraDesiredPosition.set(
-				POOPIE_MONSTER_X - 2.08,
-				SEWER_FLOOR_Y + 1.48,
-				SEWER_CENTER_Z + 0.08
-			);
-			this.cameraDesiredTarget.set(
-				POOPIE_MONSTER_X,
-				SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.69,
-				SEWER_CENTER_Z
-			);
+			this.cameraDesiredPosition.set(POOPIE_MONSTER_X - 2.08, faceY + 0.04, SEWER_CENTER_Z + 0.08);
+			this.cameraDesiredTarget.set(POOPIE_MONSTER_X, faceY, SEWER_CENTER_Z);
 			this.camera.position.lerpVectors(
 				this.sewerIntroCameraPosition,
 				this.cameraDesiredPosition,
@@ -8460,16 +8454,9 @@ export class StampKonijnGame {
 		this.velocity.set(0, 0, 0);
 		this.standRabbitUpright();
 
-		this.sewerIntroCameraPosition.set(
-			POOPIE_MONSTER_X - 3.45,
-			SEWER_FLOOR_Y + 1.64,
-			SEWER_CENTER_Z + 0.52
-		);
-		this.sewerIntroCameraTarget.set(
-			POOPIE_MONSTER_X,
-			SEWER_FLOOR_Y + POOPIE_MONSTER_HEIGHT * 0.68,
-			SEWER_CENTER_Z
-		);
+		const faceY = SEWER_FLOOR_Y + POOPIE_MONSTER_FACE_Y;
+		this.sewerIntroCameraPosition.set(POOPIE_MONSTER_X - 3.45, faceY + 0.04, SEWER_CENTER_Z + 0.52);
+		this.sewerIntroCameraTarget.set(POOPIE_MONSTER_X, faceY, SEWER_CENTER_Z);
 		this.camera.position.copy(this.sewerIntroCameraPosition);
 		this.cameraLookTarget.copy(this.sewerIntroCameraTarget);
 		this.camera.fov = 38;
