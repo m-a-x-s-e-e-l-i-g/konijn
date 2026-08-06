@@ -23,3 +23,5 @@
 "130723_Brela_HarborJump_F_4824.wav" (https://freesound.org/s/195877/) by blaukreuz is dedicated to the public domain under Creative Commons CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
 
 "Sewer" (https://freesound.org/people/Aenimamusica/sounds/738066/) by Aenimamusica is licensed under Creative Commons Attribution-NonCommercial 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). The in-game version was converted to OGG/Opus, loop-crossfaded, and mixed down.
+
+"cloth_sounds.mp3" (https://freesound.org/s/434913/) by Vinrax is licensed under Creative Commons Attribution-NonCommercial 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). The in-game version was trimmed, mixed up, converted to mono, and encoded as OGG/Opus.

@@ -50,6 +50,7 @@ export class AudioSystem {
 	private readonly pistolSample = this.createSample(GUNSHOT_PATHS.pistol);
 	private readonly g36Sample = this.createSample(GUNSHOT_PATHS.g36);
 	private readonly weaponChangeSample = this.createSample(AUDIO_PATHS.weaponChange);
+	private readonly clothingChangeSample = this.createSample(AUDIO_PATHS.clothingChange);
 	private readonly vaseBreakSample = this.createSample(AUDIO_PATHS.vaseBreak);
 	private readonly chairBreakSample = this.createSample(AUDIO_PATHS.chairBreak);
 	private readonly bigWaterSplashSample = this.createSample(AUDIO_PATHS.bigWaterSplash);
@@ -361,6 +362,13 @@ export class AudioSystem {
 	playWeaponChange() {
 		this.playSample(this.weaponChangeSample, (sample) => {
 			sample.volume = 0.64;
+		});
+	}
+
+	playClothingChange() {
+		this.playSample(this.clothingChangeSample, (sample) => {
+			sample.volume = 0.78;
+			sample.playbackRate = 0.98 + Math.random() * 0.04;
 		});
 	}
 

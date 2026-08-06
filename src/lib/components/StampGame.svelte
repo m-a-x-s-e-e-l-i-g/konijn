@@ -36,7 +36,7 @@
 	const rabbitStyles: Array<{ id: RabbitStyle; label: string; icon: string }> = [
 		{ id: 'classic', label: 'CLASSIC', icon: '🐇' },
 		{ id: 'agent', label: 'AGENT', icon: '🕶' },
-		{ id: 'field', label: 'FIELD OPS', icon: '📻' },
+		{ id: 'field', label: 'FIELD OPS', icon: '🥽' },
 		{ id: 'disguise', label: 'DISGUISE', icon: '🥸' }
 	];
 

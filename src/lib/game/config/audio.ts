@@ -4,6 +4,7 @@ export const AUDIO_PATHS = {
 	impact: '/audio/bounce.ogg',
 	fart: '/audio/weapons/fart.ogg',
 	weaponChange: '/audio/weapons/change.ogg',
+	clothingChange: '/audio/clothing-change.ogg',
 	vaseBreak: '/audio/vase-break.ogg',
 	chairBreak: '/audio/chair-break.ogg',
 	bigWaterSplash: '/audio/pool/big-water-splash.ogg',

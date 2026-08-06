@@ -130,6 +130,12 @@ interface ArmRagdoll {
 	angularVelocity: number;
 }
 
+interface RabbitUniformMesh {
+	mesh: THREE.Mesh;
+	regularMaterial: THREE.Material | THREE.Material[];
+	fieldMaterial: THREE.Material | THREE.Material[];
+}
+
 interface StairStep {
 	x: number;
 	z: number;
@@ -470,7 +476,8 @@ export class StampKonijnGame {
 	private rabbitTumble = new THREE.Group();
 	private rabbitSquash = new THREE.Group();
 	private rabbitStyle: RabbitStyle = 'classic';
-	private rabbitStyleGroups = new Map<Exclude<RabbitStyle, 'classic'>, THREE.Group>();
+	private rabbitStyleObjects = new Map<Exclude<RabbitStyle, 'classic'>, THREE.Object3D[]>();
+	private rabbitUniformMeshes: RabbitUniformMesh[] = [];
 	private canCustomize = false;
 	private armRagdolls: ArmRagdoll[] = [];
 	private armRotation = new THREE.Quaternion();
@@ -800,7 +807,7 @@ export class StampKonijnGame {
 		if (!this.canCustomize || style === this.rabbitStyle) return;
 		this.rabbitStyle = style;
 		this.syncRabbitStyle();
-		this.audio.playWeaponChange();
+		this.audio.playClothingChange();
 		const label =
 			style === 'classic'
 				? 'CLASSIC KONIJN'
@@ -1992,32 +1999,113 @@ export class StampKonijnGame {
 	}
 
 	private setupRabbitStyles(model: THREE.Group) {
-		this.rabbitStyleGroups.clear();
+		this.rabbitStyleObjects.clear();
+		this.rabbitUniformMeshes = [];
 		const ink = 0x151917;
-		const darkGreen = 0x27352e;
-		const orange = 0xe87832;
+		const tacticalBlack = 0x080a09;
+		const tacticalRaised = 0x161a18;
 
 		const agent = new THREE.Group();
 		for (const x of [-0.039, 0.039]) {
-			agent.add(box([0.062, 0.032, 0.018], [x, 0.557, 0.123], ink));
+			const lens = new THREE.Mesh(
+				new THREE.CircleGeometry(0.031, 16),
+				new THREE.MeshStandardMaterial({
+					color: 0x303432,
+					roughness: 0.28,
+					transparent: true,
+					opacity: 0.62,
+					side: THREE.DoubleSide
+				})
+			);
+			lens.position.set(x, 0.557, 0.123);
+			const frame = new THREE.Mesh(
+				new THREE.TorusGeometry(0.035, 0.006, 5, 18),
+				material(ink, 0.42, 0.32)
+			);
+			frame.position.set(x, 0.557, 0.126);
+			agent.add(lens, frame);
 		}
-		agent.add(box([0.025, 0.009, 0.018], [0, 0.557, 0.123], ink));
-		for (const x of [-0.075, 0.075]) {
-			const lapel = box([0.08, 0.25, 0.024], [x, 0.31, 0.159], ink);
-			lapel.rotation.z = x < 0 ? -0.22 : 0.22;
-			agent.add(lapel);
+		agent.add(box([0.025, 0.009, 0.014], [0, 0.557, 0.127], ink));
+		agent.add(box([0.044, 0.045, 0.022], [0, 0.395, 0.164], ink));
+		agent.add(box([0.027, 0.17, 0.02], [0, 0.29, 0.165], ink));
+		const tieTip = new THREE.Mesh(
+			new THREE.ConeGeometry(0.035, 0.08, 4),
+			material(ink, 0.54, 0.22)
+		);
+		tieTip.position.set(0, 0.205, 0.165);
+		tieTip.rotation.y = Math.PI / 4;
+		agent.add(tieTip);
+		const agentObjects: THREE.Object3D[] = [agent];
+		const leftArm = model.getObjectByName('left_arm');
+		if (leftArm) {
+			const watch = new THREE.Group();
+			watch.position.set(0, -0.072, 0.07);
+			watch.add(box([0.085, 0.035, 0.028], [0, 0, 0], 0x0c0e0d));
+			const watchFace = cylinder(0.026, 0.026, 0.012, [0, 0, 0.025], 0x9da6a1, 12);
+			watchFace.rotation.x = Math.PI / 2;
+			watch.add(watchFace);
+			leftArm.add(watch);
+			agentObjects.push(watch);
 		}
-		agent.add(box([0.028, 0.17, 0.018], [0, 0.31, 0.177], orange));
-		agent.add(box([0.07, 0.09, 0.035], [0.17, 0.35, 0.15], 0x202825));
 
 		const field = new THREE.Group();
-		field.add(box([0.34, 0.31, 0.045], [0, 0.29, 0.158], darkGreen));
+		field.add(box([0.35, 0.32, 0.05], [0, 0.3, 0.164], tacticalBlack));
+		field.add(box([0.29, 0.14, 0.052], [0, 0.13, 0.152], tacticalBlack));
 		for (const x of [-0.11, 0.11]) {
-			field.add(box([0.045, 0.34, 0.018], [x, 0.34, 0.186], 0x111714));
+			field.add(box([0.046, 0.37, 0.02], [x, 0.34, 0.194], tacticalRaised));
+			field.add(box([0.105, 0.085, 0.05], [x, 0.22, 0.205], tacticalRaised));
 		}
-		field.add(box([0.085, 0.12, 0.045], [0.12, 0.31, 0.193], 0x111714));
-		field.add(box([0.055, 0.055, 0.018], [-0.1, 0.38, 0.207], orange));
-		field.add(box([0.012, 0.17, 0.012], [0.17, 0.47, 0.17], 0x313a36));
+		field.add(box([0.36, 0.055, 0.035], [0, 0.18, 0.188], tacticalRaised));
+		for (let row = 0; row < 3; row += 1) {
+			field.add(box([0.25, 0.014, 0.015], [0, 0.36 - row * 0.055, 0.203], 0x252a27));
+		}
+		field.add(box([0.082, 0.12, 0.055], [0.13, 0.31, 0.214], 0x111311));
+		field.add(box([0.082, 0.12, 0.055], [-0.13, 0.31, 0.214], 0x111311));
+
+		const nvgMount = box([0.18, 0.055, 0.04], [0, 0.61, 0.118], tacticalBlack);
+		field.add(nvgMount);
+		const greenGlow = new THREE.MeshStandardMaterial({
+			color: 0x8cff5f,
+			emissive: 0x52ff28,
+			emissiveIntensity: 4.6,
+			roughness: 0.18
+		});
+		for (const x of [-0.055, 0, 0.055]) {
+			const tube = cylinder(0.033, 0.038, 0.068, [x, 0.575, 0.151], tacticalRaised, 14);
+			tube.rotation.x = Math.PI / 2;
+			const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.012, 14), greenGlow);
+			lens.position.set(x, 0.575, 0.187);
+			lens.rotation.x = Math.PI / 2;
+			field.add(tube, lens);
+		}
+		const nvgLight = new THREE.PointLight(0x67ff3b, 0.55, 1.15, 2);
+		nvgLight.position.set(0, 0.57, 0.25);
+		field.add(nvgLight);
+
+		const cloneFieldMaterial = (source: THREE.Material) => {
+			const clone = source.clone();
+			if (clone instanceof THREE.MeshStandardMaterial) {
+				clone.color.setHex(tacticalBlack);
+				clone.roughness = 0.9;
+				clone.metalness = 0.04;
+				clone.emissive.setHex(0x020303);
+				clone.emissiveIntensity = 0.04;
+			}
+			return clone;
+		};
+		for (const name of ['body', 'left_arm', 'right_arm', 'left_foot', 'right_foot']) {
+			const object = model.getObjectByName(name);
+			if (!(object instanceof THREE.Mesh)) continue;
+			const regularMaterial = object.material;
+			const fieldMaterial = Array.isArray(regularMaterial)
+				? regularMaterial.map(cloneFieldMaterial)
+				: cloneFieldMaterial(regularMaterial);
+			this.rabbitUniformMeshes.push({
+				mesh: object,
+				regularMaterial,
+				fieldMaterial
+			});
+		}
 
 		const disguise = new THREE.Group();
 		for (const x of [-0.041, 0.041]) {
@@ -2043,16 +2131,20 @@ export class StampKonijnGame {
 		const hatCrown = cylinder(0.095, 0.115, 0.085, [0, 0.695, 0], 0x76543d, 18);
 		disguise.add(hatBrim, hatCrown);
 
-		this.rabbitStyleGroups.set('agent', agent);
-		this.rabbitStyleGroups.set('field', field);
-		this.rabbitStyleGroups.set('disguise', disguise);
+		this.rabbitStyleObjects.set('agent', agentObjects);
+		this.rabbitStyleObjects.set('field', [field]);
+		this.rabbitStyleObjects.set('disguise', [disguise]);
 		model.add(agent, field, disguise);
 		this.syncRabbitStyle();
 	}
 
 	private syncRabbitStyle() {
-		for (const [style, group] of this.rabbitStyleGroups) {
-			group.visible = style === this.rabbitStyle;
+		for (const [style, objects] of this.rabbitStyleObjects) {
+			for (const object of objects) object.visible = style === this.rabbitStyle;
+		}
+		for (const uniform of this.rabbitUniformMeshes) {
+			uniform.mesh.material =
+				this.rabbitStyle === 'field' ? uniform.fieldMaterial : uniform.regularMaterial;
 		}
 	}
 
