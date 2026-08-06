@@ -560,6 +560,8 @@ export class StampKonijnGame {
 	private poolWater: THREE.Mesh<THREE.CircleGeometry, THREE.MeshPhysicalMaterial> | null = null;
 	private poolWaterBasePositions: Float32Array | null = null;
 	private poolWaterTime = 0;
+	private sewerLightDust: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null = null;
+	private sewerLightDustBasePositions: Float32Array | null = null;
 	private poolWaveEnergy = 0;
 	private rabbitInPoolWater = false;
 	private poolSplashCooldown = 0;
@@ -943,6 +945,11 @@ export class StampKonijnGame {
 		this.poopieMonsterStatus?.material.dispose();
 		this.poopieMonsterStatusTexture?.dispose();
 		this.poopieMonsterStatusTexture = null;
+		this.sewerLightDust?.material.map?.dispose();
+		this.sewerLightDust?.material.dispose();
+		this.sewerLightDust?.geometry.dispose();
+		this.sewerLightDust = null;
+		this.sewerLightDustBasePositions = null;
 		this.clearBulletHoles();
 		disposeObject(this.scene);
 		this.renderer.dispose();
@@ -1444,42 +1451,63 @@ export class StampKonijnGame {
 		this.basementRoot.add(...this.basementLights);
 	}
 	private createSewer() {
-		const shaftGlow = new THREE.PointLight(0xb9d19b, 4.2, 7.5, 2);
-		shaftGlow.position.set(TOILET_X, -1.3, SEWER_CENTER_Z + 0.2);
+		const shaftGlow = new THREE.PointLight(0xc8d9ae, 3.6, 6.5, 2);
+		shaftGlow.position.set(TOILET_X, -0.72, SEWER_CENTER_Z + 0.12);
 		const shaftFloorTarget = new THREE.Object3D();
 		shaftFloorTarget.position.set(TOILET_X, SEWER_FLOOR_Y + 0.02, SEWER_CENTER_Z);
-		const shaftSpot = new THREE.SpotLight(0xcde3ac, 28, 11, Math.PI * 0.17, 0.82, 1.7);
-		shaftSpot.position.set(TOILET_X, -0.38, SEWER_CENTER_Z + 0.16);
+		const shaftSpot = new THREE.SpotLight(0xd7e7bd, 48, 11.5, Math.PI * 0.19, 0.94, 1.8);
+		shaftSpot.position.set(TOILET_X, -0.42, SEWER_CENTER_Z + 0.12);
 		shaftSpot.target = shaftFloorTarget;
 		shaftSpot.castShadow = false;
-		this.sewerRoot.add(shaftGlow, shaftSpot, shaftFloorTarget);
-		const rayTopY = -0.32;
-		// Continue the translucent geometry below the floor so its open lower edge
-		// is occluded instead of reading as a floating ring in the sewer.
-		const rayBottomY = SEWER_FLOOR_Y - 1.6;
-		const rayHeight = rayTopY - rayBottomY;
-		for (const [index, offset] of [-0.2, 0.04, 0.24].entries()) {
-			const ray = new THREE.Mesh(
-				new THREE.CylinderGeometry(0.05, 0.64 - index * 0.1, rayHeight, 24, 1, true),
-				new THREE.MeshBasicMaterial({
-					color: index === 1 ? 0xd8e8bb : 0xb9d19b,
-					transparent: true,
-					opacity: index === 1 ? 0.06 : 0.028,
-					depthWrite: false,
-					blending: THREE.AdditiveBlending,
-					side: THREE.DoubleSide,
-					toneMapped: false
-				})
-			);
-			ray.position.set(
-				TOILET_X + offset,
-				(rayTopY + rayBottomY) / 2,
-				SEWER_CENTER_Z + (index - 1) * 0.18
-			);
-			ray.rotation.z = (index - 1) * 0.025;
-			ray.renderOrder = 1;
-			this.sewerRoot.add(ray);
+		const floorBounce = new THREE.PointLight(0xaec496, 2.1, 4.4, 2);
+		floorBounce.position.set(TOILET_X, SEWER_FLOOR_Y + 0.24, SEWER_CENTER_Z);
+		this.sewerRoot.add(shaftGlow, shaftSpot, shaftFloorTarget, floorBounce);
+
+		const dustCanvas = document.createElement('canvas');
+		dustCanvas.width = 64;
+		dustCanvas.height = 64;
+		const dustContext = dustCanvas.getContext('2d');
+		if (dustContext) {
+			const dustGradient = dustContext.createRadialGradient(32, 32, 0, 32, 32, 32);
+			dustGradient.addColorStop(0, 'rgba(255, 255, 236, 0.92)');
+			dustGradient.addColorStop(0.35, 'rgba(229, 240, 204, 0.58)');
+			dustGradient.addColorStop(1, 'rgba(208, 226, 180, 0)');
+			dustContext.fillStyle = dustGradient;
+			dustContext.fillRect(0, 0, 64, 64);
 		}
+		const dustTexture = new THREE.CanvasTexture(dustCanvas);
+		dustTexture.colorSpace = THREE.SRGBColorSpace;
+		const dustCount = 30;
+		const dustPositions = new Float32Array(dustCount * 3);
+		for (let index = 0; index < dustCount; index += 1) {
+			const progress = (index + 0.5) / dustCount;
+			const spread = THREE.MathUtils.lerp(0.08, 0.68, progress);
+			const angle = index * 2.39996;
+			const radius = spread * (0.26 + ((index * 47) % 19) / 25);
+			const offset = index * 3;
+			dustPositions[offset] = TOILET_X + Math.cos(angle) * radius;
+			dustPositions[offset + 1] = THREE.MathUtils.lerp(-0.52, SEWER_FLOOR_Y + 0.3, progress);
+			dustPositions[offset + 2] = SEWER_CENTER_Z + Math.sin(angle) * radius;
+		}
+		const dustGeometry = new THREE.BufferGeometry();
+		dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions.slice(), 3));
+		this.sewerLightDustBasePositions = dustPositions;
+		this.sewerLightDust = new THREE.Points(
+			dustGeometry,
+			new THREE.PointsMaterial({
+				map: dustTexture,
+				color: 0xdce9c4,
+				size: 0.075,
+				transparent: true,
+				opacity: 0.48,
+				depthWrite: false,
+				blending: THREE.AdditiveBlending,
+				sizeAttenuation: true,
+				toneMapped: false
+			})
+		);
+		this.sewerLightDust.renderOrder = 1;
+		this.sewerRoot.add(this.sewerLightDust);
 		this.createPoopieMonster();
 
 		const distantGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
@@ -4256,6 +4284,7 @@ export class StampKonijnGame {
 			this.updateDebris(delta);
 			this.updateImpactRings(delta);
 			this.updatePoolWater(delta);
+			this.updateSewerLightDust();
 			this.updateWeaponProjectiles(delta);
 			this.updateMuzzleEffects(delta);
 			this.updateToilet(delta);
@@ -7954,6 +7983,22 @@ export class StampKonijnGame {
 				this.impactRings.splice(index, 1);
 			}
 		}
+	}
+
+	private updateSewerLightDust() {
+		if (!this.sewerLightDust || !this.sewerLightDustBasePositions) return;
+		const positions = this.sewerLightDust.geometry.getAttribute('position');
+		for (let index = 0; index < positions.count; index += 1) {
+			const offset = index * 3;
+			const phase = this.poolWaterTime * (0.28 + (index % 5) * 0.025) + index * 1.73;
+			positions.setXYZ(
+				index,
+				this.sewerLightDustBasePositions[offset] + Math.sin(phase) * 0.025,
+				this.sewerLightDustBasePositions[offset + 1] + Math.sin(phase * 0.72) * 0.045,
+				this.sewerLightDustBasePositions[offset + 2] + Math.cos(phase * 0.83) * 0.025
+			);
+		}
+		positions.needsUpdate = true;
 	}
 
 	private updatePoolWater(delta: number) {
