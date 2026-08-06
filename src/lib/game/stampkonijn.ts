@@ -600,6 +600,10 @@ export class StampKonijnGame {
 	private ko9LockersBreakable: Breakable | null = null;
 	private ko9RadioBreakable: Breakable | null = null;
 	private ko9RadioCooldown = 6;
+	private ko9RadioBubble: THREE.Sprite | null = null;
+	private ko9RadioBubbleCanvas: HTMLCanvasElement | null = null;
+	private ko9RadioBubbleTexture: THREE.CanvasTexture | null = null;
+	private ko9RadioBubbleTime = 0;
 	private ko9EmblemBreakable: Breakable | null = null;
 	private ko9EmblemCrackStages: THREE.Object3D[] = [];
 	private toiletHole = new THREE.Group();
@@ -3260,7 +3264,95 @@ export class StampKonijnGame {
 		const label = this.makeKo9TextPanel(1.65, 0.3, ['KO-9 COMMS', 'INTERCEPT ACTIVE']);
 		label.position.set(0, 1.52, 0.28);
 		group.add(label);
+		const bubble = this.makeKo9RadioBubble();
+		bubble.position.set(0, 3.05, 0.5);
+		group.add(bubble);
 		return group;
+	}
+
+	private makeKo9RadioBubble() {
+		const canvas = document.createElement('canvas');
+		canvas.width = 1024;
+		canvas.height = 512;
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		texture.minFilter = THREE.LinearFilter;
+		texture.magFilter = THREE.LinearFilter;
+		const bubble = new THREE.Sprite(
+			new THREE.SpriteMaterial({
+				map: texture,
+				transparent: true,
+				depthTest: false,
+				depthWrite: false,
+				toneMapped: false
+			})
+		);
+		bubble.name = 'ko9-radio-message';
+		bubble.scale.set(4.6, 2.3, 1);
+		bubble.renderOrder = 12;
+		bubble.visible = false;
+		this.ko9RadioBubble = bubble;
+		this.ko9RadioBubbleCanvas = canvas;
+		this.ko9RadioBubbleTexture = texture;
+		return bubble;
+	}
+
+	private showKo9RadioMessage(message: string) {
+		const bubble = this.ko9RadioBubble;
+		const canvas = this.ko9RadioBubbleCanvas;
+		const texture = this.ko9RadioBubbleTexture;
+		const context = canvas?.getContext('2d');
+		if (!bubble || !canvas || !texture || !context) return;
+
+		context.clearRect(0, 0, canvas.width, canvas.height);
+		context.fillStyle = 'rgba(246, 237, 220, 0.98)';
+		context.strokeStyle = '#251f1b';
+		context.lineWidth = 14;
+		context.lineJoin = 'round';
+		context.beginPath();
+		context.roundRect(22, 20, 980, 410, 42);
+		context.moveTo(452, 426);
+		context.lineTo(506, 492);
+		context.lineTo(568, 426);
+		context.closePath();
+		context.fill();
+		context.stroke();
+
+		const separator = message.indexOf(':');
+		const channel = separator >= 0 ? message.slice(0, separator) : 'KO-9 COMMS';
+		const body = separator >= 0 ? message.slice(separator + 1).trim() : message;
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
+		context.fillStyle = '#e87832';
+		context.font = '900 42px system-ui, sans-serif';
+		context.fillText(channel, canvas.width / 2, 88);
+
+		context.fillStyle = '#251f1b';
+		context.font = '800 52px system-ui, sans-serif';
+		const maxWidth = 850;
+		const words = body.split(/\s+/);
+		const lines: string[] = [];
+		let line = '';
+		for (const word of words) {
+			const next = line ? `${line} ${word}` : word;
+			if (line && context.measureText(next).width > maxWidth) {
+				lines.push(line);
+				line = word;
+			} else {
+				line = next;
+			}
+		}
+		if (line) lines.push(line);
+		const lineHeight = 66;
+		const firstLineY = 250 - ((lines.length - 1) * lineHeight) / 2;
+		for (let index = 0; index < lines.length; index += 1) {
+			context.fillText(lines[index], canvas.width / 2, firstLineY + index * lineHeight);
+		}
+
+		texture.needsUpdate = true;
+		bubble.visible = true;
+		if (bubble.material instanceof THREE.SpriteMaterial) bubble.material.opacity = 1;
+		this.ko9RadioBubbleTime = Math.min(12, Math.max(10, 6 + message.length * 0.08));
 	}
 
 	private makeKo9EmergencyButton() {
@@ -4244,6 +4336,15 @@ export class StampKonijnGame {
 	}
 
 	private updateKo9Hq(delta: number) {
+		if (this.ko9RadioBubbleTime > 0) {
+			this.ko9RadioBubbleTime = Math.max(0, this.ko9RadioBubbleTime - delta);
+			if (this.ko9RadioBubble?.material instanceof THREE.SpriteMaterial) {
+				this.ko9RadioBubble.material.opacity = Math.min(1, this.ko9RadioBubbleTime / 0.45);
+			}
+			if (this.ko9RadioBubbleTime === 0 && this.ko9RadioBubble) {
+				this.ko9RadioBubble.visible = false;
+			}
+		}
 		this.ko9MonitorUpdateCooldown -= delta;
 		if (this.playerUpstairs && this.ko9MonitorUpdateCooldown <= 0) {
 			this.ko9MonitorUpdateCooldown = this.reducedMotion ? 0.32 : 0.14;
@@ -4271,10 +4372,10 @@ export class StampKonijnGame {
 		if (this.playerUpstairs && this.ko9RadioBreakable && !this.ko9RadioBreakable.broken) {
 			this.ko9RadioCooldown -= delta;
 			if (this.ko9RadioCooldown <= 0) {
-				this.ko9RadioCooldown = 11 + Math.random() * 10;
+				this.ko9RadioCooldown = 17 + Math.random() * 11;
 				const message = KO9_RADIO_MESSAGES[Math.floor(Math.random() * KO9_RADIO_MESSAGES.length)];
 				this.audio.playKo9RadioBurst();
-				this.emitFeedback(message);
+				this.showKo9RadioMessage(message);
 			}
 		}
 
@@ -8086,6 +8187,8 @@ export class StampKonijnGame {
 		this.ko9LockdownShutters.visible = false;
 		this.ko9AlarmAudioCooldown = 0;
 		this.ko9RadioCooldown = 5 + Math.random() * 4;
+		this.ko9RadioBubbleTime = 0;
+		if (this.ko9RadioBubble) this.ko9RadioBubble.visible = false;
 		if (this.ko9AlarmButtonCap) this.ko9AlarmButtonCap.position.z = 0.48;
 		for (const stage of this.ko9EmblemCrackStages) stage.visible = false;
 		for (const smoke of this.ko9ServerSmoke) {
