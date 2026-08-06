@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { StampKonijnGame, type StampHudState, type WeaponName } from '$lib/game/stampkonijn';
+	import {
+		StampKonijnGame,
+		type RabbitStyle,
+		type StampHudState,
+		type WeaponName
+	} from '$lib/game/stampkonijn';
 
 	const weaponUi: Record<
 		WeaponName,
@@ -28,6 +33,12 @@
 			actionIcon: '🔥'
 		}
 	};
+	const rabbitStyles: Array<{ id: RabbitStyle; label: string; icon: string }> = [
+		{ id: 'classic', label: 'CLASSIC', icon: '🐇' },
+		{ id: 'agent', label: 'AGENT', icon: '🕶' },
+		{ id: 'field', label: 'FIELD OPS', icon: '📻' },
+		{ id: 'disguise', label: 'DISGUISE', icon: '🥸' }
+	];
 
 	const initialHud: StampHudState = {
 		phase: 'idle',
@@ -38,7 +49,9 @@
 		lastHit: '',
 		lastValue: 0,
 		weapon: 'poop',
-		weaponReady: true
+		weaponReady: true,
+		rabbitStyle: 'classic',
+		canCustomize: false
 	};
 
 	let canvas: HTMLCanvasElement;
@@ -178,6 +191,10 @@
 		if (event.detail !== 0) return;
 		game?.beginUseWeapon();
 		game?.endUseWeapon();
+	}
+
+	function selectRabbitStyle(style: RabbitStyle) {
+		game?.setRabbitStyle(style);
 	}
 </script>
 
@@ -367,6 +384,28 @@
 					>{hud.weapon === 'poop' ? 'HOUD SCHEET' : hud.weaponReady ? 'HOUD VUUR' : 'LADEN'}</strong
 				>
 			</button>
+		</div>
+	{/if}
+
+	{#if hud.phase === 'playing' && hud.canCustomize}
+		<div class="locker-customizer" aria-label="KO-9 konijn vermomming">
+			<div class="locker-customizer__heading">
+				<small>KO-9 AGENT LOCKERS</small>
+				<strong>PAS KONIJN AAN</strong>
+			</div>
+			<div class="locker-customizer__styles">
+				{#each rabbitStyles as style}
+					<button
+						type="button"
+						class:active={hud.rabbitStyle === style.id}
+						onclick={() => selectRabbitStyle(style.id)}
+						aria-pressed={hud.rabbitStyle === style.id}
+					>
+						<span aria-hidden="true">{style.icon}</span>
+						<strong>{style.label}</strong>
+					</button>
+				{/each}
+			</div>
 		</div>
 	{/if}
 
@@ -941,6 +980,99 @@
 		z-index: 9;
 	}
 
+	.locker-customizer {
+		position: absolute;
+		bottom: 4.9rem;
+		left: 1rem;
+		width: min(25rem, calc(100vw - 2rem));
+		border: 2px solid var(--ink);
+		border-radius: 0.6rem;
+		background: oklch(22% 0.025 160 / 0.96);
+		color: var(--cream);
+		box-shadow: 0.3rem 0.3rem 0 var(--ink);
+		overflow: hidden;
+		z-index: 10;
+		animation: locker-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	.locker-customizer__heading {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.8rem;
+		padding: 0.6rem 0.72rem 0.5rem;
+		border-bottom: 1px solid oklch(95% 0.035 83 / 0.2);
+		background: oklch(28% 0.04 160);
+	}
+
+	.locker-customizer__heading small {
+		color: oklch(78% 0.13 165);
+		font-size: 0.62rem;
+		font-weight: 900;
+		letter-spacing: 0.09em;
+	}
+
+	.locker-customizer__heading strong {
+		font-family: 'Chewy', system-ui, sans-serif;
+		font-size: 1rem;
+		font-weight: 400;
+		letter-spacing: 0.04em;
+	}
+
+	.locker-customizer__styles {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.38rem;
+		padding: 0.55rem;
+	}
+
+	.locker-customizer__styles button {
+		display: grid;
+		min-width: 0;
+		place-items: center;
+		gap: 0.18rem;
+		border: 1px solid oklch(95% 0.035 83 / 0.25);
+		border-radius: 0.42rem;
+		background: oklch(31% 0.03 160);
+		color: var(--cream);
+		padding: 0.42rem 0.2rem 0.36rem;
+		cursor: pointer;
+		font-family: inherit;
+	}
+
+	.locker-customizer__styles button:hover,
+	.locker-customizer__styles button:focus-visible,
+	.locker-customizer__styles button.active {
+		border-color: var(--orange);
+		background: var(--orange);
+		color: var(--ink);
+	}
+
+	.locker-customizer__styles button span {
+		font-size: 1.25rem;
+		line-height: 1;
+	}
+
+	.locker-customizer__styles button strong {
+		overflow: hidden;
+		max-width: 100%;
+		font-size: 0.58rem;
+		letter-spacing: 0.04em;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	@keyframes locker-enter {
+		from {
+			opacity: 0;
+			transform: translateY(0.6rem) scale(0.96);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
 	.weapon-control {
 		display: flex;
 		height: 3.05rem;
@@ -1128,6 +1260,12 @@
 			flex-direction: column;
 			align-items: center;
 			gap: 0.35rem;
+		}
+
+		.locker-customizer {
+			bottom: 7.3rem;
+			left: 0.6rem;
+			width: calc(100vw - 1.2rem);
 		}
 
 		.weapon-control {

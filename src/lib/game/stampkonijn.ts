@@ -10,16 +10,18 @@ import type {
 	GameCallbacks,
 	GamePhase,
 	GunWeapon,
+	RabbitStyle,
 	StampHudState,
 	WeaponName
 } from './types';
 
-export type { GamePhase, StampHudState, WeaponName } from './types';
+export type { GamePhase, RabbitStyle, StampHudState, WeaponName } from './types';
 
 type StampSurfaceKind = 'floor' | 'wall';
 type LeftRoomName = 'bathroom' | 'stairs' | 'bedroom';
 type BiomeName = 'ground' | 'basement' | 'sewer';
 type PoopieMonsterState = 'neutral' | 'dead' | 'friend';
+type Ko9FeedId = 'living' | 'kitchen' | 'garden' | 'bathroom';
 
 interface Breakable {
 	group: THREE.Group;
@@ -150,6 +152,12 @@ interface LeftRoomDoor {
 	openAmount: number;
 }
 
+interface Ko9MonitorDisplay {
+	canvas: HTMLCanvasElement;
+	texture: THREE.CanvasTexture;
+	feed: Ko9FeedId;
+}
+
 const ROOM_WIDTH = 14;
 const ROOM_DEPTH = 10;
 const ROOM_HEIGHT = 4.8;
@@ -256,6 +264,14 @@ const UPSTAIRS_STAIRWELL_MAX_X = UPSTAIRS_STAIRWELL_MIN_X + 4;
 const UPSTAIRS_STAIRWELL_CENTER_X = (UPSTAIRS_STAIRWELL_MIN_X + UPSTAIRS_STAIRWELL_MAX_X) / 2;
 const UPSTAIRS_STAIRWELL_HALF_Z = 1.5;
 const UPSTAIRS_LIGHT_INTENSITIES = [13, 9, 7];
+const KO9_CUSTOMIZE_RADIUS = 2.45;
+const KO9_RADIO_MESSAGES = [
+	'INTERCEPT: DE VOSSENBAAS IS IN BEWEGING.',
+	'INTERCEPT: VERDACHTE WORTELTRANSACTIE GEDETECTEERD.',
+	'KO-9 DISPATCH: ALLE AGENTEN BLIJF STAMPKLAAR.',
+	'INTERCEPT: ONBEKENDE ACTIVITEIT BIJ DE VILLA.',
+	'KO-9 COMMS: POOPIEMONSTER-SIGNAAL ONDERGRONDS.'
+] as const;
 const GARDEN_WIDTH = 28;
 const GARDEN_DEPTH = 18;
 const GARDEN_BACK_Z = BACK_WALL_Z - GARDEN_DEPTH;
@@ -452,6 +468,9 @@ export class StampKonijnGame {
 	private player = new THREE.Group();
 	private rabbitTumble = new THREE.Group();
 	private rabbitSquash = new THREE.Group();
+	private rabbitStyle: RabbitStyle = 'classic';
+	private rabbitStyleGroups = new Map<Exclude<RabbitStyle, 'classic'>, THREE.Group>();
+	private canCustomize = false;
 	private armRagdolls: ArmRagdoll[] = [];
 	private armRotation = new THREE.Quaternion();
 	private pistolPivot: THREE.Group | null = null;
@@ -548,6 +567,30 @@ export class StampKonijnGame {
 	private playerUpstairs = false;
 	private upstairsRoot: THREE.Object3D = new THREE.Group();
 	private upstairsBreakables: Breakable[] = [];
+	private ko9MonitorDisplays: Ko9MonitorDisplay[] = [];
+	private ko9MonitorUpdateCooldown = 0;
+	private ko9ServerBreakable: Breakable | null = null;
+	private ko9ServerFaultLevel = 0;
+	private ko9ServerEffectTime = 0;
+	private ko9ServerEffectsRoot = new THREE.Group();
+	private ko9ServerSmoke: Array<THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>> = [];
+	private ko9ServerSparks: Array<THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>> = [];
+	private ko9ServerSparkLight = new THREE.PointLight(0xffb64a, 0, 4.5, 2);
+	private ko9ArchiveBreakable: Breakable | null = null;
+	private ko9AlarmButtonBreakable: Breakable | null = null;
+	private ko9AlarmButtonCap: THREE.Object3D | null = null;
+	private ko9LockdownActive = false;
+	private ko9LockdownAmount = 0;
+	private ko9LockdownShutters = new THREE.Group();
+	private ko9ShutterPanels: THREE.Mesh[] = [];
+	private ko9AlarmLights: THREE.PointLight[] = [];
+	private ko9AlarmBeacons: Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>> = [];
+	private ko9AlarmAudioCooldown = 0;
+	private ko9LockersBreakable: Breakable | null = null;
+	private ko9RadioBreakable: Breakable | null = null;
+	private ko9RadioCooldown = 6;
+	private ko9EmblemBreakable: Breakable | null = null;
+	private ko9EmblemCrackStages: THREE.Object3D[] = [];
 	private toiletHole = new THREE.Group();
 	private toiletFloorPlug = new THREE.Group();
 	private kitchenHatchBreakable: Breakable | null = null;
@@ -746,6 +789,23 @@ export class StampKonijnGame {
 		this.weapon = weapons[(currentIndex + 1) % weapons.length];
 		this.syncWeaponModel();
 		this.audio.playWeaponChange();
+		this.emitHud(true);
+	}
+
+	setRabbitStyle(style: RabbitStyle) {
+		if (!this.canCustomize || style === this.rabbitStyle) return;
+		this.rabbitStyle = style;
+		this.syncRabbitStyle();
+		this.audio.playWeaponChange();
+		const label =
+			style === 'classic'
+				? 'CLASSIC KONIJN'
+				: style === 'agent'
+					? 'KO-9 AGENT'
+					: style === 'field'
+						? 'FIELD OPS KONIJN'
+						: 'UNDERCOVER KONIJN';
+		this.emitFeedback(`${label} AANGETROKKEN!`);
 		this.emitHud(true);
 	}
 
@@ -1105,6 +1165,8 @@ export class StampKonijnGame {
 	}
 	private createUpstairs() {
 		this.createKo9HideoutDecor();
+		this.createKo9LockdownHardware();
+		this.createKo9ServerEffects();
 		const monitorGlow = new THREE.PointLight(0x58c8b5, 0, 6.5, 2);
 		monitorGlow.position.set(0.45, UPSTAIRS_FLOOR_Y + 2.2, -1.15);
 		const archiveLight = new THREE.PointLight(0xf0a85c, 0, 5.6, 2);
@@ -1115,10 +1177,6 @@ export class StampKonijnGame {
 		this.upstairsRoot.add(...this.upstairsLights);
 	}
 	private createKo9HideoutDecor() {
-		const brand = this.makeKo9WallPanel(5.2, 0.82, 'brand');
-		brand.position.set(0.3, UPSTAIRS_FLOOR_Y + 3.82, BACK_WALL_Z + 0.12);
-		this.upstairsRoot.add(brand);
-
 		const targets = this.makeKo9WallPanel(3.9, 2.05, 'targets');
 		targets.position.set(-7.1, UPSTAIRS_FLOOR_Y + 2.62, BACK_WALL_Z + 0.125);
 		this.upstairsRoot.add(targets);
@@ -1137,6 +1195,99 @@ export class StampKonijnGame {
 			0x181c19
 		);
 		this.upstairsRoot.add(cableTray);
+	}
+
+	private createKo9LockdownHardware() {
+		this.ko9LockdownShutters.clear();
+		this.ko9ShutterPanels = [];
+		this.ko9LockdownShutters.position.set(
+			UPSTAIRS_STAIRWELL_CENTER_X,
+			UPSTAIRS_FLOOR_Y + 0.055,
+			STAIR_TOP_Z
+		);
+		for (const direction of [-1, 1]) {
+			const panel = shadowMesh(
+				new THREE.BoxGeometry(4.02, 0.11, UPSTAIRS_STAIRWELL_HALF_Z),
+				material(0x29322e, 0.42, 0.72)
+			);
+			panel.position.z = direction * (UPSTAIRS_STAIRWELL_HALF_Z + 0.76);
+			for (let rib = -1; rib <= 1; rib += 1) {
+				const bar = box(
+					[0.08, 0.035, UPSTAIRS_STAIRWELL_HALF_Z - 0.12],
+					[rib * 1.18, 0.073, 0],
+					0xb14032
+				);
+				panel.add(bar);
+			}
+			this.ko9ShutterPanels.push(panel);
+			this.ko9LockdownShutters.add(panel);
+		}
+		this.ko9LockdownShutters.visible = false;
+		this.upstairsRoot.add(this.ko9LockdownShutters);
+
+		this.ko9AlarmLights = [];
+		this.ko9AlarmBeacons = [];
+		for (const [x, z] of [
+			[-6.4, -0.8],
+			[2.2, 2.4],
+			[10.2, -0.8]
+		] as Array<[number, number]>) {
+			const beacon = new THREE.Mesh(
+				new THREE.CylinderGeometry(0.22, 0.29, 0.34, 16),
+				new THREE.MeshStandardMaterial({
+					color: 0xa12d29,
+					emissive: 0xff1f19,
+					emissiveIntensity: 0,
+					roughness: 0.26,
+					transparent: true,
+					opacity: 0.9
+				})
+			);
+			beacon.castShadow = true;
+			beacon.receiveShadow = true;
+			beacon.position.set(x, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT - 0.28, z);
+			const light = new THREE.PointLight(0xff3024, 0, 8, 2);
+			light.position.copy(beacon.position).add(new THREE.Vector3(0, -0.25, 0));
+			this.ko9AlarmBeacons.push(beacon);
+			this.ko9AlarmLights.push(light);
+			this.upstairsRoot.add(beacon, light);
+		}
+	}
+
+	private createKo9ServerEffects() {
+		this.ko9ServerEffectsRoot.clear();
+		this.ko9ServerSmoke = [];
+		this.ko9ServerSparks = [];
+		this.ko9ServerEffectsRoot.position.set(4.45, UPSTAIRS_FLOOR_Y, -4.2);
+		for (let index = 0; index < 5; index += 1) {
+			const smoke = new THREE.Mesh(
+				new THREE.SphereGeometry(0.2 + index * 0.035, 9, 7),
+				new THREE.MeshStandardMaterial({
+					color: 0x38403b,
+					roughness: 1,
+					transparent: true,
+					opacity: 0,
+					depthWrite: false
+				})
+			);
+			smoke.position.set((Math.random() - 0.5) * 0.34, 2.1 + index * 0.18, 0.16);
+			this.ko9ServerSmoke.push(smoke);
+			this.ko9ServerEffectsRoot.add(smoke);
+		}
+		for (let index = 0; index < 9; index += 1) {
+			const spark = new THREE.Mesh(
+				new THREE.BoxGeometry(0.018, 0.2 + Math.random() * 0.2, 0.018),
+				new THREE.MeshBasicMaterial({ color: index % 2 ? 0xffef91 : 0xff8a2d })
+			);
+			spark.position.set((Math.random() - 0.5) * 0.9, 1.25 + Math.random() * 1.1, 0.48);
+			spark.rotation.z = (Math.random() - 0.5) * 1.4;
+			spark.visible = false;
+			this.ko9ServerSparks.push(spark);
+			this.ko9ServerEffectsRoot.add(spark);
+		}
+		this.ko9ServerSparkLight.position.set(0, 1.75, 0.6);
+		this.ko9ServerEffectsRoot.add(this.ko9ServerSparkLight);
+		this.upstairsRoot.add(this.ko9ServerEffectsRoot);
 	}
 
 	private createBasement() {
@@ -1791,6 +1942,7 @@ export class StampKonijnGame {
 		this.populateGunRack(g36Gltf.scene);
 		this.createG36Pickup(g36Gltf.scene);
 		this.setupArmRagdolls(model);
+		this.setupRabbitStyles(model);
 		this.attachPoopieMonster(poopieMonsterGltf.scene);
 
 		this.rabbitSquash.add(model);
@@ -1800,6 +1952,71 @@ export class StampKonijnGame {
 		this.player.add(this.rabbitTumble);
 		this.player.position.set(0, 0, 2.4);
 		this.scene.add(this.player);
+	}
+
+	private setupRabbitStyles(model: THREE.Group) {
+		this.rabbitStyleGroups.clear();
+		const ink = 0x151917;
+		const darkGreen = 0x27352e;
+		const orange = 0xe87832;
+
+		const agent = new THREE.Group();
+		for (const x of [-0.039, 0.039]) {
+			agent.add(box([0.062, 0.032, 0.018], [x, 0.557, 0.123], ink));
+		}
+		agent.add(box([0.025, 0.009, 0.018], [0, 0.557, 0.123], ink));
+		for (const x of [-0.075, 0.075]) {
+			const lapel = box([0.08, 0.25, 0.024], [x, 0.31, 0.159], ink);
+			lapel.rotation.z = x < 0 ? -0.22 : 0.22;
+			agent.add(lapel);
+		}
+		agent.add(box([0.028, 0.17, 0.018], [0, 0.31, 0.177], orange));
+		agent.add(box([0.07, 0.09, 0.035], [0.17, 0.35, 0.15], 0x202825));
+
+		const field = new THREE.Group();
+		field.add(box([0.34, 0.31, 0.045], [0, 0.29, 0.158], darkGreen));
+		for (const x of [-0.11, 0.11]) {
+			field.add(box([0.045, 0.34, 0.018], [x, 0.34, 0.186], 0x111714));
+		}
+		field.add(box([0.085, 0.12, 0.045], [0.12, 0.31, 0.193], 0x111714));
+		field.add(box([0.055, 0.055, 0.018], [-0.1, 0.38, 0.207], orange));
+		field.add(box([0.012, 0.17, 0.012], [0.17, 0.47, 0.17], 0x313a36));
+
+		const disguise = new THREE.Group();
+		for (const x of [-0.041, 0.041]) {
+			const lens = new THREE.Mesh(
+				new THREE.TorusGeometry(0.035, 0.007, 6, 18),
+				material(0x2a211b, 0.54)
+			);
+			lens.position.set(x, 0.557, 0.124);
+			disguise.add(lens);
+		}
+		disguise.add(box([0.025, 0.008, 0.01], [0, 0.557, 0.124], 0x2a211b));
+		for (const x of [-0.026, 0.026]) {
+			const moustache = shadowMesh(
+				new THREE.SphereGeometry(0.034, 10, 7),
+				material(0x3a251a, 0.94)
+			);
+			moustache.scale.set(1.35, 0.42, 0.32);
+			moustache.position.set(x, 0.509, 0.136);
+			moustache.rotation.z = x < 0 ? 0.23 : -0.23;
+			disguise.add(moustache);
+		}
+		const hatBrim = cylinder(0.15, 0.15, 0.018, [0, 0.655, 0], 0x634633, 20);
+		const hatCrown = cylinder(0.095, 0.115, 0.085, [0, 0.695, 0], 0x76543d, 18);
+		disguise.add(hatBrim, hatCrown);
+
+		this.rabbitStyleGroups.set('agent', agent);
+		this.rabbitStyleGroups.set('field', field);
+		this.rabbitStyleGroups.set('disguise', disguise);
+		model.add(agent, field, disguise);
+		this.syncRabbitStyle();
+	}
+
+	private syncRabbitStyle() {
+		for (const [style, group] of this.rabbitStyleGroups) {
+			group.visible = style === this.rabbitStyle;
+		}
 	}
 
 	private setupArmRagdolls(model: THREE.Group) {
@@ -2090,18 +2307,17 @@ export class StampKonijnGame {
 				2
 			)
 		);
-		this.upstairsBreakables.push(
-			this.addBreakable(
-				'GEHEIM ARCHIEF',
-				360,
-				this.makeKo9Archive(),
-				[-10.05, UPSTAIRS_FLOOR_Y, -4.18],
-				1.5,
-				2.52,
-				'metal',
-				2
-			)
+		this.ko9ArchiveBreakable = this.addBreakable(
+			'GEHEIM ARCHIEF',
+			360,
+			this.makeKo9Archive(),
+			[-10.05, UPSTAIRS_FLOOR_Y, -4.18],
+			1.5,
+			2.52,
+			'metal',
+			2
 		);
+		this.upstairsBreakables.push(this.ko9ArchiveBreakable);
 		this.gunRackBreakable = this.addBreakable(
 			'WAPENREK',
 			620,
@@ -2125,6 +2341,75 @@ export class StampKonijnGame {
 				3
 			)
 		);
+		this.ko9ServerBreakable = this.addBreakable(
+			'KO-9 SERVERBANK',
+			980,
+			this.makeKo9ServerRack(),
+			[4.45, UPSTAIRS_FLOOR_Y, -4.2],
+			1.12,
+			2.72,
+			'electronics',
+			3
+		);
+		this.upstairsBreakables.push(this.ko9ServerBreakable);
+		this.ko9LockersBreakable = this.addBreakable(
+			'KO-9 AGENT LOCKERS',
+			520,
+			this.makeKo9AgentLockers(),
+			[-7.2, UPSTAIRS_FLOOR_Y, 4.18],
+			1.6,
+			2.5,
+			'metal',
+			2
+		);
+		this.upstairsBreakables.push(this.ko9LockersBreakable);
+		this.ko9RadioBreakable = this.addBreakable(
+			'KO-9 COMMS',
+			310,
+			this.makeKo9CommunicationsStation(),
+			[-2.75, UPSTAIRS_FLOOR_Y, 4.05],
+			1.25,
+			1.65,
+			'electronics',
+			2
+		);
+		this.upstairsBreakables.push(this.ko9RadioBreakable);
+		this.upstairsBreakables.push(
+			this.addBreakable(
+				'CARROT JUICE MACHINE',
+				140,
+				this.makeKo9CoffeeMachine(),
+				[2.55, UPSTAIRS_FLOOR_Y, 4.08],
+				0.72,
+				1.62,
+				'electronics',
+				1
+			)
+		);
+		this.ko9AlarmButtonBreakable = this.addBreakable(
+			'KO-9 NOODKNOP',
+			0,
+			this.makeKo9EmergencyButton(),
+			[11.7, UPSTAIRS_FLOOR_Y, 3.95],
+			0.72,
+			1.28,
+			'metal',
+			1,
+			'ground',
+			false
+		);
+		this.upstairsBreakables.push(this.ko9AlarmButtonBreakable);
+		this.ko9EmblemBreakable = this.addBreakable(
+			'KO-9 EMBLEEM',
+			860,
+			this.makeKo9Emblem(),
+			[0.3, UPSTAIRS_FLOOR_Y, BACK_WALL_Z + 0.2],
+			0.88,
+			4.35,
+			'metal',
+			3
+		);
+		this.upstairsBreakables.push(this.ko9EmblemBreakable);
 		this.addBreakable(
 			'ANTIEKE SPIEGEL',
 			360,
@@ -2226,7 +2511,8 @@ export class StampKonijnGame {
 		height: number,
 		breakMaterial: BreakMaterial,
 		stampsRequired = 1,
-		biome: BiomeName = 'ground'
+		biome: BiomeName = 'ground',
+		showPrice = true
 	) {
 		group.position.set(...position);
 		group.traverse((child) => {
@@ -2235,9 +2521,11 @@ export class StampKonijnGame {
 			child.receiveShadow = true;
 		});
 		const color = this.firstMaterialColor(group) ?? new THREE.Color(COLORS.orange);
-		const price = this.makePriceTag(`€${value}`);
-		price.position.set(0, height + 0.24, 0);
-		group.add(price);
+		if (showPrice) {
+			const price = this.makePriceTag(`€${value}`);
+			price.position.set(0, height + 0.24, 0);
+			group.add(price);
+		}
 		this.breakablesRoot.add(group);
 		const breakable: Breakable = {
 			group,
@@ -2456,18 +2744,20 @@ export class StampKonijnGame {
 	private makeKo9HackerDesk() {
 		const group = new THREE.Group();
 		const darkMetal = 0x171d1a;
+		this.ko9MonitorDisplays = [];
 		group.add(box([4.75, 0.18, 1.35], [0, 0.88, 0], 0x28312c));
 		for (const x of [-2.1, 2.1]) {
 			group.add(box([0.16, 0.86, 1.05], [x, 0.43, 0], darkMetal));
 		}
-		for (let index = 0; index < 3; index += 1) {
+		const feeds: Ko9FeedId[] = ['living', 'kitchen', 'garden', 'bathroom'];
+		for (let index = 0; index < feeds.length; index += 1) {
 			const monitor = new THREE.Group();
-			monitor.add(box([1.36, 0.88, 0.13], [0, 0, 0], 0x101412));
-			monitor.add(this.makeKo9MonitorFace(1.2, 0.72, index));
-			monitor.add(box([0.08, 0.45, 0.08], [0, -0.62, -0.02], darkMetal));
-			monitor.add(box([0.58, 0.06, 0.42], [0, -0.84, 0], darkMetal));
-			monitor.position.set(-1.48 + index * 1.48, 1.68, -0.28);
-			monitor.rotation.y = (1 - index) * 0.14;
+			monitor.add(box([1.05, 0.76, 0.13], [0, 0, 0], 0x101412));
+			monitor.add(this.makeKo9MonitorFace(0.91, 0.61, feeds[index]));
+			monitor.add(box([0.07, 0.4, 0.08], [0, -0.55, -0.02], darkMetal));
+			monitor.add(box([0.48, 0.06, 0.36], [0, -0.76, 0], darkMetal));
+			monitor.position.set(-1.73 + index * 1.15, 1.67, -0.28);
+			monitor.rotation.y = (1.5 - index) * 0.08;
 			group.add(monitor);
 		}
 		group.add(box([1.32, 0.055, 0.43], [0, 1.01, 0.39], 0x111613));
@@ -2491,36 +2781,164 @@ export class StampKonijnGame {
 		return group;
 	}
 
-	private makeKo9MonitorFace(width: number, height: number, index: number) {
+	private makeKo9MonitorFace(width: number, height: number, feed: Ko9FeedId) {
 		const canvas = document.createElement('canvas');
 		canvas.width = 512;
-		canvas.height = 320;
-		const context = canvas.getContext('2d');
-		if (context) {
-			context.fillStyle = '#07110d';
-			context.fillRect(0, 0, canvas.width, canvas.height);
-			context.fillStyle = index === 1 ? '#ef8b3b' : '#61d6b8';
-			context.font = '900 28px monospace';
-			context.fillText(index === 1 ? 'KO-9 // LIVE OPS' : 'ROOT@KO-9:~$', 22, 40);
-			context.font = '700 18px monospace';
-			for (let line = 0; line < 9; line += 1) {
-				const offset = (line * 43 + index * 71) % 250;
-				context.globalAlpha = 0.45 + (line % 3) * 0.18;
-				context.fillRect(24, 66 + line * 25, 120 + offset, 8);
-			}
-			context.globalAlpha = 1;
-			context.strokeStyle = '#345c4f';
-			context.lineWidth = 2;
-			context.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-		}
+		canvas.height = 336;
 		const texture = new THREE.CanvasTexture(canvas);
 		texture.colorSpace = THREE.SRGBColorSpace;
+		const display: Ko9MonitorDisplay = { canvas, texture, feed };
+		this.ko9MonitorDisplays.push(display);
+		this.paintKo9Monitor(display, 0);
 		const face = new THREE.Mesh(
 			new THREE.PlaneGeometry(width, height),
-			new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })
+			new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, side: THREE.DoubleSide })
 		);
 		face.position.z = 0.071;
 		return face;
+	}
+
+	private paintKo9Monitor(display: Ko9MonitorDisplay, elapsed: number) {
+		const context = display.canvas.getContext('2d');
+		if (!context) return;
+		const width = display.canvas.width;
+		const height = display.canvas.height;
+		const unlocked = this.isKo9FeedUnlocked(display.feed);
+		const fault = this.ko9ServerFaultLevel;
+		const labels: Record<Ko9FeedId, string> = {
+			living: 'CAM 01 // LIVING ROOM',
+			kitchen: 'CAM 02 // KITCHEN',
+			garden: 'CAM 03 // BACKYARD',
+			bathroom: 'CAM 04 // WC'
+		};
+		context.fillStyle = fault >= 1 ? '#120706' : '#06110d';
+		context.fillRect(0, 0, width, height);
+		context.strokeStyle = fault > 0 ? '#85382f' : '#234f42';
+		context.lineWidth = 2;
+		for (let x = 0; x < width; x += 48) {
+			context.beginPath();
+			context.moveTo(x, 0);
+			context.lineTo(x, height);
+			context.stroke();
+		}
+		for (let y = 0; y < height; y += 42) {
+			context.beginPath();
+			context.moveTo(0, y);
+			context.lineTo(width, y);
+			context.stroke();
+		}
+
+		context.fillStyle = fault > 0 ? '#f06d51' : '#69d5b7';
+		context.font = '900 25px monospace';
+		context.fillText(labels[display.feed], 20, 36);
+		context.fillStyle = '#d9e5d8';
+		context.font = '700 17px monospace';
+		context.textAlign = 'right';
+		context.fillText(`T+${elapsed.toFixed(1).padStart(6, '0')}`, width - 20, 34);
+		context.textAlign = 'left';
+
+		if (!unlocked) {
+			context.fillStyle = '#18231f';
+			context.fillRect(52, 78, width - 104, height - 126);
+			context.strokeStyle = '#536059';
+			context.lineWidth = 5;
+			context.strokeRect(52, 78, width - 104, height - 126);
+			context.fillStyle = '#ef8b3b';
+			context.font = '900 32px monospace';
+			context.textAlign = 'center';
+			context.fillText('ENCRYPTED', width / 2, height / 2 - 8);
+			context.fillStyle = '#8e9b94';
+			context.font = '700 18px monospace';
+			context.fillText('DISCOVER ROOM TO UNLOCK FEED', width / 2, height / 2 + 34);
+			context.textAlign = 'left';
+		} else {
+			const accent = display.feed === 'garden' ? '#70a867' : '#7cbcac';
+			context.fillStyle = display.feed === 'garden' ? '#182a1d' : '#14211c';
+			context.fillRect(36, 64, width - 72, height - 98);
+			context.strokeStyle = accent;
+			context.lineWidth = 5;
+			context.strokeRect(36, 64, width - 72, height - 98);
+			context.globalAlpha = 0.75;
+			context.fillStyle = accent;
+			if (display.feed === 'living') {
+				context.fillRect(78, 192, 150, 54);
+				context.fillRect(310, 95, 98, 112);
+				context.fillRect(245, 220, 74, 34);
+			} else if (display.feed === 'kitchen') {
+				context.fillRect(78, 95, 110, 150);
+				context.fillRect(245, 142, 175, 72);
+			} else if (display.feed === 'garden') {
+				context.beginPath();
+				context.arc(165, 170, 68, 0, Math.PI * 2);
+				context.fill();
+				context.fillRect(290, 115, 120, 95);
+			} else {
+				context.fillRect(100, 118, 92, 116);
+				context.fillRect(300, 95, 62, 145);
+			}
+			context.globalAlpha = 1;
+			if (this.isPlayerInKo9Feed(display.feed)) {
+				const pulse = 8 + Math.sin(elapsed * 7) * 3;
+				context.fillStyle = '#ff8b3d';
+				context.beginPath();
+				context.arc(width * 0.56, height * 0.58, pulse, 0, Math.PI * 2);
+				context.fill();
+				context.fillStyle = '#f6eddc';
+				context.font = '900 16px monospace';
+				context.fillText('STAMPKONIJN', width * 0.56 + 16, height * 0.58 + 6);
+			}
+			context.fillStyle = '#e55243';
+			context.font = '900 18px monospace';
+			context.fillText('● LIVE', 48, height - 18);
+		}
+
+		if (fault > 0) {
+			const glitchCount = Math.round(3 + fault * 10);
+			for (let index = 0; index < glitchCount; index += 1) {
+				const y = Math.random() * height;
+				context.fillStyle = index % 2 ? '#d94432' : '#67d3b4';
+				context.globalAlpha = 0.18 + fault * 0.35;
+				context.fillRect(
+					Math.random() * 80,
+					y,
+					width * (0.3 + Math.random() * 0.75),
+					3 + Math.random() * 12
+				);
+			}
+			context.globalAlpha = 1;
+			if (fault >= 1) {
+				context.fillStyle = '#160a08cc';
+				context.fillRect(70, 115, width - 140, 104);
+				context.fillStyle = '#ff5d43';
+				context.font = '900 38px monospace';
+				context.textAlign = 'center';
+				context.fillText('SERVER LOST', width / 2, 178);
+			}
+		}
+		display.texture.needsUpdate = true;
+	}
+
+	private isKo9FeedUnlocked(feed: Ko9FeedId) {
+		if (feed === 'living') return true;
+		if (feed === 'kitchen') return this.doorOpen;
+		if (feed === 'garden') return this.windowBroken;
+		return this.leftRoomDoors.some((door) => door.room === 'bathroom' && door.open);
+	}
+
+	private isPlayerInKo9Feed(feed: Ko9FeedId) {
+		if (feed === 'living') {
+			return (
+				!this.playerOutside &&
+				!this.playerInKitchen &&
+				!this.playerLeftRoom &&
+				!this.playerInBasement &&
+				!this.playerInSewer &&
+				!this.playerUpstairs
+			);
+		}
+		if (feed === 'kitchen') return this.playerInKitchen;
+		if (feed === 'garden') return this.playerOutside;
+		return this.playerLeftRoom === 'bathroom';
 	}
 
 	private makeKo9Archive() {
@@ -2576,6 +2994,212 @@ export class StampKonijnGame {
 			}
 		}
 		return group;
+	}
+
+	private makeKo9ServerRack() {
+		const group = new THREE.Group();
+		for (let rack = 0; rack < 2; rack += 1) {
+			const x = rack === 0 ? -0.52 : 0.52;
+			group.add(box([0.94, 2.58, 0.82], [x, 1.29, 0], 0x202723));
+			group.add(box([0.78, 2.38, 0.06], [x, 1.31, 0.44], 0x111714));
+			for (let module = 0; module < 8; module += 1) {
+				const y = 0.25 + module * 0.28;
+				group.add(box([0.68, 0.19, 0.035], [x, y, 0.49], 0x34423b));
+				for (let led = 0; led < 3; led += 1) {
+					const ledMaterial = new THREE.MeshStandardMaterial({
+						color: led === 2 && module % 3 === 0 ? 0xe87832 : 0x4fd5ad,
+						emissive: led === 2 && module % 3 === 0 ? 0x7d240d : 0x135d4b,
+						emissiveIntensity: 1.8,
+						roughness: 0.28
+					});
+					const light = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.026, 0.018), ledMaterial);
+					light.position.set(x - 0.24 + led * 0.08, y, 0.518);
+					group.add(light);
+				}
+			}
+			group.add(box([0.22, 0.04, 0.025], [x + 0.2, 2.38, 0.505], 0xbfd0c6));
+		}
+		group.add(this.makeKo9TextPanel(1.72, 0.28, ['KO-9 SERVER', 'BLACK SITE NETWORK']));
+		group.children.at(-1)?.position.set(0, 2.42, 0.5);
+		return group;
+	}
+
+	private makeKo9AgentLockers() {
+		const group = new THREE.Group();
+		for (let locker = 0; locker < 3; locker += 1) {
+			const x = -0.92 + locker * 0.92;
+			group.add(box([0.84, 2.38, 0.7], [x, 1.19, 0], 0x38443e));
+			group.add(box([0.68, 2.14, 0.05], [x, 1.19, 0.38], 0x1a211e));
+			for (let vent = 0; vent < 4; vent += 1) {
+				group.add(box([0.34, 0.025, 0.018], [x, 2.08 - vent * 0.06, 0.415], 0x6c7b72));
+			}
+			group.add(box([0.2, 0.08, 0.018], [x, 1.82, 0.415], 0xdad0b8));
+		}
+
+		const suit = new THREE.Group();
+		suit.add(box([0.52, 0.72, 0.12], [0, 1.38, 0.47], 0x171c1a));
+		for (const side of [-1, 1]) {
+			const sleeve = box([0.18, 0.66, 0.12], [side * 0.3, 1.36, 0.46], 0x171c1a);
+			sleeve.rotation.z = side * 0.16;
+			suit.add(sleeve);
+		}
+		suit.add(box([0.055, 0.38, 0.035], [0, 1.43, 0.55], 0xe87832));
+		const hanger = new THREE.Mesh(
+			new THREE.TorusGeometry(0.28, 0.018, 5, 18, Math.PI),
+			material(0xb8c0ba)
+		);
+		hanger.position.set(0, 1.78, 0.48);
+		hanger.rotation.z = Math.PI;
+		suit.add(hanger);
+		group.add(suit);
+
+		for (const x of [-1.02, -0.84]) {
+			group.add(box([0.14, 0.055, 0.035], [x, 1.47, 0.45], 0x0e1211));
+		}
+		group.add(box([0.24, 0.3, 0.12], [0.92, 1.24, 0.47], 0x202825));
+		group.add(box([0.025, 0.42, 0.025], [1.02, 1.58, 0.47], 0x8b958f));
+		const fakeEars = [-0.08, 0.08].map((x) => {
+			const ear = shadowMesh(new THREE.CapsuleGeometry(0.075, 0.26, 5, 10), material(0xc8b99f));
+			ear.position.set(0.82 + x, 0.62, 0.46);
+			ear.rotation.z = x < 0 ? -0.12 : 0.12;
+			return ear;
+		});
+		group.add(...fakeEars);
+		const label = this.makeKo9TextPanel(2.55, 0.34, [
+			'KO-9 AGENT LOCKERS',
+			'SUIT // COMMS // DISGUISE'
+		]);
+		label.position.set(0, 2.42, 0.41);
+		group.add(label);
+		return group;
+	}
+
+	private makeKo9CoffeeMachine() {
+		const group = new THREE.Group();
+		group.add(box([1.22, 0.82, 0.76], [0, 0.41, 0], 0x29332e));
+		group.add(box([0.96, 0.72, 0.68], [0, 1.08, 0], 0x171d1a));
+		group.add(box([0.72, 0.35, 0.08], [0, 1.21, 0.38], 0x3d4c44));
+		group.add(cylinder(0.05, 0.05, 0.28, [0, 0.88, 0.42], 0xabb5ae, 10));
+		const cup = cylinder(0.16, 0.14, 0.25, [0, 0.73, 0.43], 0xe87832, 16);
+		group.add(cup);
+		for (let button = 0; button < 3; button += 1) {
+			group.add(box([0.06, 0.06, 0.025], [-0.2 + button * 0.2, 1.22, 0.43], 0x62d1b4));
+		}
+		const label = this.makeKo9TextPanel(1.12, 0.32, ['CARROT JUICE', '— AGENTS ONLY —']);
+		label.position.set(0, 1.48, 0.4);
+		group.add(label);
+		return group;
+	}
+
+	private makeKo9CommunicationsStation() {
+		const group = new THREE.Group();
+		group.add(box([2.18, 0.16, 0.92], [0, 0.79, 0], 0x344039));
+		for (const x of [-0.88, 0.88]) group.add(box([0.12, 0.78, 0.72], [x, 0.39, 0], 0x171d1a));
+		group.add(box([1.64, 0.72, 0.34], [0, 1.15, 0.08], 0x1a211e));
+		for (let dial = 0; dial < 4; dial += 1) {
+			const knob = cylinder(0.08, 0.08, 0.05, [-0.55 + dial * 0.36, 1.08, 0.28], 0x87958c, 14);
+			knob.rotation.x = Math.PI / 2;
+			group.add(knob);
+		}
+		for (let line = 0; line < 4; line += 1) {
+			group.add(
+				box(
+					[1.22 - line * 0.12, 0.025, 0.02],
+					[0, 1.25 + line * 0.09, 0.27],
+					line === 1 ? 0xe87832 : 0x58c8b5
+				)
+			);
+		}
+		const microphone = cylinder(0.045, 0.065, 0.38, [0.72, 1.28, 0.42], 0x202522, 12);
+		microphone.rotation.z = -0.44;
+		group.add(microphone);
+		for (const x of [-0.78, 0.78]) {
+			const antenna = box([0.018, 0.72, 0.018], [x, 1.72, 0.16], 0x9da8a1);
+			antenna.rotation.z = x < 0 ? -0.12 : 0.12;
+			group.add(antenna);
+		}
+		const label = this.makeKo9TextPanel(1.65, 0.3, ['KO-9 COMMS', 'INTERCEPT ACTIVE']);
+		label.position.set(0, 1.52, 0.28);
+		group.add(label);
+		return group;
+	}
+
+	private makeKo9EmergencyButton() {
+		const group = new THREE.Group();
+		group.add(box([1.08, 1.08, 0.74], [0, 0.54, 0], 0x242b28));
+		group.add(box([0.86, 0.48, 0.08], [0, 0.86, 0.42], 0xddd1b7));
+		const cap = cylinder(0.28, 0.35, 0.24, [0, 0.52, 0.48], 0xd43c32, 20);
+		cap.rotation.x = Math.PI / 2;
+		this.ko9AlarmButtonCap = cap;
+		group.add(cap);
+		const label = this.makeKo9TextPanel(0.84, 0.32, ['LOCKDOWN', 'STAMP BUTTON']);
+		label.position.set(0, 0.88, 0.47);
+		group.add(label);
+		return group;
+	}
+
+	private makeKo9Emblem() {
+		const group = new THREE.Group();
+		const panel = this.makeKo9WallPanel(5.4, 1.05, 'brand');
+		panel.position.set(0, 3.75, 0);
+		group.add(panel);
+		this.ko9EmblemCrackStages = [];
+		const crackSegments: Array<Array<[number, number, number, number]>> = [
+			[
+				[0.18, 3.8, 0.58, -0.7],
+				[-0.05, 3.6, 0.5, 0.52]
+			],
+			[
+				[-0.34, 3.95, 0.82, 0.38],
+				[0.55, 3.55, 0.72, -0.28],
+				[-0.72, 3.68, 0.62, -0.72]
+			],
+			[
+				[1.1, 3.83, 1.05, 0.14],
+				[-1.25, 3.48, 0.92, -0.18],
+				[0.02, 4.02, 0.7, 1.22]
+			]
+		];
+		for (const segments of crackSegments) {
+			const stage = new THREE.Group();
+			for (const [x, y, length, angle] of segments) {
+				const crack = box([length, 0.026, 0.026], [x, y, 0.071], 0x080a09);
+				crack.rotation.z = angle;
+				stage.add(crack);
+			}
+			stage.visible = false;
+			this.ko9EmblemCrackStages.push(stage);
+			group.add(stage);
+		}
+		return group;
+	}
+
+	private makeKo9TextPanel(width: number, height: number, lines: [string, string]) {
+		const canvas = document.createElement('canvas');
+		canvas.width = 512;
+		canvas.height = 160;
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.fillStyle = '#111613';
+			context.fillRect(0, 0, canvas.width, canvas.height);
+			context.strokeStyle = '#e87832';
+			context.lineWidth = 9;
+			context.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
+			context.fillStyle = '#f1ead7';
+			context.font = '900 43px system-ui, sans-serif';
+			context.textAlign = 'center';
+			context.textBaseline = 'middle';
+			context.fillText(lines[0], canvas.width / 2, 62);
+			context.fillStyle = '#72cdb5';
+			context.font = '800 24px monospace';
+			context.fillText(lines[1], canvas.width / 2, 112);
+		}
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		return new THREE.Mesh(
+			new THREE.PlaneGeometry(width, height),
+			new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, side: THREE.DoubleSide })
+		);
 	}
 
 	private makeShelf() {
@@ -3411,6 +4035,7 @@ export class StampKonijnGame {
 				1 - Math.exp(-4.5 * delta)
 			);
 		}
+		this.updateKo9Hq(delta);
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -3481,8 +4106,101 @@ export class StampKonijnGame {
 	private syncUpstairsVisibility() {
 		this.upstairsRoot.visible = this.playerUpstairs;
 		for (const breakable of this.upstairsBreakables) {
-			breakable.group.visible = this.playerUpstairs && !breakable.broken;
+			const persistentAlarmButton = breakable === this.ko9AlarmButtonBreakable;
+			breakable.group.visible = this.playerUpstairs && (!breakable.broken || persistentAlarmButton);
 		}
+	}
+
+	private updateKo9Hq(delta: number) {
+		this.ko9MonitorUpdateCooldown -= delta;
+		if (this.playerUpstairs && this.ko9MonitorUpdateCooldown <= 0) {
+			this.ko9MonitorUpdateCooldown = this.reducedMotion ? 0.32 : 0.14;
+			for (const display of this.ko9MonitorDisplays) {
+				this.paintKo9Monitor(display, this.poolWaterTime);
+			}
+		}
+
+		const locker = this.ko9LockersBreakable;
+		const canCustomize = Boolean(
+			this.playerUpstairs &&
+				locker &&
+				!locker.broken &&
+				Math.hypot(
+					this.player.position.x - locker.group.position.x,
+					this.player.position.z - locker.group.position.z
+				) <= KO9_CUSTOMIZE_RADIUS
+		);
+		if (canCustomize !== this.canCustomize) {
+			this.canCustomize = canCustomize;
+			if (canCustomize) this.emitFeedback('KO-9 LOCKERS: KIES JE UITRUSTING!');
+			this.emitHud(true);
+		}
+
+		if (this.playerUpstairs && this.ko9RadioBreakable && !this.ko9RadioBreakable.broken) {
+			this.ko9RadioCooldown -= delta;
+			if (this.ko9RadioCooldown <= 0) {
+				this.ko9RadioCooldown = 11 + Math.random() * 10;
+				const message = KO9_RADIO_MESSAGES[Math.floor(Math.random() * KO9_RADIO_MESSAGES.length)];
+				this.audio.playKo9RadioBurst();
+				this.emitFeedback(message);
+			}
+		}
+
+		const lockdownTarget = this.ko9LockdownActive ? 1 : 0;
+		this.ko9LockdownAmount = THREE.MathUtils.lerp(
+			this.ko9LockdownAmount,
+			lockdownTarget,
+			1 - Math.exp(-5.4 * delta)
+		);
+		if (Math.abs(this.ko9LockdownAmount - lockdownTarget) < 0.002) {
+			this.ko9LockdownAmount = lockdownTarget;
+		}
+		this.ko9LockdownShutters.visible = this.ko9LockdownAmount > 0.01;
+		for (const panel of this.ko9ShutterPanels) {
+			const direction = Math.sign(panel.position.z) || 1;
+			panel.position.z =
+				direction *
+				THREE.MathUtils.lerp(UPSTAIRS_STAIRWELL_HALF_Z + 0.76, 0.75, this.ko9LockdownAmount);
+		}
+
+		this.ko9AlarmAudioCooldown = Math.max(0, this.ko9AlarmAudioCooldown - delta);
+		const alarmPulse = this.ko9LockdownActive
+			? 0.25 + Math.pow(Math.max(0, Math.sin(this.poolWaterTime * 8.2)), 7) * 0.75
+			: 0;
+		for (let index = 0; index < this.ko9AlarmLights.length; index += 1) {
+			this.ko9AlarmLights[index].intensity = this.playerUpstairs ? alarmPulse * 12 : 0;
+			this.ko9AlarmBeacons[index].material.emissiveIntensity = alarmPulse * 3.6;
+			this.ko9AlarmBeacons[index].rotation.y += delta * (3.2 + index * 0.35);
+		}
+		if (this.playerUpstairs && this.ko9LockdownActive && this.ko9AlarmAudioCooldown <= 0) {
+			this.ko9AlarmAudioCooldown = 0.76;
+			this.audio.playKo9AlarmPulse();
+		}
+
+		this.ko9ServerEffectTime = Math.max(0, this.ko9ServerEffectTime - delta);
+		const serverEffectsActive = this.ko9ServerEffectTime > 0 || this.ko9ServerFaultLevel >= 1;
+		for (let index = 0; index < this.ko9ServerSmoke.length; index += 1) {
+			const smoke = this.ko9ServerSmoke[index];
+			const phase = (this.poolWaterTime * (0.38 + index * 0.025) + index * 0.19) % 1;
+			smoke.visible = serverEffectsActive;
+			smoke.position.y = 2.05 + phase * 1.15;
+			smoke.position.x = Math.sin(this.poolWaterTime * 0.8 + index * 1.7) * (0.12 + phase * 0.2);
+			smoke.scale.setScalar(0.72 + phase * 1.5);
+			smoke.material.opacity = serverEffectsActive
+				? (1 - phase) * (0.12 + this.ko9ServerFaultLevel * 0.18)
+				: 0;
+		}
+		let visibleSparks = 0;
+		for (let index = 0; index < this.ko9ServerSparks.length; index += 1) {
+			const spark = this.ko9ServerSparks[index];
+			const visible =
+				serverEffectsActive &&
+				!this.reducedMotion &&
+				Math.sin(this.poolWaterTime * 45 + index * 9.7) > 0.72 - this.ko9ServerFaultLevel * 0.2;
+			spark.visible = visible;
+			if (visible) visibleSparks += 1;
+		}
+		this.ko9ServerSparkLight.intensity = visibleSparks > 0 ? 3.5 + visibleSparks * 0.7 : 0;
 	}
 
 	private syncGroundRoomVisibility() {
@@ -4101,6 +4819,7 @@ export class StampKonijnGame {
 	}
 
 	private shouldEnterUpstairsFromStairs() {
+		if (this.ko9LockdownActive || this.ko9LockdownAmount > 0.15) return false;
 		return (
 			this.playerLeftRoom === 'stairs' &&
 			this.player.position.y >= UPSTAIRS_FLOOR_Y - 0.08 &&
@@ -4111,6 +4830,7 @@ export class StampKonijnGame {
 	}
 
 	private isAtUpstairsStairOpening() {
+		if (this.ko9LockdownActive || this.ko9LockdownAmount > 0.15) return false;
 		return (
 			this.player.position.x <= UPSTAIRS_STAIRWELL_MAX_X + PLAYER_RADIUS * 0.7 &&
 			this.player.position.x >= UPSTAIRS_STAIRWELL_MIN_X - PLAYER_RADIUS &&
@@ -5749,6 +6469,24 @@ export class StampKonijnGame {
 		if (source === 'stamp') {
 			this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
 		}
+		if (breakable === this.ko9AlarmButtonBreakable) {
+			if (source === 'bullet') {
+				this.emitFeedback('NOODKNOP: STAMP OM LOCKDOWN TE ACTIVEREN!');
+				return;
+			}
+			if (breakable.lastStampSequence === this.stampSequence) return;
+			breakable.lastStampSequence = this.stampSequence;
+			this.activateKo9Lockdown();
+			return;
+		}
+		if (breakable === this.ko9ServerBreakable) {
+			this.damageKo9Server(breakable, source);
+			return;
+		}
+		if (breakable === this.ko9EmblemBreakable) {
+			this.damageKo9Emblem(breakable, source);
+			return;
+		}
 		if (breakable === this.kitchenHatchBreakable) {
 			if (source === 'bullet') {
 				this.emitFeedback('DIT LUIK MOET JE STAMPEN!');
@@ -5812,6 +6550,73 @@ export class StampKonijnGame {
 		this.pendingStampFeedback =
 			stampsLeft === 1 ? 'KRAK! NOG 1 STAMP!' : `KRAK! NOG ${stampsLeft} STAMPEN!`;
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
+	}
+
+	private activateKo9Lockdown() {
+		const button = this.ko9AlarmButtonBreakable;
+		if (!button || button.broken || this.ko9LockdownActive) return;
+		button.broken = true;
+		button.group.visible = this.playerUpstairs;
+		this.destroyedCount += 1;
+		this.lastHit = button.label;
+		this.lastValue = 0;
+		this.ko9LockdownActive = true;
+		this.ko9AlarmAudioCooldown = 0;
+		if (this.ko9AlarmButtonCap) this.ko9AlarmButtonCap.position.z = 0.37;
+		this.cameraShake = Math.max(this.cameraShake, 0.62);
+		this.emitFeedback('KO-9 LOCKDOWN! TRAPGAT AFGESLOTEN!');
+		this.audio.playKo9AlarmPulse();
+		this.emitHud(true);
+		this.finishIfEverythingIsDestroyed();
+	}
+
+	private damageKo9Server(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (source === 'bullet') {
+			this.emitFeedback('DE SERVERBANK HEEFT EEN DIKKE KONTSTAMP NODIG!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+		this.ko9ServerFaultLevel = THREE.MathUtils.clamp(
+			breakable.stampCount / breakable.stampsRequired,
+			0,
+			1
+		);
+		this.ko9ServerEffectTime = 3.2 + this.ko9ServerFaultLevel * 2.8;
+		this.ko9MonitorUpdateCooldown = 0;
+		this.audio.playKo9ElectricalSpark();
+		this.cameraShake = Math.max(this.cameraShake, 0.52);
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.breakObject(breakable);
+			return;
+		}
+		const remaining = breakable.stampsRequired - breakable.stampCount;
+		this.pendingStampFeedback =
+			remaining === 1
+				? 'SERVER VONKT! MONITORS GLITCHEN! NOG 1 STAMP!'
+				: `SERVER VONKT! NOG ${remaining} STAMPEN!`;
+	}
+
+	private damageKo9Emblem(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (source === 'bullet') {
+			this.emitFeedback('KO-9 EMBLEEM: ALLEEN EEN STAMP LAAT DIT BARSTEN!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+		for (let index = 0; index < this.ko9EmblemCrackStages.length; index += 1) {
+			this.ko9EmblemCrackStages[index].visible = index < breakable.stampCount;
+		}
+		this.cameraShake = Math.max(this.cameraShake, 0.5);
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.breakObject(breakable);
+			return;
+		}
+		const remaining = breakable.stampsRequired - breakable.stampCount;
+		this.pendingStampFeedback =
+			remaining === 1 ? 'KO-9 EMBLEEM BARST! NOG 1 STAMP!' : `EMBLEEM KRAAKT! NOG ${remaining}!`;
 	}
 
 	private damagePoolWithBullet(
@@ -5915,8 +6720,20 @@ export class StampKonijnGame {
 			breakable.label === 'TAFEL'
 				? this.breakables.find((item) => item.label === 'FRUITSCHAAL' && !item.broken)
 				: undefined;
+		const releasedKo9Lockdown = breakable === this.ko9ServerBreakable && this.ko9LockdownActive;
 		breakable.broken = true;
 		if (breakable === this.poolBreakable) this.rabbitInPoolWater = false;
+		if (breakable === this.ko9ServerBreakable) {
+			this.ko9ServerFaultLevel = 1;
+			this.ko9ServerEffectTime = 8;
+			this.ko9MonitorUpdateCooldown = 0;
+			if (this.ko9LockdownActive) {
+				this.ko9LockdownActive = false;
+			}
+		}
+		if (breakable === this.ko9LockersBreakable) {
+			this.canCustomize = false;
+		}
 		breakable.group.visible = effect === 'sink';
 		const points = breakable.value;
 		this.score += points;
@@ -5925,14 +6742,26 @@ export class StampKonijnGame {
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
 		this.spawnGarbagePile(breakable);
+		if (breakable === this.ko9ArchiveBreakable) this.spawnClassifiedDocuments(breakable);
 		if (breakable === this.poolBreakable) this.spawnPoolPuddle(breakable);
 		this.events.emit('impact', { label: breakable.label, value: points });
 		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
+		if (breakable === this.ko9ServerBreakable) {
+			this.emitFeedback(
+				releasedKo9Lockdown
+					? 'SERVER DOWN! NOODONTGRENDELING: SHUTTERS OPENEN!'
+					: 'KO-9 SERVER OFFLINE! ALLE MONITORS DOOD!'
+			);
+		}
 		this.audio.playBreak(breakable.material, breakable.label);
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
 		this.emitHud(true);
 		if (supportedObject) this.breakObject(supportedObject);
 
+		this.finishIfEverythingIsDestroyed();
+	}
+
+	private finishIfEverythingIsDestroyed() {
 		if (this.phase === 'playing' && this.destroyedCount === this.breakables.length) {
 			this.phase = 'finished';
 			this.weaponHeld = false;
@@ -6089,6 +6918,94 @@ export class StampKonijnGame {
 		mesh.receiveShadow = true;
 		this.getBreakableSceneRoot(breakable).add(mesh);
 		this.garbagePiles.push({ mesh });
+	}
+
+	private spawnClassifiedDocuments(breakable: Breakable) {
+		const paperColors = [
+			new THREE.Color(0xe7ddc3),
+			new THREE.Color(0xd9c9a8),
+			new THREE.Color(0xb8c9ba)
+		];
+		const geometries: THREE.BufferGeometry[] = [];
+		const paperCount = this.reducedMotion ? 14 : 34;
+		for (let index = 0; index < paperCount; index += 1) {
+			const width = 0.28 + Math.random() * 0.16;
+			const depth = 0.38 + Math.random() * 0.2;
+			const geometry = new THREE.BoxGeometry(width, 0.008, depth);
+			const angle = Math.random() * Math.PI * 2;
+			const radius = 0.35 + Math.random() * 2.1;
+			geometry.rotateX((Math.random() - 0.5) * 0.12);
+			geometry.rotateY(angle + Math.random());
+			geometry.rotateZ((Math.random() - 0.5) * 0.1);
+			geometry.translate(
+				Math.cos(angle) * radius,
+				0.025 + Math.random() * 0.035,
+				Math.sin(angle) * radius
+			);
+			const color = paperColors[index % paperColors.length];
+			const vertexCount = geometry.getAttribute('position').count;
+			const colors = new Float32Array(vertexCount * 3);
+			for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+				colors[vertex * 3] = color.r;
+				colors[vertex * 3 + 1] = color.g;
+				colors[vertex * 3 + 2] = color.b;
+			}
+			geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+			geometries.push(geometry);
+		}
+		const merged = mergeGeometries(geometries, false);
+		for (const geometry of geometries) geometry.dispose();
+		if (merged) {
+			const mess = new THREE.Mesh(
+				merged,
+				new THREE.MeshStandardMaterial({
+					color: 0xffffff,
+					vertexColors: true,
+					roughness: 0.94
+				})
+			);
+			mess.name = 'garbage-classified-documents';
+			mess.position.set(
+				breakable.group.position.x,
+				UPSTAIRS_FLOOR_Y + 0.014,
+				breakable.group.position.z
+			);
+			mess.receiveShadow = true;
+			this.upstairsRoot.add(mess);
+			this.garbagePiles.push({ mesh: mess });
+		}
+
+		const burstCount = this.reducedMotion ? 5 : 12;
+		for (let index = 0; index < burstCount; index += 1) {
+			const mesh = new THREE.Mesh(
+				new THREE.BoxGeometry(0.32 + Math.random() * 0.14, 0.012, 0.44 + Math.random() * 0.16),
+				new THREE.MeshStandardMaterial({
+					color: paperColors[index % paperColors.length],
+					roughness: 0.92,
+					transparent: true
+				})
+			);
+			mesh.position
+				.copy(breakable.group.position)
+				.add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.6 + Math.random() * 1.7, 0.3));
+			mesh.castShadow = true;
+			this.upstairsRoot.add(mesh);
+			this.debris.push({
+				mesh,
+				velocity: new THREE.Vector3(
+					(Math.random() - 0.5) * 7,
+					4.5 + Math.random() * 5.5,
+					1.8 + Math.random() * 4
+				),
+				spin: new THREE.Vector3(
+					(Math.random() - 0.5) * 12,
+					(Math.random() - 0.5) * 12,
+					(Math.random() - 0.5) * 12
+				),
+				life: 5 + Math.random() * 2,
+				floorY: UPSTAIRS_FLOOR_Y
+			});
+		}
 	}
 
 	private spawnPoolPuddle(pool: Breakable) {
@@ -6964,6 +7881,27 @@ export class StampKonijnGame {
 		this.playerInBasement = false;
 		this.playerInSewer = false;
 		this.playerUpstairs = false;
+		this.canCustomize = false;
+		this.ko9MonitorUpdateCooldown = 0;
+		this.ko9ServerFaultLevel = 0;
+		this.ko9ServerEffectTime = 0;
+		this.ko9LockdownActive = false;
+		this.ko9LockdownAmount = 0;
+		this.ko9LockdownShutters.visible = false;
+		this.ko9AlarmAudioCooldown = 0;
+		this.ko9RadioCooldown = 5 + Math.random() * 4;
+		if (this.ko9AlarmButtonCap) this.ko9AlarmButtonCap.position.z = 0.48;
+		for (const stage of this.ko9EmblemCrackStages) stage.visible = false;
+		for (const smoke of this.ko9ServerSmoke) {
+			smoke.visible = false;
+			smoke.material.opacity = 0;
+		}
+		for (const spark of this.ko9ServerSparks) spark.visible = false;
+		this.ko9ServerSparkLight.intensity = 0;
+		for (let index = 0; index < this.ko9AlarmLights.length; index += 1) {
+			this.ko9AlarmLights[index].intensity = 0;
+			this.ko9AlarmBeacons[index].material.emissiveIntensity = 0;
+		}
 		this.basementEntryCooldown = 0;
 		this.toiletHoleOpen = false;
 		this.kitchenHatchOpen = false;
@@ -7285,7 +8223,9 @@ export class StampKonijnGame {
 			lastHit: this.lastHit,
 			lastValue: this.lastValue,
 			weapon: this.weapon,
-			weaponReady: this.weaponCooldown <= 0
+			weaponReady: this.weaponCooldown <= 0,
+			rabbitStyle: this.rabbitStyle,
+			canCustomize: this.canCustomize
 		};
 		const signature = JSON.stringify(state);
 		if (!force && signature === this.lastHudSignature) return;

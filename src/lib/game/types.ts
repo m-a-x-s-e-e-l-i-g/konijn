@@ -2,6 +2,8 @@ export type GamePhase = 'idle' | 'playing' | 'finished';
 
 export type WeaponName = 'poop' | 'pistol' | 'g36';
 
+export type RabbitStyle = 'classic' | 'agent' | 'field' | 'disguise';
+
 export type GunWeapon = Exclude<WeaponName, 'poop'>;
 
 export type BreakMaterial = 'ceramic' | 'wood' | 'metal' | 'plant' | 'electronics' | 'canvas';
@@ -26,6 +28,8 @@ export interface StampHudState {
 	lastValue: number;
 	weapon: WeaponName;
 	weaponReady: boolean;
+	rabbitStyle: RabbitStyle;
+	canCustomize: boolean;
 }
 
 export interface GameCallbacks {

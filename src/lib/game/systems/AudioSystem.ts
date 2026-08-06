@@ -425,6 +425,94 @@ export class AudioSystem {
 		oscillator.stop(now + duration);
 	}
 
+	playKo9AlarmPulse() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		for (const [frequency, offset] of [
+			[690, 0],
+			[880, 0.19]
+		] as Array<[number, number]>) {
+			const oscillator = audio.createOscillator();
+			const gain = audio.createGain();
+			oscillator.type = 'square';
+			oscillator.frequency.setValueAtTime(frequency, now + offset);
+			oscillator.frequency.linearRampToValueAtTime(frequency * 1.08, now + offset + 0.16);
+			gain.gain.setValueAtTime(0.0001, now + offset);
+			gain.gain.linearRampToValueAtTime(0.035, now + offset + 0.018);
+			gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+			oscillator.connect(gain).connect(this.getAudioOutput(audio));
+			oscillator.start(now + offset);
+			oscillator.stop(now + offset + 0.19);
+		}
+	}
+
+	playKo9ElectricalSpark() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		const duration = 0.14;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			noise[index] = (Math.random() * 2 - 1) * Math.pow(1 - progress, 3.4);
+		}
+		const source = audio.createBufferSource();
+		const filter = audio.createBiquadFilter();
+		const gain = audio.createGain();
+		source.buffer = buffer;
+		filter.type = 'highpass';
+		filter.frequency.value = 2100;
+		gain.gain.setValueAtTime(0.055, now);
+		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		source.connect(filter).connect(gain).connect(this.getAudioOutput(audio));
+		source.start(now);
+	}
+
+	playKo9RadioBurst() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		const duration = 0.72;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			const gate = Math.sin(progress * Math.PI * 18) > -0.25 ? 1 : 0.18;
+			noise[index] = (Math.random() * 2 - 1) * gate * Math.sin(progress * Math.PI);
+		}
+		const source = audio.createBufferSource();
+		const filter = audio.createBiquadFilter();
+		const gain = audio.createGain();
+		source.buffer = buffer;
+		filter.type = 'bandpass';
+		filter.frequency.value = 1450;
+		filter.Q.value = 0.9;
+		gain.gain.value = 0.038;
+		source.connect(filter).connect(gain).connect(this.getAudioOutput(audio));
+		source.start(now);
+		for (let index = 0; index < 3; index += 1) {
+			const beep = audio.createOscillator();
+			const beepGain = audio.createGain();
+			const start = now + 0.08 + index * 0.17;
+			beep.type = 'square';
+			beep.frequency.value = 420 + index * 95;
+			beepGain.gain.setValueAtTime(0.0001, start);
+			beepGain.gain.linearRampToValueAtTime(0.018, start + 0.012);
+			beepGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.1);
+			beep.connect(beepGain).connect(this.getAudioOutput(audio));
+			beep.start(start);
+			beep.stop(start + 0.11);
+		}
+	}
+
 	playSwimming(submersion: number, movementSpeed: number) {
 		if (this.muted || this.swimSoundCooldown > 0 || movementSpeed < 0.65) return;
 
