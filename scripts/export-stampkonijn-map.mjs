@@ -1392,6 +1392,325 @@ function addSuburbScenery(garden) {
 	}
 }
 
+function addHouseExterior(exterior) {
+	const houseWidth = UPSTAIRS_MAX_X - UPSTAIRS_MIN_X;
+	const houseCenterX = (UPSTAIRS_MIN_X + UPSTAIRS_MAX_X) / 2;
+	const exteriorZ = BACK_WALL_Z - 0.17;
+	const wallColor = 0xd7c5a5;
+	const upperWallColor = 0xcbb894;
+	const trimColor = 0xead9b9;
+	const darkTrimColor = 0x57483c;
+	const roofColor = 0x8e493b;
+	const windowLeft = WINDOW_CENTER_X - WINDOW_WIDTH / 2;
+	const windowRight = WINDOW_CENTER_X + WINDOW_WIDTH / 2;
+	const windowBottom = WINDOW_CENTER_Y - WINDOW_HEIGHT / 2;
+	const windowTop = WINDOW_CENTER_Y + WINDOW_HEIGHT / 2;
+	const backDoorLeft = KITCHEN_BACK_DOOR_X - KITCHEN_BACK_DOOR_WIDTH / 2;
+	const backDoorRight = KITCHEN_BACK_DOOR_X + KITCHEN_BACK_DOOR_WIDTH / 2;
+
+	const addFacadePanel = (name, left, right, bottom, top, color = wallColor) => {
+		if (right <= left || top <= bottom) return;
+		addStatic(
+			exterior,
+			box(
+				name,
+				[right - left, top - bottom, 0.16],
+				[(left + right) / 2, (bottom + top) / 2, exteriorZ],
+				color,
+				{ roughness: 0.98 }
+			)
+		);
+	};
+
+	addFacadePanel('exterior_ground_left', UPSTAIRS_MIN_X, windowLeft, 0, ROOM_HEIGHT);
+	addFacadePanel('exterior_ground_window_lower', windowLeft, windowRight, 0, windowBottom);
+	addFacadePanel('exterior_ground_window_upper', windowLeft, windowRight, windowTop, ROOM_HEIGHT);
+	addFacadePanel('exterior_ground_center', windowRight, backDoorLeft, 0, ROOM_HEIGHT);
+	addFacadePanel(
+		'exterior_ground_door_header',
+		backDoorLeft,
+		backDoorRight,
+		KITCHEN_BACK_DOOR_HEIGHT,
+		ROOM_HEIGHT
+	);
+	addFacadePanel('exterior_ground_right', backDoorRight, UPSTAIRS_MAX_X, 0, ROOM_HEIGHT);
+	addFacadePanel(
+		'exterior_upper_wall',
+		UPSTAIRS_MIN_X,
+		UPSTAIRS_MAX_X,
+		UPSTAIRS_FLOOR_Y,
+		UPSTAIRS_FLOOR_Y + ROOM_HEIGHT,
+		upperWallColor
+	);
+
+	addStatic(
+		exterior,
+		box(
+			'exterior_foundation_band',
+			[houseWidth + 0.08, 0.34, 0.2],
+			[houseCenterX, 0.17, exteriorZ - 0.035],
+			0x756957,
+			{ roughness: 1 }
+		)
+	);
+	addStatic(
+		exterior,
+		box(
+			'exterior_floor_divider',
+			[houseWidth + 0.14, 0.22, 0.22],
+			[houseCenterX, UPSTAIRS_FLOOR_Y, exteriorZ - 0.04],
+			trimColor,
+			{ roughness: 0.96 }
+		)
+	);
+	for (const [index, y] of [5.52, 6.34, 7.16, 7.98, 8.8].entries()) {
+		addStatic(
+			exterior,
+			box(
+				`exterior_upper_siding_${index}`,
+				[houseWidth - 0.18, 0.035, 0.026],
+				[houseCenterX, y, exteriorZ - 0.096],
+				0xb29e7e,
+				{ roughness: 1 }
+			)
+		);
+	}
+	for (const [index, x] of [UPSTAIRS_MIN_X + 0.08, UPSTAIRS_MAX_X - 0.08].entries()) {
+		addStatic(
+			exterior,
+			box(
+				`exterior_corner_trim_${index}`,
+				[0.28, ROOM_HEIGHT * 2, 0.23],
+				[x, ROOM_HEIGHT, exteriorZ - 0.04],
+				trimColor,
+				{ roughness: 0.96 }
+			)
+		);
+	}
+
+	const exteriorFaceZ = exteriorZ - 0.105;
+	for (const [name, size, position] of [
+		[
+			'exterior_window_trim_top',
+			[WINDOW_WIDTH + 0.36, 0.19, 0.055],
+			[WINDOW_CENTER_X, windowTop + 0.08]
+		],
+		[
+			'exterior_window_trim_bottom',
+			[WINDOW_WIDTH + 0.42, 0.22, 0.07],
+			[WINDOW_CENTER_X, windowBottom - 0.09]
+		],
+		[
+			'exterior_window_trim_left',
+			[0.19, WINDOW_HEIGHT, 0.055],
+			[windowLeft - 0.08, WINDOW_CENTER_Y]
+		],
+		[
+			'exterior_window_trim_right',
+			[0.19, WINDOW_HEIGHT, 0.055],
+			[windowRight + 0.08, WINDOW_CENTER_Y]
+		],
+		[
+			'exterior_back_door_trim_top',
+			[KITCHEN_BACK_DOOR_WIDTH + 0.34, 0.2, 0.06],
+			[KITCHEN_BACK_DOOR_X, KITCHEN_BACK_DOOR_HEIGHT + 0.08]
+		],
+		[
+			'exterior_back_door_trim_left',
+			[0.18, KITCHEN_BACK_DOOR_HEIGHT, 0.06],
+			[backDoorLeft - 0.08, KITCHEN_BACK_DOOR_HEIGHT / 2]
+		],
+		[
+			'exterior_back_door_trim_right',
+			[0.18, KITCHEN_BACK_DOOR_HEIGHT, 0.06],
+			[backDoorRight + 0.08, KITCHEN_BACK_DOOR_HEIGHT / 2]
+		]
+	]) {
+		addStatic(exterior, box(name, size, [position[0], position[1], exteriorFaceZ], darkTrimColor));
+	}
+
+	const fakeWindowX = 3.6;
+	const fakeWindowY = UPSTAIRS_FLOOR_Y + 2.38;
+	const paintZ = exteriorZ - 0.112;
+	addStatic(
+		exterior,
+		box(
+			'exterior_fake_window_blue_paint',
+			[2.5, 1.72, 0.022],
+			[fakeWindowX, fakeWindowY, paintZ],
+			0x527f98,
+			{ roughness: 1, rotation: [0, 0, -0.012] }
+		)
+	);
+	for (const [name, size, offsetX, offsetY, rotationZ, color] of [
+		['top', [2.62, 0.13, 0.028], 0, 0.89, 0.025, 0x35322d],
+		['bottom', [2.58, 0.13, 0.028], 0, -0.89, -0.035, 0x35322d],
+		['left', [0.13, 1.82, 0.028], -1.29, 0, -0.028, 0x35322d],
+		['right', [0.13, 1.8, 0.028], 1.28, 0, 0.04, 0x35322d],
+		['cross_vertical', [0.11, 1.58, 0.03], 0.05, 0, -0.045, 0xe7ddc3],
+		['cross_horizontal', [2.3, 0.11, 0.03], 0, -0.02, 0.035, 0xe7ddc3],
+		['shine_0', [0.48, 0.07, 0.031], -0.65, 0.48, 0.58, 0xc8e0e2],
+		['shine_1', [0.3, 0.065, 0.031], -0.37, 0.28, 0.58, 0xc8e0e2]
+	]) {
+		addStatic(
+			exterior,
+			box(
+				`exterior_fake_window_${name}`,
+				size,
+				[fakeWindowX + offsetX, fakeWindowY + offsetY, paintZ - 0.016],
+				color,
+				{ roughness: 1, rotation: [0, 0, rotationZ] }
+			)
+		);
+	}
+
+	const roofHalfDepth = ROOM_DEPTH / 2 + 0.48;
+	const roofRise = 2.32;
+	const roofAngle = Math.atan2(roofRise, roofHalfDepth);
+	const roofSlopeLength = Math.hypot(roofHalfDepth, roofRise);
+	for (const [name, z, rotationX] of [
+		['back', -roofHalfDepth / 2, -roofAngle],
+		['front', roofHalfDepth / 2, roofAngle]
+	]) {
+		addStatic(
+			exterior,
+			box(
+				`exterior_roof_${name}`,
+				[houseWidth + 0.9, 0.26, roofSlopeLength + 0.25],
+				[houseCenterX, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT + roofRise / 2, z],
+				roofColor,
+				{ roughness: 0.94, rotation: [rotationX, 0, 0] }
+			)
+		);
+	}
+	addStatic(
+		exterior,
+		box(
+			'exterior_roof_ridge',
+			[houseWidth + 0.94, 0.31, 0.38],
+			[houseCenterX, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT + roofRise, 0],
+			0x71382f,
+			{ roughness: 0.95 }
+		)
+	);
+	addStatic(
+		exterior,
+		cylinder(
+			'exterior_back_gutter',
+			[0.09, 0.09],
+			houseWidth + 0.75,
+			[houseCenterX, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT + 0.02, BACK_WALL_Z - 0.43],
+			0x4d4c43,
+			{ segments: 12, rotation: [0, 0, Math.PI / 2], roughness: 0.78, metalness: 0.18 }
+		)
+	);
+
+	const gableShape = new THREE.Shape();
+	gableShape.moveTo(-roofHalfDepth, 0);
+	gableShape.lineTo(roofHalfDepth, 0);
+	gableShape.lineTo(0, roofRise);
+	gableShape.closePath();
+	for (const [name, x, rotationY] of [
+		['left', UPSTAIRS_MIN_X - 0.1, -Math.PI / 2],
+		['right', UPSTAIRS_MAX_X + 0.1, Math.PI / 2]
+	]) {
+		addStatic(
+			exterior,
+			mesh(
+				`exterior_gable_${name}`,
+				new THREE.ShapeGeometry(gableShape),
+				upperWallColor,
+				[x, UPSTAIRS_FLOOR_Y + ROOM_HEIGHT, 0],
+				{ roughness: 0.98, rotation: [0, rotationY, 0] }
+			)
+		);
+	}
+	for (const [name, x] of [
+		['left', UPSTAIRS_MIN_X - 0.1],
+		['right', UPSTAIRS_MAX_X + 0.1]
+	]) {
+		addStatic(
+			exterior,
+			box(
+				`exterior_side_wall_${name}`,
+				[0.18, ROOM_HEIGHT * 2, ROOM_DEPTH + 0.3],
+				[x, ROOM_HEIGHT, 0],
+				wallColor,
+				{ roughness: 0.98 }
+			)
+		);
+	}
+
+	addStatic(
+		exterior,
+		box(
+			'exterior_planting_bed',
+			[houseWidth - 1.1, 0.14, 1.06],
+			[houseCenterX, 0.04, BACK_WALL_Z - 0.7],
+			0x574636,
+			{ roughness: 1 }
+		)
+	);
+	for (const [shrubIndex, [x, scale]] of [
+		[-11.8, 0.92],
+		[-9.45, 0.72],
+		[-1.65, 0.82],
+		[0.55, 0.66],
+		[6.7, 0.9],
+		[9.25, 0.74]
+	].entries()) {
+		const shrub = new THREE.Group();
+		shrub.name = uniqueName(`exterior_house_shrub_${shrubIndex}`);
+		shrub.position.set(x, 0, BACK_WALL_Z - 0.72 - (shrubIndex % 2) * 0.06);
+		for (const [lobeIndex, [offsetX, offsetY, lobeScale]] of [
+			[-0.36, 0.48, 0.72],
+			[0.03, 0.61, 0.92],
+			[0.42, 0.43, 0.66]
+		].entries()) {
+			shrub.add(
+				mesh(
+					`exterior_house_shrub_${shrubIndex}_lobe_${lobeIndex}`,
+					new THREE.DodecahedronGeometry(0.58, 1),
+					lobeIndex === 1 ? 0x537944 : 0x648b4d,
+					[offsetX * scale, offsetY * scale, (lobeIndex - 1) * 0.09],
+					{
+						scale: [lobeScale * scale, lobeScale * scale, lobeScale * 0.72 * scale],
+						roughness: 1
+					}
+				)
+			);
+		}
+		if (shrubIndex % 2 === 0) {
+			for (const [flowerIndex, [offsetX, offsetY]] of [
+				[-0.22, 0.72],
+				[0.28, 0.58]
+			].entries()) {
+				shrub.add(
+					mesh(
+						`exterior_house_shrub_${shrubIndex}_flower_${flowerIndex}`,
+						new THREE.SphereGeometry(0.075, 8, 6),
+						shrubIndex % 4 === 0 ? 0xe3a24e : 0xd68786,
+						[offsetX * scale, offsetY * scale, -0.48 * scale],
+						{ roughness: 0.9 }
+					)
+				);
+			}
+		}
+		addStatic(exterior, shrub);
+	}
+	addStatic(
+		exterior,
+		cylinder(
+			'exterior_drainpipe',
+			[0.065, 0.075],
+			ROOM_HEIGHT * 1.88,
+			[10.55, ROOM_HEIGHT * 0.94, exteriorFaceZ - 0.08],
+			0x74756c,
+			{ segments: 10, roughness: 0.72, metalness: 0.16 }
+		)
+	);
+}
+
 function addGarden(garden) {
 	const gardenCenterZ = BACK_WALL_Z - GARDEN_DEPTH / 2;
 	addSuburbScenery(garden);
@@ -1485,6 +1804,7 @@ function addGarden(garden) {
 
 const houseShell = zone('house_shell', 'ground');
 const living = zone('living_room', 'ground');
+const houseExterior = zone('house_exterior', 'outside');
 const bathroom = zone('bathroom', 'ground', 'left_door_bathroom');
 const stairs = zone('stairs', 'ground', 'left_door_stairs');
 const bedroom = zone('bedroom', 'ground', 'left_door_bedroom');
@@ -1495,6 +1815,7 @@ const basement = zone('basement', 'basement', 'kitchen_hatch');
 const sewer = zone('sewer', 'sewer', 'toilet');
 
 addLivingRoom(living);
+addHouseExterior(houseExterior);
 addLeftRooms(houseShell, bathroom, stairs, bedroom);
 addKitchen(houseShell, kitchen);
 addGarden(garden);

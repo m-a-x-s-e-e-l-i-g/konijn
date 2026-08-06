@@ -535,6 +535,7 @@ export class StampKonijnGame {
 	private groundSun: THREE.DirectionalLight | null = null;
 	private groundWindowGlow: THREE.PointLight | null = null;
 	private outsideAtmosphere = new THREE.Group();
+	private outsideHouseExterior: THREE.Object3D = new THREE.Group();
 	private outsideEnvironmentActive = false;
 	private windowBreakaway = new THREE.Group();
 	private windowStampSurfaces: THREE.Object3D[] = [];
@@ -1061,6 +1062,7 @@ export class StampKonijnGame {
 		this.basementRoot = this.requireWorldZone(world, 'basement');
 		this.sewerRoot = this.requireWorldZone(world, 'sewer');
 		this.upstairsRoot = this.requireWorldZone(world, 'upstairs');
+		this.outsideHouseExterior = this.requireWorldZone(world, 'house_exterior');
 		this.leftRoomInteriorRoots.clear();
 		this.leftRoomInteriorRoots.set('bathroom', this.requireWorldZone(world, 'bathroom'));
 		this.leftRoomInteriorRoots.set('stairs', this.requireWorldZone(world, 'stairs'));
@@ -1078,6 +1080,7 @@ export class StampKonijnGame {
 		this.basementRoot.visible = false;
 		this.sewerRoot.visible = false;
 		this.upstairsRoot.visible = false;
+		this.outsideHouseExterior.visible = false;
 		for (const interior of this.leftRoomInteriorRoots.values()) interior.visible = false;
 	}
 
@@ -5303,6 +5306,7 @@ export class StampKonijnGame {
 		if (!force && outsideActive === this.outsideEnvironmentActive) return;
 		this.outsideEnvironmentActive = outsideActive;
 		this.outsideAtmosphere.visible = outsideActive;
+		this.outsideHouseExterior.visible = outsideActive;
 		this.audio.setOutside(outsideActive);
 		if (!groundActive) return;
 
@@ -6491,6 +6495,7 @@ export class StampKonijnGame {
 			this.leftRoomInteriorRoots.get('bedroom'),
 			this.basementRoot,
 			this.upstairsRoot,
+			this.outsideHouseExterior,
 			this.outsideAtmosphere,
 			this.breakablesRoot,
 			this.player
