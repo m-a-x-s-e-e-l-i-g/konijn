@@ -2007,46 +2007,51 @@ export class StampKonijnGame {
 
 		const agent = new THREE.Group();
 		for (const x of [-0.039, 0.039]) {
-			const lens = new THREE.Mesh(
-				new THREE.CircleGeometry(0.031, 16),
-				new THREE.MeshStandardMaterial({
-					color: 0x303432,
-					roughness: 0.28,
-					transparent: true,
-					opacity: 0.62,
-					side: THREE.DoubleSide
-				})
-			);
-			lens.position.set(x, 0.557, 0.123);
-			const frame = new THREE.Mesh(
-				new THREE.TorusGeometry(0.035, 0.006, 5, 18),
-				material(ink, 0.42, 0.32)
-			);
-			frame.position.set(x, 0.557, 0.126);
-			agent.add(lens, frame);
+			agent.add(box([0.062, 0.032, 0.018], [x, 0.557, 0.123], ink));
 		}
-		agent.add(box([0.025, 0.009, 0.014], [0, 0.557, 0.127], ink));
-		agent.add(box([0.044, 0.045, 0.022], [0, 0.395, 0.164], ink));
-		agent.add(box([0.027, 0.17, 0.02], [0, 0.29, 0.165], ink));
-		const tieTip = new THREE.Mesh(
-			new THREE.ConeGeometry(0.035, 0.08, 4),
-			material(ink, 0.54, 0.22)
+		agent.add(box([0.025, 0.009, 0.018], [0, 0.557, 0.123], ink));
+
+		const tieCanvas = document.createElement('canvas');
+		tieCanvas.width = 96;
+		tieCanvas.height = 192;
+		const tieContext = tieCanvas.getContext('2d');
+		if (tieContext) {
+			tieContext.fillStyle = '#151917';
+			tieContext.beginPath();
+			tieContext.moveTo(32, 10);
+			tieContext.lineTo(64, 10);
+			tieContext.lineTo(70, 34);
+			tieContext.lineTo(48, 52);
+			tieContext.lineTo(26, 34);
+			tieContext.closePath();
+			tieContext.fill();
+			tieContext.beginPath();
+			tieContext.moveTo(40, 48);
+			tieContext.lineTo(56, 48);
+			tieContext.lineTo(67, 145);
+			tieContext.lineTo(48, 182);
+			tieContext.lineTo(29, 145);
+			tieContext.closePath();
+			tieContext.fill();
+		}
+		const tieTexture = new THREE.CanvasTexture(tieCanvas);
+		tieTexture.colorSpace = THREE.SRGBColorSpace;
+		tieTexture.minFilter = THREE.LinearFilter;
+		tieTexture.magFilter = THREE.LinearFilter;
+		const tie = new THREE.Mesh(
+			new THREE.PlaneGeometry(0.105, 0.235),
+			new THREE.MeshBasicMaterial({
+				map: tieTexture,
+				transparent: true,
+				depthWrite: false,
+				side: THREE.DoubleSide,
+				polygonOffset: true,
+				polygonOffsetFactor: -2,
+				polygonOffsetUnits: -2
+			})
 		);
-		tieTip.position.set(0, 0.205, 0.165);
-		tieTip.rotation.y = Math.PI / 4;
-		agent.add(tieTip);
-		const agentObjects: THREE.Object3D[] = [agent];
-		const leftArm = model.getObjectByName('left_arm');
-		if (leftArm) {
-			const watch = new THREE.Group();
-			watch.position.set(0, -0.072, 0.07);
-			watch.add(box([0.085, 0.035, 0.028], [0, 0, 0], 0x0c0e0d));
-			const watchFace = cylinder(0.026, 0.026, 0.012, [0, 0, 0.025], 0x9da6a1, 12);
-			watchFace.rotation.x = Math.PI / 2;
-			watch.add(watchFace);
-			leftArm.add(watch);
-			agentObjects.push(watch);
-		}
+		tie.position.set(0, 0.295, 0.168);
+		agent.add(tie);
 
 		const field = new THREE.Group();
 		field.add(box([0.35, 0.32, 0.05], [0, 0.3, 0.164], tacticalBlack));
@@ -2131,7 +2136,7 @@ export class StampKonijnGame {
 		const hatCrown = cylinder(0.095, 0.115, 0.085, [0, 0.695, 0], 0x76543d, 18);
 		disguise.add(hatBrim, hatCrown);
 
-		this.rabbitStyleObjects.set('agent', agentObjects);
+		this.rabbitStyleObjects.set('agent', [agent]);
 		this.rabbitStyleObjects.set('field', [field]);
 		this.rabbitStyleObjects.set('disguise', [disguise]);
 		model.add(agent, field, disguise);
