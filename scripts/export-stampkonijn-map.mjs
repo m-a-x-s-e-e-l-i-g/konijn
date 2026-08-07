@@ -1208,31 +1208,6 @@ function addSewer(sewer) {
 	sludge.position.set(SEWER_CENTER_X, SEWER_FLOOR_Y + 0.032, SEWER_CENTER_Z + 0.05);
 	sludge.rotation.x = -Math.PI / 2;
 	addStatic(sewer, sludge);
-	for (const [index, [x, z, radiusX, radiusZ]] of [
-		[SEWER_MIN_X + 1.1, SEWER_CENTER_Z + 0.58, 0.72, 0.46],
-		[TOILET_X + 6.8, SEWER_CENTER_Z - 0.67, 1.15, 0.4],
-		[TOILET_X + 19.4, SEWER_CENTER_Z + 0.72, 0.92, 0.36],
-		[TOILET_X + 33.2, SEWER_CENTER_Z - 0.7, 1.28, 0.42],
-		[SEWER_MAX_X - 4.1, SEWER_CENTER_Z + 0.68, 1.05, 0.4]
-	].entries()) {
-		const puddle = new THREE.Mesh(
-			new THREE.CircleGeometry(1, 24),
-			new THREE.MeshPhysicalMaterial({
-				color: index % 2 === 0 ? 0x687444 : 0x59663a,
-				roughness: 0.22,
-				metalness: 0.03,
-				clearcoat: 0.68,
-				clearcoatRoughness: 0.2,
-				emissive: 0x101509,
-				emissiveIntensity: 0.2
-			})
-		);
-		puddle.name = uniqueName(`sewer_sludge_puddle_${index}`);
-		puddle.position.set(x, SEWER_FLOOR_Y + 0.038 + index * 0.0005, z);
-		puddle.rotation.x = -Math.PI / 2;
-		puddle.scale.set(radiusX, radiusZ, 1);
-		addStatic(sewer, puddle);
-	}
 	let pipeIndex = 0;
 	for (let x = SEWER_MIN_X + 2; x < SEWER_MAX_X; x += 5.2) {
 		addStatic(

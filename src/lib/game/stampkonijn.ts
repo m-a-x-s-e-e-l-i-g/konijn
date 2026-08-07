@@ -1393,45 +1393,23 @@ export class StampKonijnGame {
 		const cracks = makeToiletFloorCracks(toiletEdge);
 		cracks.position.y = 0.052;
 
+		const shaftTopY = -0.16;
+		const shaftCeilingY = SEWER_CEILING_Y + 0.05;
+		const shaftHeight = shaftTopY - shaftCeilingY;
 		const shaftWall = new THREE.Mesh(
-			new THREE.CylinderGeometry(1.12, 0.92, 7.7, 16, 1, true),
+			new THREE.CylinderGeometry(1.12, 0.92, shaftHeight, 16, 1, true),
 			new THREE.MeshStandardMaterial({
 				color: 0x4a5142,
 				roughness: 1,
 				side: THREE.BackSide
 			})
 		);
-		shaftWall.position.y = -3.95;
+		shaftWall.position.y = (shaftTopY + shaftCeilingY) / 2;
 		shaftWall.receiveShadow = true;
-
-		const shaftBottom = new THREE.Mesh(
-			new THREE.CircleGeometry(1.12, 20),
-			new THREE.MeshBasicMaterial({ color: 0x29382e, side: THREE.DoubleSide })
-		);
-		shaftBottom.rotation.x = -Math.PI / 2;
-		shaftBottom.position.y = -7.78;
-
-		const shaftRings = [-0.78, -2.05, -3.35].map((height, index) => {
-			const ring = new THREE.Mesh(
-				new THREE.TorusGeometry(0.94 + index * 0.035, 0.045, 7, 20),
-				material(0x62594a, 0.96, 0.08)
-			);
-			ring.rotation.x = Math.PI / 2;
-			ring.position.y = height;
-			return ring;
-		});
 		const shaftLight = new THREE.PointLight(0x9fbd8b, 2.6, 8, 2);
 		shaftLight.position.set(0.08, -2.2, 0.12);
 
-		this.toiletHole.add(
-			shaftWall,
-			shaftBottom,
-			...shaftRings,
-			shaftLight,
-			toiletDarkness,
-			toiletRim,
-			cracks
-		);
+		this.toiletHole.add(shaftWall, shaftLight, toiletDarkness, toiletRim, cracks);
 		this.toiletHole.visible = false;
 		const bathroomRoot = this.leftRoomInteriorRoots.get('bathroom') ?? this.scene;
 		bathroomRoot.add(this.toiletFloorPlug, this.toiletHole);
