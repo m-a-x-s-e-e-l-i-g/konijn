@@ -471,6 +471,115 @@ export class AudioSystem {
 		motor.stop(now + duration);
 	}
 
+	playKitchenMetalCrash(power = 1) {
+		if (this.muted) return;
+		this.playSynthesizedBreak('metal');
+		this.playKitchenNoise(0.42, 'bandpass', 1250, 0.055 * clamp(power, 0.55, 1.25));
+	}
+
+	playKitchenGasLeak() {
+		if (this.muted) return;
+		this.playKitchenNoise(1.15, 'highpass', 2800, 0.055);
+	}
+
+	playKitchenExplosion() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		this.playKitchenNoise(1.1, 'lowpass', 780, 0.22);
+		for (const [frequency, gainValue, duration] of [
+			[92, 0.19, 0.9],
+			[48, 0.24, 1.25]
+		] as Array<[number, number, number]>) {
+			const oscillator = audio.createOscillator();
+			const gain = audio.createGain();
+			oscillator.type = 'sine';
+			oscillator.frequency.setValueAtTime(frequency, now);
+			oscillator.frequency.exponentialRampToValueAtTime(24, now + duration);
+			gain.gain.setValueAtTime(gainValue, now);
+			gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+			oscillator.connect(gain).connect(this.getAudioOutput(audio));
+			oscillator.start(now);
+			oscillator.stop(now + duration);
+		}
+	}
+
+	playKitchenPressureRelease() {
+		if (this.muted) return;
+		this.playKitchenNoise(0.82, 'highpass', 2100, 0.075);
+		this.playKitchenMetalCrash(0.72);
+	}
+
+	playKitchenDishwasherBurst() {
+		this.playWaterSplash(12);
+		this.playKitchenMetalCrash(0.92);
+		this.playKitchenNoise(0.72, 'bandpass', 760, 0.06);
+	}
+
+	playKitchenBlenderBurst() {
+		if (this.muted) return;
+		this.playSynthesizedBreak('electronics');
+		this.playKitchenNoise(0.48, 'lowpass', 520, 0.07);
+	}
+
+	playKitchenToasterPop() {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		this.playKitchenNoise(0.09, 'highpass', 1600, 0.045);
+		const oscillator = audio.createOscillator();
+		const gain = audio.createGain();
+		oscillator.type = 'triangle';
+		oscillator.frequency.setValueAtTime(520, now);
+		oscillator.frequency.exponentialRampToValueAtTime(960, now + 0.13);
+		gain.gain.setValueAtTime(0.04, now);
+		gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+		oscillator.connect(gain).connect(this.getAudioOutput(audio));
+		oscillator.start(now);
+		oscillator.stop(now + 0.15);
+	}
+
+	playKitchenWaterBurst() {
+		this.playBigWaterSplash(14);
+		this.playKitchenNoise(0.85, 'bandpass', 980, 0.07);
+	}
+
+	private playKitchenNoise(
+		duration: number,
+		filterType: BiquadFilterType,
+		frequency: number,
+		gainValue: number
+	) {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const now = audio.currentTime;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			const attack = Math.min(1, progress * 35);
+			noise[index] = (Math.random() * 2 - 1) * attack * Math.pow(1 - progress, 1.5);
+		}
+		const source = audio.createBufferSource();
+		const filter = audio.createBiquadFilter();
+		const gain = audio.createGain();
+		source.buffer = buffer;
+		filter.type = filterType;
+		filter.frequency.setValueAtTime(frequency, now);
+		filter.frequency.exponentialRampToValueAtTime(Math.max(80, frequency * 0.38), now + duration);
+		filter.Q.value = 0.72;
+		gain.gain.setValueAtTime(gainValue, now);
+		gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		source.connect(filter).connect(gain).connect(this.getAudioOutput(audio));
+		source.start(now);
+	}
+
 	playKo9AlarmPulse() {
 		if (this.muted) return;
 		this.ensure();

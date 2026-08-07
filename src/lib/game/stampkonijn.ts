@@ -50,6 +50,28 @@ interface DebrisPiece {
 	floorY: number;
 }
 
+type KitchenImpactSound = 'none' | 'metal' | 'glass' | 'wood' | 'water';
+
+interface KitchenChaosPiece {
+	object: THREE.Object3D;
+	velocity: THREE.Vector3;
+	spin: THREE.Vector3;
+	gravity: number;
+	bounce: number;
+	drag: number;
+	life: number;
+	delay: number;
+	bounces: number;
+	embedAfterBounces: number;
+	stickOnImpact: boolean;
+	permanent: boolean;
+	flattenOnSettle: boolean;
+	impactSound: KitchenImpactSound;
+	impactCooldown: number;
+	plate: boolean;
+	settled: boolean;
+}
+
 interface GarbagePile {
 	mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 }
@@ -632,6 +654,26 @@ export class StampKonijnGame {
 	private washingMachineTime = 0;
 	private washingMachineRattleCooldown = 0;
 	private washingMachineVelocity = new THREE.Vector3(1.25, 0, 0.8);
+	private kitchenGasStoveBreakable: Breakable | null = null;
+	private kitchenPressureCookerBreakable: Breakable | null = null;
+	private kitchenDishwasherBreakable: Breakable | null = null;
+	private kitchenPlateCupboardBreakable: Breakable | null = null;
+	private kitchenFridgeBreakable: Breakable | null = null;
+	private kitchenIslandBreakable: Breakable | null = null;
+	private kitchenBlenderBreakable: Breakable | null = null;
+	private kitchenToasterBreakable: Breakable | null = null;
+	private kitchenSinkBreakable: Breakable | null = null;
+	private kitchenPanRackBreakable: Breakable | null = null;
+	private kitchenKnifeRackBreakable: Breakable | null = null;
+	private kitchenGasLeak = new THREE.Group();
+	private kitchenGasDamageStages: THREE.Object3D[] = [];
+	private kitchenBlenderBlade = new THREE.Group();
+	private kitchenChaosPieces: KitchenChaosPiece[] = [];
+	private kitchenPersistentMess: THREE.Object3D[] = [];
+	private kitchenSinkFountainTime = 0;
+	private kitchenSinkFountainCooldown = 0;
+	private kitchenExplosionTime = 0;
+	private kitchenExplosionLight = new THREE.PointLight(0xff8a32, 0, 11, 2);
 	private basementFalseWallBreakable: Breakable | null = null;
 	private basementFalseWallDamage = new THREE.Group();
 	private basementGrowBreakables: Breakable[] = [];
@@ -2487,8 +2529,16 @@ export class StampKonijnGame {
 		this.addBreakable('KRUKJE', 25, this.makeStool(), [0.15, 0, -2.8], 0.62, 0.82, 'wood');
 		const fridge = this.makeFridge();
 		fridge.rotation.y = -Math.PI / 2;
-		this.addBreakable('KOELKAST', 420, fridge, [13.25, 0, -0.9], 0.76, 2.38, 'metal');
-		this.addBreakable(
+		this.kitchenFridgeBreakable = this.addBreakable(
+			'KOELKAST VOL ROMMEL',
+			420,
+			fridge,
+			[13.25, 0, -0.9],
+			0.76,
+			2.38,
+			'metal'
+		);
+		this.kitchenIslandBreakable = this.addBreakable(
 			'KEUKENEILAND',
 			180,
 			this.makeKitchenIsland(),
@@ -2498,28 +2548,80 @@ export class StampKonijnGame {
 			'wood'
 		);
 		for (const [index, x] of [8.15, 9.45, 10.75].entries()) {
-			this.addBreakable(
-				index === 1 ? 'SPOELKASTJE' : 'ONDERKASTJE',
-				index === 1 ? 110 : 75,
-				this.makeKitchenLowerCabinet(index === 1),
-				[x, 0, BACK_WALL_Z + 0.43],
-				0.72,
-				index === 1 ? 1.5 : 1.04,
-				'wood'
-			);
-			this.addBreakable(
-				'BOVENKASTJE',
-				65,
-				this.makeKitchenUpperCabinet(),
+			if (index === 2) {
+				this.kitchenDishwasherBreakable = this.addBreakable(
+					'VAATWASSER',
+					190,
+					this.makeKitchenDishwasher(),
+					[x, 0, BACK_WALL_Z + 0.43],
+					0.72,
+					1.04,
+					'metal'
+				);
+			} else {
+				const lowerCabinet = this.addBreakable(
+					index === 1 ? 'SPOELKASTJE' : 'ONDERKASTJE',
+					index === 1 ? 110 : 75,
+					this.makeKitchenLowerCabinet(index === 1),
+					[x, 0, BACK_WALL_Z + 0.43],
+					0.72,
+					index === 1 ? 1.5 : 1.04,
+					'wood'
+				);
+				if (index === 1) this.kitchenSinkBreakable = lowerCabinet;
+			}
+
+			const upperCabinet = this.addBreakable(
+				index === 0 ? 'BORDENKAST' : 'BOVENKASTJE',
+				index === 0 ? 160 : 65,
+				this.makeKitchenUpperCabinet(index === 0),
 				[x, 2.02, BACK_WALL_Z + 0.34],
 				0.68,
 				0.86,
-				'wood'
+				index === 0 ? 'ceramic' : 'wood'
 			);
+			if (index === 0) this.kitchenPlateCupboardBreakable = upperCabinet;
 		}
+		this.kitchenGasStoveBreakable = this.addBreakable(
+			'GASFORNUIS',
+			520,
+			this.makeKitchenGasStove(),
+			[12.55, 0, 1.12],
+			0.78,
+			1.08,
+			'metal',
+			3
+		);
+		this.kitchenPressureCookerBreakable = this.addBreakable(
+			'SNELKOOKPAN',
+			140,
+			this.makeKitchenPressureCooker(),
+			[12.55, 1.08, 1.12],
+			0.34,
+			0.58,
+			'metal'
+		);
+		this.kitchenBlenderBreakable = this.addBreakable(
+			'WORTELBLENDER',
+			95,
+			this.makeKitchenBlender(),
+			[9.8, 1.02, -0.45],
+			0.34,
+			0.72,
+			'electronics'
+		);
+		this.kitchenToasterBreakable = this.addBreakable(
+			'BROODROOSTER',
+			70,
+			this.makeKitchenToaster(),
+			[11.25, 1.02, -0.45],
+			0.38,
+			0.48,
+			'metal'
+		);
 		const knifeRack = this.makeKitchenKnifeRack();
 		knifeRack.rotation.y = -Math.PI / 2;
-		this.addBreakable(
+		this.kitchenKnifeRackBreakable = this.addBreakable(
 			'MESSENREK',
 			90,
 			knifeRack,
@@ -2530,7 +2632,7 @@ export class StampKonijnGame {
 		);
 		const panRack = this.makeKitchenPanRack();
 		panRack.rotation.y = -Math.PI / 2;
-		this.addBreakable(
+		this.kitchenPanRackBreakable = this.addBreakable(
 			'PANNENREK',
 			120,
 			panRack,
@@ -4466,13 +4568,126 @@ export class StampKonijnGame {
 		const group = new THREE.Group();
 		group.add(box([2.15, 0.84, 1.06], [0, 0.42, 0], 0x6f8e69));
 		group.add(box([2.48, 0.16, 1.34], [0, 0.93, 0], 0x4a403a));
-		group.add(box([0.7, 0.045, 0.48], [-0.38, 1.025, 0.05], 0xa9aaa3));
-		for (const z of [-0.27, 0.27]) {
-			const burner = shadowMesh(new THREE.TorusGeometry(0.17, 0.025, 8, 20), material(0x292624));
-			burner.rotation.x = Math.PI / 2;
-			burner.position.set(0.55, 1.025, z);
-			group.add(burner);
+		for (const [index, x] of [-0.7, 0, 0.7].entries()) {
+			const drawer = box([0.58, 0.22, 0.055], [x, 0.66, 0.56], 0x89a47f);
+			group.add(drawer);
+			const handle = box([0.26, 0.035, 0.045], [x, 0.68, 0.605], 0x3d4441);
+			handle.rotation.z = index % 2 ? 0.02 : -0.02;
+			group.add(handle);
 		}
+		return group;
+	}
+
+	private makeKitchenGasStove() {
+		const group = new THREE.Group();
+		group.add(box([1.34, 0.92, 1.08], [0, 0.46, 0], 0xc9c8c1));
+		const ovenDoor = box([1.1, 0.5, 0.06], [0, 0.43, 0.57], 0x343b3c);
+		group.add(ovenDoor, box([0.86, 0.34, 0.025], [0, 0.43, 0.61], 0x172021));
+		group.add(box([1.08, 0.075, 0.08], [0, 0.78, 0.63], 0x303534));
+		for (const x of [-0.4, -0.13, 0.13, 0.4]) {
+			group.add(cylinder(0.07, 0.07, 0.055, [x, 0.88, 0.59], 0x242827, 12));
+		}
+		group.add(box([1.42, 0.12, 1.14], [0, 0.99, 0], 0x555b59));
+		for (const x of [-0.38, 0.38]) {
+			for (const z of [-0.28, 0.28]) {
+				const burner = shadowMesh(
+					new THREE.TorusGeometry(0.19, 0.028, 8, 20),
+					material(0x242827, 0.68, 0.28)
+				);
+				burner.rotation.x = Math.PI / 2;
+				burner.position.set(x, 1.075, z);
+				group.add(burner);
+			}
+		}
+
+		this.kitchenGasDamageStages = [];
+		for (const [index, rotation] of [-0.38, 0.31].entries()) {
+			const dent = box([0.72, 0.035, 0.055], [0, 0.68 - index * 0.2, 0.625], 0x2d302f);
+			dent.rotation.z = rotation;
+			dent.visible = false;
+			this.kitchenGasDamageStages.push(dent);
+			group.add(dent);
+		}
+		this.kitchenGasLeak = new THREE.Group();
+		for (let index = 0; index < 9; index += 1) {
+			const puff = shadowMesh(
+				new THREE.SphereGeometry(0.055 + index * 0.009, 8, 6),
+				new THREE.MeshStandardMaterial({
+					color: 0xd5e6b7,
+					emissive: 0x6e8c42,
+					emissiveIntensity: 0.35,
+					transparent: true,
+					opacity: 0.28,
+					depthWrite: false
+				})
+			);
+			puff.position.set(-0.38, 1.14 + index * 0.07, -0.28);
+			puff.scale.setScalar(0.72 + index * 0.07);
+			this.kitchenGasLeak.add(puff);
+		}
+		this.kitchenGasLeak.visible = false;
+		group.add(this.kitchenGasLeak);
+		return group;
+	}
+
+	private makeKitchenPressureCooker() {
+		const group = new THREE.Group();
+		group.add(cylinder(0.27, 0.31, 0.36, [0, 0.2, 0], 0xaeb4b2, 18));
+		group.add(cylinder(0.31, 0.27, 0.08, [0, 0.42, 0], 0x6c7472, 18));
+		group.add(cylinder(0.045, 0.055, 0.17, [0, 0.54, 0], 0x282d2c, 10));
+		group.add(box([0.28, 0.09, 0.1], [0.36, 0.29, 0], 0x282d2c));
+		group.add(box([0.28, 0.09, 0.1], [-0.36, 0.29, 0], 0x282d2c));
+		return group;
+	}
+
+	private makeKitchenDishwasher() {
+		const group = new THREE.Group();
+		group.add(box([1.18, 0.9, 0.7], [0, 0.45, 0], 0xc6c7c2));
+		group.add(box([1.06, 0.69, 0.055], [0, 0.39, 0.38], 0x7f8581));
+		group.add(box([0.78, 0.055, 0.045], [0, 0.78, 0.425], 0x363b39));
+		for (let x = -0.36; x <= 0.36; x += 0.18) {
+			group.add(cylinder(0.018, 0.018, 0.18, [x, 0.88, 0.37], x > 0.3 ? 0xc84d42 : 0x353b39, 8));
+		}
+		return group;
+	}
+
+	private makeKitchenBlender() {
+		const group = new THREE.Group();
+		group.add(cylinder(0.23, 0.29, 0.23, [0, 0.115, 0], 0xc1543f, 14));
+		const jug = shadowMesh(
+			new THREE.CylinderGeometry(0.22, 0.17, 0.38, 12),
+			new THREE.MeshPhysicalMaterial({
+				color: 0xf0d39b,
+				roughness: 0.12,
+				transparent: true,
+				opacity: 0.48,
+				depthWrite: false
+			})
+		);
+		jug.position.y = 0.43;
+		group.add(jug);
+		group.add(cylinder(0.23, 0.23, 0.05, [0, 0.65, 0], 0x343a38, 12));
+		this.kitchenBlenderBlade = new THREE.Group();
+		this.kitchenBlenderBlade.position.y = 0.28;
+		for (const rotation of [0, Math.PI / 2]) {
+			const blade = box([0.28, 0.025, 0.045], [0, 0, 0], 0xd7d9d2);
+			blade.rotation.y = rotation;
+			this.kitchenBlenderBlade.add(blade);
+		}
+		group.add(this.kitchenBlenderBlade);
+		return group;
+	}
+
+	private makeKitchenToaster() {
+		const group = new THREE.Group();
+		group.add(box([0.66, 0.34, 0.42], [0, 0.17, 0], 0xe6b84d));
+		for (const x of [-0.17, 0.17]) {
+			group.add(box([0.08, 0.018, 0.28], [x, 0.35, 0], 0x252a29));
+			const toast = box([0.18, 0.22, 0.07], [x, 0.45, 0], 0xc88f45);
+			toast.rotation.z = x > 0 ? 0.06 : -0.06;
+			group.add(toast);
+		}
+		group.add(box([0.05, 0.2, 0.05], [0.37, 0.17, 0.08], 0x373c3a));
 		return group;
 	}
 
@@ -4496,12 +4711,34 @@ export class StampKonijnGame {
 		return group;
 	}
 
-	private makeKitchenUpperCabinet() {
+	private makeKitchenUpperCabinet(withPlates = false) {
 		const group = new THREE.Group();
 		group.add(box([1.18, 0.86, 0.48], [0, 0.43, 0], 0x91aa86));
 		for (const x of [-0.29, 0.29]) {
-			group.add(box([0.54, 0.72, 0.05], [x, 0.43, 0.265], 0xa3b89a));
+			if (withPlates) {
+				const glass = shadowMesh(
+					new THREE.BoxGeometry(0.54, 0.72, 0.035),
+					new THREE.MeshPhysicalMaterial({
+						color: 0xc8ddd8,
+						roughness: 0.2,
+						transparent: true,
+						opacity: 0.38,
+						depthWrite: false
+					})
+				);
+				glass.position.set(x, 0.43, 0.265);
+				group.add(glass);
+			} else {
+				group.add(box([0.54, 0.72, 0.05], [x, 0.43, 0.265], 0xa3b89a));
+			}
 			group.add(box([0.025, 0.2, 0.045], [x > 0 ? 0.08 : -0.08, 0.43, 0.31], 0x4f5551));
+		}
+		if (withPlates) {
+			for (const x of [-0.38, -0.19, 0, 0.19, 0.38]) {
+				const plate = cylinder(0.13, 0.13, 0.025, [x, 0.37, 0.12], 0xe8e1cf, 18);
+				plate.rotation.z = Math.PI / 2;
+				group.add(plate);
+			}
 		}
 		return group;
 	}
@@ -4761,6 +4998,7 @@ export class StampKonijnGame {
 		this.updateKo9Hq(delta);
 		this.updateKo9Lighting(delta);
 		this.updateBasementFeatures(delta);
+		this.updateKitchenChaos(delta);
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -4892,6 +5130,249 @@ export class StampKonijnGame {
 		if (this.washingMachineRattleCooldown <= 0) {
 			this.washingMachineRattleCooldown = 0.18 + Math.random() * 0.07;
 			this.audio.playWashingMachineRattle(0.75 + washingMachine.stampCount * 0.16);
+		}
+	}
+
+	private updateKitchenChaos(delta: number) {
+		if (this.kitchenBlenderBreakable && !this.kitchenBlenderBreakable.broken) {
+			this.kitchenBlenderBlade.rotation.y += delta * (this.reducedMotion ? 3.4 : 12.5);
+		}
+		if (this.kitchenGasLeak.visible) {
+			for (const [index, puff] of this.kitchenGasLeak.children.entries()) {
+				const phase = this.poolWaterTime * 1.7 + index * 0.53;
+				puff.position.x = -0.38 + Math.sin(phase) * 0.055;
+				puff.position.z = -0.28 + Math.cos(phase * 0.81) * 0.045;
+			}
+		}
+
+		this.kitchenExplosionTime = Math.max(0, this.kitchenExplosionTime - delta);
+		this.kitchenExplosionLight.intensity =
+			this.kitchenExplosionTime > 0
+				? 72 * Math.pow(this.kitchenExplosionTime / 0.72, 1.8)
+				: 0;
+
+		this.kitchenSinkFountainTime = Math.max(0, this.kitchenSinkFountainTime - delta);
+		this.kitchenSinkFountainCooldown = Math.max(0, this.kitchenSinkFountainCooldown - delta);
+		if (this.kitchenSinkFountainTime > 0 && this.kitchenSinkBreakable) {
+			if (this.kitchenSinkFountainCooldown <= 0) {
+				this.kitchenSinkFountainCooldown = this.reducedMotion ? 0.09 : 0.045;
+				const burstCount = this.reducedMotion ? 1 : 3;
+				for (let index = 0; index < burstCount; index += 1) {
+					const drop = shadowMesh(
+						new THREE.SphereGeometry(0.045 + Math.random() * 0.035, 7, 5),
+						new THREE.MeshPhysicalMaterial({
+							color: 0x6bdced,
+							roughness: 0.12,
+							transparent: true,
+							opacity: 0.72,
+							depthWrite: false
+						})
+					);
+					drop.scale.set(0.75, 1.8, 0.75);
+					this.spawnKitchenChaosPiece(
+						drop,
+						new THREE.Vector3(
+							this.kitchenSinkBreakable.group.position.x + (Math.random() - 0.5) * 0.14,
+							1.15,
+							this.kitchenSinkBreakable.group.position.z + 0.08
+						),
+						new THREE.Vector3(
+							(Math.random() - 0.5) * 2.4,
+							8.5 + Math.random() * 4.5,
+							1.4 + Math.random() * 2.8
+						),
+						{ gravity: 13, bounce: 0.05, life: 2.2, permanent: false }
+					);
+				}
+			}
+
+			const dx = this.player.position.x - this.kitchenSinkBreakable.group.position.x;
+			const dz = this.player.position.z - this.kitchenSinkBreakable.group.position.z;
+			if (this.playerInKitchen && Math.hypot(dx, dz) < 1.35 && this.player.position.y < 3.7) {
+				this.velocity.y += 22 * delta;
+				this.velocity.x += dx * 2.1 * delta;
+				this.velocity.z += Math.max(0.25, dz) * 2.1 * delta;
+				this.poolWaveEnergy = Math.max(this.poolWaveEnergy, 0.35);
+			}
+		}
+
+		for (let index = this.kitchenChaosPieces.length - 1; index >= 0; index -= 1) {
+			const piece = this.kitchenChaosPieces[index];
+			piece.impactCooldown = Math.max(0, piece.impactCooldown - delta);
+			if (piece.delay > 0) {
+				piece.delay = Math.max(0, piece.delay - delta);
+				piece.object.visible = piece.delay === 0;
+				continue;
+			}
+			if (piece.settled) continue;
+
+			piece.life -= delta;
+			piece.velocity.y -= piece.gravity * delta;
+			piece.velocity.multiplyScalar(Math.exp(-piece.drag * delta));
+			piece.object.position.addScaledVector(piece.velocity, delta);
+			piece.object.rotation.x += piece.spin.x * delta;
+			piece.object.rotation.y += piece.spin.y * delta;
+			piece.object.rotation.z += piece.spin.z * delta;
+
+			let collided = false;
+			let hardCollision = false;
+			const hitSpeed = piece.velocity.length();
+			if (piece.object.position.y <= 0.055) {
+				piece.object.position.y = 0.055;
+				if (piece.velocity.y < 0) {
+					piece.velocity.y *= -piece.bounce;
+					piece.velocity.x *= 0.78;
+					piece.velocity.z *= 0.78;
+					collided = true;
+					hardCollision = Math.abs(piece.velocity.y) > 0.35 || hitSpeed > 2.2;
+				}
+			}
+			if (piece.object.position.y >= ROOM_HEIGHT - 0.15) {
+				piece.object.position.y = ROOM_HEIGHT - 0.15;
+				piece.velocity.y = -Math.abs(piece.velocity.y) * piece.bounce;
+				collided = true;
+				hardCollision = true;
+			}
+			for (const axis of ['x', 'z'] as const) {
+				const minimum = axis === 'x' ? KITCHEN_MIN_X + 0.12 : BACK_WALL_Z + 0.12;
+				const maximum = axis === 'x' ? KITCHEN_MAX_X - 0.12 : ROOM_DEPTH / 2 - 0.12;
+				if (piece.object.position[axis] < minimum || piece.object.position[axis] > maximum) {
+					piece.object.position[axis] = THREE.MathUtils.clamp(
+						piece.object.position[axis],
+						minimum,
+						maximum
+					);
+					piece.velocity[axis] *= -piece.bounce;
+					collided = true;
+					hardCollision = true;
+				}
+			}
+
+			if (collided) {
+				piece.bounces += 1;
+				if (piece.plate) {
+					this.smashKitchenPlate(piece.object.position);
+					piece.object.removeFromParent();
+					disposeObject(piece.object);
+					this.kitchenChaosPieces.splice(index, 1);
+					continue;
+				}
+				if (hardCollision && piece.impactCooldown <= 0) {
+					this.playKitchenPieceImpact(piece.impactSound);
+					piece.impactCooldown = 0.12;
+				}
+				if (piece.stickOnImpact || piece.bounces >= piece.embedAfterBounces) {
+					this.settleKitchenPiece(piece);
+					if (piece.embedAfterBounces < Number.POSITIVE_INFINITY) {
+						this.emitFeedback('SNELKOOKPAN ZIT ERGENS VAST. PERFECT.');
+					}
+					continue;
+				}
+			}
+
+			if (piece.life <= 0 || (piece.bounces > 1 && piece.velocity.lengthSq() < 0.16)) {
+				if (piece.permanent) {
+					this.settleKitchenPiece(piece);
+				} else {
+					piece.object.removeFromParent();
+					disposeObject(piece.object);
+					this.kitchenChaosPieces.splice(index, 1);
+				}
+			}
+		}
+	}
+
+	private spawnKitchenChaosPiece(
+		object: THREE.Object3D,
+		position: THREE.Vector3,
+		velocity: THREE.Vector3,
+		options: Partial<
+			Pick<
+				KitchenChaosPiece,
+				| 'gravity'
+				| 'bounce'
+				| 'drag'
+				| 'life'
+				| 'delay'
+				| 'embedAfterBounces'
+				| 'stickOnImpact'
+				| 'permanent'
+				| 'flattenOnSettle'
+				| 'impactSound'
+				| 'plate'
+			>
+		> = {},
+		spin = new THREE.Vector3(
+			(Math.random() - 0.5) * 9,
+			(Math.random() - 0.5) * 9,
+			(Math.random() - 0.5) * 9
+		)
+	) {
+		object.position.copy(position);
+		object.visible = (options.delay ?? 0) <= 0;
+		object.traverse((child) => {
+			if (!(child instanceof THREE.Mesh)) return;
+			child.castShadow = !this.reducedMotion;
+			child.receiveShadow = true;
+		});
+		this.kitchenInteriorRoot.add(object);
+		this.kitchenChaosPieces.push({
+			object,
+			velocity: velocity.clone(),
+			spin: spin.clone(),
+			gravity: options.gravity ?? 12,
+			bounce: options.bounce ?? 0.42,
+			drag: options.drag ?? 0.12,
+			life: options.life ?? 7,
+			delay: options.delay ?? 0,
+			bounces: 0,
+			embedAfterBounces: options.embedAfterBounces ?? Number.POSITIVE_INFINITY,
+			stickOnImpact: options.stickOnImpact ?? false,
+			permanent: options.permanent ?? true,
+			flattenOnSettle: options.flattenOnSettle ?? false,
+			impactSound: options.impactSound ?? 'none',
+			impactCooldown: 0,
+			plate: options.plate ?? false,
+			settled: false
+		});
+	}
+
+	private settleKitchenPiece(piece: KitchenChaosPiece) {
+		piece.settled = true;
+		piece.velocity.set(0, 0, 0);
+		piece.spin.set(0, 0, 0);
+		if (piece.flattenOnSettle) {
+			piece.object.scale.y *= 0.18;
+			piece.object.position.y = 0.025;
+		}
+	}
+
+	private playKitchenPieceImpact(sound: KitchenImpactSound) {
+		if (sound === 'none') return;
+		if (sound === 'glass') {
+			this.audio.playVaseBreak();
+			return;
+		}
+		this.audio.playBulletImpact(sound);
+	}
+
+	private smashKitchenPlate(position: THREE.Vector3) {
+		this.audio.playVaseBreak();
+		for (let shard = 0; shard < 4; shard += 1) {
+			const angle = shard * (Math.PI / 2) + Math.random() * 0.4;
+			const piece = box(
+				[0.14 + Math.random() * 0.13, 0.018, 0.08 + Math.random() * 0.08],
+				[0, 0, 0],
+				shard % 2 ? 0xe9e1cf : 0xb8d0d0
+			);
+			piece.position.set(
+				position.x + Math.cos(angle) * (0.08 + Math.random() * 0.22),
+				0.022,
+				position.z + Math.sin(angle) * (0.08 + Math.random() * 0.22)
+			);
+			piece.rotation.y = angle;
+			this.kitchenInteriorRoot.add(piece);
+			this.kitchenPersistentMess.push(piece);
 		}
 	}
 
@@ -7332,6 +7813,10 @@ export class StampKonijnGame {
 		if (source === 'stamp') {
 			this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
 		}
+		if (breakable === this.kitchenGasStoveBreakable) {
+			this.damageKitchenGasStove(breakable, source);
+			return;
+		}
 		if (breakable === this.washingMachineBreakable) {
 			this.damageWashingMachine(breakable, source);
 			return;
@@ -7421,6 +7906,37 @@ export class StampKonijnGame {
 		this.pendingStampFeedback =
 			stampsLeft === 1 ? 'KRAK! NOG 1 STAMP!' : `KRAK! NOG ${stampsLeft} STAMPEN!`;
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
+	}
+
+	private damageKitchenGasStove(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (source === 'bullet') {
+			this.emitFeedback('KOGELS DOEN NIKS. DIT FORNUIS WIL DRIE KONTSTAMPEN!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+		this.audio.playKitchenMetalCrash(0.72 + breakable.stampCount * 0.12);
+
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.pendingStampFeedback = 'GAS + KONTSTAMP = KEUKEN APOCALYPS!';
+			this.breakObject(breakable);
+			this.triggerKitchenGasExplosion(breakable.group.position);
+			return;
+		}
+
+		const stage = this.kitchenGasDamageStages[breakable.stampCount - 1];
+		if (stage) stage.visible = true;
+		if (breakable.stampCount === 1) {
+			breakable.group.rotation.z = -0.075;
+			this.pendingStampFeedback = 'FORNUIS KROM. NOG 2 STAMPEN.';
+		} else {
+			breakable.group.rotation.z = 0.11;
+			this.kitchenGasLeak.visible = true;
+			this.audio.playKitchenGasLeak();
+			this.pendingStampFeedback = 'SSSSSS... GAS OPEN. NOG 1 STAMP?!';
+		}
+		this.cameraShake = Math.max(this.cameraShake, 0.58);
 	}
 
 	private damageWashingMachine(breakable: Breakable, source: 'stamp' | 'bullet') {
@@ -7640,6 +8156,345 @@ export class StampKonijnGame {
 		});
 	}
 
+	private launchKitchenPressureCooker() {
+		const cooker = this.makeKitchenPressureCooker();
+		const origin = this.kitchenPressureCookerBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		origin.y += 0.38;
+		const direction = new THREE.Vector3(-0.8, 0.78, Math.random() > 0.5 ? 0.65 : -0.65)
+			.normalize()
+			.multiplyScalar(11.5);
+		this.spawnKitchenChaosPiece(cooker, origin, direction, {
+			gravity: 7.5,
+			bounce: 0.88,
+			drag: 0.025,
+			life: 14,
+			embedAfterBounces: 6,
+			permanent: true,
+			impactSound: 'metal'
+		});
+		this.audio.playKitchenPressureRelease();
+		this.emitFeedback('SNELKOOKPAN GELANCEERD! WAAR GAAT DIE HEEN?!');
+	}
+
+	private burstKitchenDishwasher() {
+		const source = this.kitchenDishwasherBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		this.audio.playKitchenDishwasherBurst();
+		for (let index = 0; index < (this.reducedMotion ? 12 : 28); index += 1) {
+			const foam = shadowMesh(
+				new THREE.SphereGeometry(0.12 + Math.random() * 0.14, 8, 6),
+				new THREE.MeshStandardMaterial({
+					color: index % 4 === 0 ? 0xd7f1f0 : 0xf0eee5,
+					roughness: 0.48,
+					transparent: true,
+					opacity: 0.82
+				})
+			);
+			foam.scale.set(1, 0.72 + Math.random() * 0.65, 1);
+			this.spawnKitchenChaosPiece(
+				foam,
+				new THREE.Vector3(source.x + (Math.random() - 0.5) * 0.55, 0.5, source.z + 0.35),
+				new THREE.Vector3((Math.random() - 0.5) * 4.5, 2.2 + Math.random() * 4.2, 2 + Math.random() * 5),
+				{
+					gravity: 5.5,
+					bounce: 0.18,
+					drag: 0.42,
+					life: 8,
+					permanent: true,
+					flattenOnSettle: true
+				}
+			);
+		}
+		for (let index = 0; index < (this.reducedMotion ? 4 : 9); index += 1) {
+			const plate = cylinder(0.17, 0.17, 0.028, [0, 0, 0], index % 2 ? 0xe7dfca : 0xbad0cf, 18);
+			plate.rotation.x = Math.PI / 2;
+			this.spawnKitchenChaosPiece(
+				plate,
+				new THREE.Vector3(source.x, 0.58 + Math.random() * 0.18, source.z + 0.4),
+				new THREE.Vector3((Math.random() - 0.5) * 5.5, 3.8 + Math.random() * 3, 3.5 + Math.random() * 4),
+				{ bounce: 0.3, delay: index * 0.055, impactSound: 'glass', plate: true }
+			);
+		}
+		for (let index = 0; index < (this.reducedMotion ? 4 : 11); index += 1) {
+			const utensil = box(
+				[index % 3 === 0 ? 0.1 : 0.045, 0.025, 0.26 + Math.random() * 0.18],
+				[0, 0, 0],
+				0xaeb5b2
+			);
+			this.spawnKitchenChaosPiece(
+				utensil,
+				new THREE.Vector3(source.x, 0.5, source.z + 0.42),
+				new THREE.Vector3((Math.random() - 0.5) * 6.5, 3 + Math.random() * 4, 3 + Math.random() * 5),
+				{ bounce: 0.48, delay: index * 0.035, impactSound: 'metal' }
+			);
+		}
+	}
+
+	private scatterKitchenFridgeContents() {
+		const source = this.kitchenFridgeBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		const launch = (
+			object: THREE.Object3D,
+			offsetY: number,
+			speed = 1,
+			impactSound: KitchenImpactSound = 'wood'
+		) => {
+			this.spawnKitchenChaosPiece(
+				object,
+				new THREE.Vector3(source.x - 0.35, offsetY, source.z + (Math.random() - 0.5) * 0.55),
+				new THREE.Vector3(-3.5 - Math.random() * 4.2, 2.8 + Math.random() * 4.8, (Math.random() - 0.5) * 4.2).multiplyScalar(speed),
+				{ bounce: 0.34, impactSound }
+			);
+		};
+		for (let index = 0; index < 4; index += 1) {
+			const carton = box([0.22, 0.42, 0.2], [0, 0, 0], index % 2 ? 0xe7e2d0 : 0x91bfd0);
+			launch(carton, 0.8 + index * 0.24);
+		}
+		for (let index = 0; index < 7; index += 1) {
+			const egg = shadowMesh(new THREE.SphereGeometry(0.11, 9, 7), material(0xe7d8b6, 0.72));
+			egg.scale.y = 1.32;
+			launch(egg, 0.55 + Math.random() * 0.6, 0.85, 'glass');
+		}
+		for (let index = 0; index < 7; index += 1) {
+			const colors = [0xe07a38, 0x6fa653, 0xc84f3f, 0xf1cf55];
+			const vegetable = shadowMesh(
+				index % 3 === 0
+					? new THREE.ConeGeometry(0.11, 0.42, 9)
+					: new THREE.SphereGeometry(0.13 + Math.random() * 0.05, 9, 7),
+				material(colors[index % colors.length], 0.84)
+			);
+			launch(vegetable, 0.45 + Math.random() * 1.35, 1, 'none');
+		}
+		for (let index = 0; index < 4; index += 1) {
+			const bottle = cylinder(0.075, 0.09, 0.42, [0, 0, 0], index % 2 ? 0x628f66 : 0x956a42, 10);
+			launch(bottle, 0.6 + Math.random() * 1.25, 1, 'glass');
+		}
+		for (let index = 0; index < 3; index += 1) {
+			launch(box([0.42, 0.18, 0.3], [0, 0, 0], index % 2 ? 0x82a7c7 : 0xe2a34f), 1.5 + index * 0.2);
+		}
+		const drawer = box([0.92, 0.24, 0.68], [0, 0, 0], 0xd7d9d3);
+		this.spawnKitchenChaosPiece(
+			drawer,
+			new THREE.Vector3(source.x - 0.35, 0.24, source.z),
+			new THREE.Vector3(-8.2, 1.4, 0.9),
+			{ gravity: 9, bounce: 0.2, drag: 0.34, impactSound: 'metal' },
+			new THREE.Vector3(0.3, 3.5, 0.2)
+		);
+		this.emitFeedback('KOELKAST ONTPLOFT IN BOODSCHAPPEN!');
+	}
+
+	private startKitchenPlateChain() {
+		const source = this.kitchenPlateCupboardBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		const plateCount = this.reducedMotion ? 9 : 22;
+		for (let index = 0; index < plateCount; index += 1) {
+			const plate = cylinder(
+				0.15 + Math.random() * 0.06,
+				0.15 + Math.random() * 0.06,
+				0.024,
+				[0, 0, 0],
+				index % 3 === 0 ? 0x9abfc1 : 0xe9e1cf,
+				18
+			);
+			plate.rotation.x = Math.PI / 2;
+			this.spawnKitchenChaosPiece(
+				plate,
+				new THREE.Vector3(source.x + (Math.random() - 0.5) * 0.7, source.y + 0.45, source.z + 0.24),
+				new THREE.Vector3((Math.random() - 0.5) * 2.4, -0.4 + Math.random() * 1.3, 1.2 + Math.random() * 2.5),
+				{
+					bounce: 0.22,
+					delay: 0.12 + index * (0.07 + Math.random() * 0.035),
+					impactSound: 'glass',
+					plate: true
+				}
+			);
+		}
+		this.emitFeedback('DE BORDEN KOMEN... ÉÉN VOOR ÉÉN.');
+	}
+
+	private launchKitchenBlenderSludge() {
+		const source = this.kitchenBlenderBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		this.audio.playKitchenBlenderBurst();
+		for (let index = 0; index < (this.reducedMotion ? 10 : 26); index += 1) {
+			const sludge = shadowMesh(
+				new THREE.SphereGeometry(0.07 + Math.random() * 0.1, 8, 6),
+				new THREE.MeshStandardMaterial({
+					color: index % 4 === 0 ? 0x7e9f3d : 0xe26f28,
+					roughness: 0.72
+				})
+			);
+			sludge.scale.set(0.8 + Math.random() * 0.5, 1.2 + Math.random(), 0.8 + Math.random() * 0.5);
+			this.spawnKitchenChaosPiece(
+				sludge,
+				new THREE.Vector3(source.x, source.y + 0.38, source.z),
+				new THREE.Vector3((Math.random() - 0.5) * 7, 5 + Math.random() * 7, (Math.random() - 0.5) * 7),
+				{
+					gravity: 11,
+					bounce: 0.04,
+					drag: 0.25,
+					permanent: true,
+					flattenOnSettle: true
+				}
+			);
+		}
+	}
+
+	private fireKitchenToaster() {
+		const source = this.kitchenToasterBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		this.audio.playKitchenToasterPop();
+		for (let index = 0; index < (this.reducedMotion ? 5 : 10); index += 1) {
+			const toast = box([0.24, 0.3, 0.07], [0, 0, 0], index % 3 === 0 ? 0x9f6231 : 0xc88c47);
+			const ridiculous = index === 0;
+			this.spawnKitchenChaosPiece(
+				toast,
+				new THREE.Vector3(source.x + (Math.random() - 0.5) * 0.28, source.y + 0.3, source.z),
+				new THREE.Vector3(
+					(Math.random() - 0.5) * 5,
+					ridiculous ? 17 : 6 + Math.random() * 5,
+					(Math.random() - 0.5) * 5
+				),
+				{ bounce: 0.38, delay: index * 0.07, impactSound: 'wood' }
+			);
+		}
+		this.emitFeedback('TOAST! TOAST! ÉÉN GAAT NAAR DE MAAN!');
+	}
+
+	private startKitchenSinkFountain() {
+		this.kitchenSinkFountainTime = 12;
+		this.kitchenSinkFountainCooldown = 0;
+		this.audio.playKitchenWaterBurst();
+		this.emitFeedback('WATERLEIDING KAPOT! GRATIS KONIJNENGEISER!');
+	}
+
+	private releaseKitchenPans() {
+		const source = this.kitchenPanRackBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		this.audio.playKitchenMetalCrash(1.15);
+		for (let index = 0; index < (this.reducedMotion ? 4 : 8); index += 1) {
+			const pan = new THREE.Group();
+			const body = cylinder(0.21 + Math.random() * 0.08, 0.18, 0.08, [0, 0, 0], index % 2 ? 0x343a38 : 0x666b67, 16);
+			body.rotation.x = Math.PI / 2;
+			pan.add(body, box([0.08, 0.52, 0.07], [0, 0.35, 0], 0x262b2a));
+			this.spawnKitchenChaosPiece(
+				pan,
+				new THREE.Vector3(source.x - 0.12, source.y + 0.5 + index * 0.05, source.z + (Math.random() - 0.5) * 0.65),
+				new THREE.Vector3(-2 - Math.random() * 4, 1.5 + Math.random() * 4, (Math.random() - 0.5) * 5),
+				{ bounce: 0.55, delay: index * 0.045, impactSound: 'metal' }
+			);
+		}
+	}
+
+	private releaseKitchenKnives() {
+		const source = this.kitchenKnifeRackBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		for (let index = 0; index < (this.reducedMotion ? 5 : 10); index += 1) {
+			const knife = new THREE.Group();
+			const blade = box([0.055, 0.42, 0.025], [0, -0.1, 0], 0xcdd1cc);
+			blade.rotation.z = index % 2 ? 0.05 : -0.05;
+			knife.add(blade, box([0.1, 0.24, 0.075], [0, 0.23, 0], index % 2 ? 0x3d2c24 : 0x252a29));
+			knife.rotation.z = Math.PI / 2;
+			const direction = index % 3;
+			this.spawnKitchenChaosPiece(
+				knife,
+				new THREE.Vector3(source.x - 0.1, source.y + 0.62, source.z + (Math.random() - 0.5) * 0.7),
+				new THREE.Vector3(
+					-4.5 - Math.random() * 4.5,
+					1 + Math.random() * 3,
+					direction === 0 ? 6 + Math.random() * 3 : direction === 1 ? -6 - Math.random() * 3 : (Math.random() - 0.5) * 2
+				),
+				{
+					gravity: 5.5,
+					bounce: 0,
+					delay: index * 0.045,
+					stickOnImpact: true,
+					impactSound: 'metal'
+				}
+			);
+		}
+		this.emitFeedback('MESSENREK LOS! CARTOON-MESSEN OVERAL!');
+	}
+
+	private burstKitchenIslandDrawers() {
+		const source = this.kitchenIslandBreakable?.basePosition.clone() ?? new THREE.Vector3();
+		for (const [index, x] of [-0.7, 0, 0.7].entries()) {
+			const drawer = box([0.58, 0.22, 0.62], [0, 0, 0], 0x89a47f);
+			this.spawnKitchenChaosPiece(
+				drawer,
+				new THREE.Vector3(source.x + x, 0.66, source.z + 0.46),
+				new THREE.Vector3((Math.random() - 0.5) * 2, 2 + Math.random() * 2.5, 6.5 + Math.random() * 3),
+				{ bounce: 0.28, delay: index * 0.08, impactSound: 'wood' }
+			);
+		}
+		for (let index = 0; index < (this.reducedMotion ? 7 : 18); index += 1) {
+			const utensil = box(
+				[index % 4 === 0 ? 0.1 : 0.04, 0.025, 0.22 + Math.random() * 0.2],
+				[0, 0, 0],
+				0xbcc0ba
+			);
+			this.spawnKitchenChaosPiece(
+				utensil,
+				new THREE.Vector3(source.x + (Math.random() - 0.5) * 1.4, 0.72, source.z + 0.42),
+				new THREE.Vector3((Math.random() - 0.5) * 5.5, 2 + Math.random() * 5, 4 + Math.random() * 6),
+				{ bounce: 0.5, delay: index * 0.025, impactSound: 'metal' }
+			);
+		}
+	}
+
+	private triggerKitchenGasExplosion(position: THREE.Vector3) {
+		this.audio.playKitchenExplosion();
+		this.kitchenExplosionTime = 0.72;
+		this.kitchenExplosionLight.position.copy(position).add(new THREE.Vector3(0, 1.1, 0));
+		this.kitchenExplosionLight.intensity = 72;
+		if (!this.kitchenExplosionLight.parent) this.kitchenInteriorRoot.add(this.kitchenExplosionLight);
+		this.cameraShake = Math.max(this.cameraShake, this.reducedMotion ? 0.75 : 1.75);
+
+		const playerOffset = this.player.position.clone().sub(position);
+		if (playerOffset.lengthSq() < 0.1) playerOffset.set(-1, 0.5, 0);
+		playerOffset.normalize();
+		this.velocity.addScaledVector(playerOffset, 10).y += 8;
+		this.joltRagdoll(3.2);
+
+		for (let index = 0; index < (this.reducedMotion ? 14 : 34); index += 1) {
+			const hot = index % 3 !== 0;
+			const particle = shadowMesh(
+				new THREE.SphereGeometry(0.07 + Math.random() * 0.16, 7, 5),
+				new THREE.MeshBasicMaterial({
+					color: hot ? (index % 2 ? 0xffb13b : 0xff612d) : 0x3d3934,
+					transparent: true,
+					opacity: hot ? 0.92 : 0.6
+				})
+			);
+			particle.scale.setScalar(0.65 + Math.random() * 1.8);
+			const direction = new THREE.Vector3(
+				(Math.random() - 0.5) * 2,
+				Math.random() * 1.45,
+				(Math.random() - 0.5) * 2
+			).normalize();
+			this.spawnKitchenChaosPiece(
+				particle,
+				position.clone().add(new THREE.Vector3(0, 0.85, 0)),
+				direction.multiplyScalar(5 + Math.random() * 10),
+				{
+					gravity: hot ? 4 : 7,
+					bounce: 0.18,
+					drag: 0.5,
+					life: 0.8 + Math.random() * 1.2,
+					permanent: false
+				}
+			);
+		}
+
+		for (const target of this.breakables) {
+			if (
+				target.broken ||
+				target === this.kitchenGasStoveBreakable ||
+				target === this.kitchenHatchBreakable ||
+				target.biome !== 'ground' ||
+				!this.isBreakableActive(target)
+			)
+				continue;
+			const inKitchen =
+				target.basePosition.x >= KITCHEN_MIN_X && target.basePosition.x <= KITCHEN_MAX_X;
+			if (!inKitchen || target.group.position.distanceTo(position) > 3.15) continue;
+			this.breakObject(target);
+		}
+	}
+
 	private breakObject(breakable: Breakable, effect: 'smash' | 'sink' = 'smash') {
 		if (breakable.broken) return;
 		const supportedObject =
@@ -7669,6 +8524,16 @@ export class StampKonijnGame {
 		this.lastValue = points;
 		if (effect === 'smash') this.spawnDebris(breakable);
 		this.spawnGarbagePile(breakable);
+		if (breakable === this.kitchenPressureCookerBreakable) this.launchKitchenPressureCooker();
+		if (breakable === this.kitchenDishwasherBreakable) this.burstKitchenDishwasher();
+		if (breakable === this.kitchenFridgeBreakable) this.scatterKitchenFridgeContents();
+		if (breakable === this.kitchenPlateCupboardBreakable) this.startKitchenPlateChain();
+		if (breakable === this.kitchenBlenderBreakable) this.launchKitchenBlenderSludge();
+		if (breakable === this.kitchenToasterBreakable) this.fireKitchenToaster();
+		if (breakable === this.kitchenSinkBreakable) this.startKitchenSinkFountain();
+		if (breakable === this.kitchenPanRackBreakable) this.releaseKitchenPans();
+		if (breakable === this.kitchenKnifeRackBreakable) this.releaseKitchenKnives();
+		if (breakable === this.kitchenIslandBreakable) this.burstKitchenIslandDrawers();
 		if (breakable === this.ko9ArchiveBreakable) this.spawnClassifiedDocuments(breakable);
 		if (breakable === this.poolBreakable) this.spawnPoolPuddle(breakable);
 		if (breakable === this.basementFalseWallBreakable) this.syncBasementGrowRoomVisibility();
@@ -8867,6 +9732,13 @@ export class StampKonijnGame {
 		this.washingMachineTime = 0;
 		this.washingMachineRattleCooldown = 0;
 		this.washingMachineVelocity.set(1.25, 0, 0.8);
+		this.kitchenGasLeak.visible = false;
+		for (const stage of this.kitchenGasDamageStages) stage.visible = false;
+		this.kitchenBlenderBlade.rotation.set(0, 0, 0);
+		this.kitchenSinkFountainTime = 0;
+		this.kitchenSinkFountainCooldown = 0;
+		this.kitchenExplosionTime = 0;
+		this.kitchenExplosionLight.intensity = 0;
 		this.basementFalseWallDamage.visible = false;
 		this.basementGrowFan.rotation.z = 0;
 		this.toiletHoleOpen = false;
@@ -8918,6 +9790,16 @@ export class StampKonijnGame {
 	}
 
 	private clearDebris() {
+		for (const piece of this.kitchenChaosPieces) {
+			piece.object.removeFromParent();
+			disposeObject(piece.object);
+		}
+		this.kitchenChaosPieces = [];
+		for (const object of this.kitchenPersistentMess) {
+			object.removeFromParent();
+			disposeObject(object);
+		}
+		this.kitchenPersistentMess = [];
 		for (const piece of this.debris) {
 			piece.mesh.removeFromParent();
 			piece.mesh.geometry.dispose();
