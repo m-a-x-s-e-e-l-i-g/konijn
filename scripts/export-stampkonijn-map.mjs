@@ -597,10 +597,6 @@ function addLeftRooms(houseShell, bathroom, stairs, bedroom) {
 
 	addStatic(
 		bedroom,
-		box('bedroom_wardrobe', [0.82, 2.2, 1.35], [LEFT_ROOMS_MIN_X + 0.52, 1.1, 3.25], 0x7d5a46)
-	);
-	addStatic(
-		bedroom,
 		mesh('bedroom_rug', new THREE.CircleGeometry(1.2, 32), 0x725c72, [-9.15, 0.015, 3.5], {
 			rotation: [-Math.PI / 2, 0, 0],
 			scale: [1, 1, 0.64],
@@ -681,42 +677,6 @@ function addKitchen(houseShell, kitchen) {
 	]) {
 		addCollider(houseShell, box(name, size, position, 0xe7d6bd), 'wall');
 	}
-
-	for (const [index, x] of [8.15, 9.45, 10.75].entries()) {
-		addStatic(
-			kitchen,
-			box(
-				`kitchen_lower_cabinet_${index}`,
-				[1.18, 0.86, 0.68],
-				[x, 0.43, BACK_WALL_Z + 0.43],
-				0x78966f
-			)
-		);
-		addStatic(
-			kitchen,
-			box(
-				`kitchen_upper_cabinet_${index}`,
-				[1.18, 0.86, 0.48],
-				[x, 2.45, BACK_WALL_Z + 0.34],
-				0x91aa86
-			)
-		);
-	}
-	addStatic(
-		kitchen,
-		box('kitchen_counter', [4.05, 0.14, 0.84], [9.45, 0.93, BACK_WALL_Z + 0.48], 0x4a403a)
-	);
-	addStatic(
-		kitchen,
-		box('kitchen_sink', [0.78, 0.045, 0.46], [9.45, 1.015, BACK_WALL_Z + 0.51], 0xa9aaa3)
-	);
-	addStatic(
-		kitchen,
-		cylinder('kitchen_tap', [0.035, 0.035], 0.5, [9.45, 1.23, BACK_WALL_Z + 0.25], 0x6f7373, {
-			segments: 10,
-			rotation: [Math.PI / 2, 0, 0]
-		})
-	);
 }
 
 function addUpstairs(houseShell, upstairs) {

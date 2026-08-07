@@ -2488,6 +2488,48 @@ export class StampKonijnGame {
 			1.05,
 			'wood'
 		);
+		for (const [index, x] of [8.15, 9.45, 10.75].entries()) {
+			this.addBreakable(
+				index === 1 ? 'SPOELKASTJE' : 'ONDERKASTJE',
+				index === 1 ? 110 : 75,
+				this.makeKitchenLowerCabinet(index === 1),
+				[x, 0, BACK_WALL_Z + 0.43],
+				0.72,
+				index === 1 ? 1.5 : 1.04,
+				'wood'
+			);
+			this.addBreakable(
+				'BOVENKASTJE',
+				65,
+				this.makeKitchenUpperCabinet(),
+				[x, 2.02, BACK_WALL_Z + 0.34],
+				0.68,
+				0.86,
+				'wood'
+			);
+		}
+		const knifeRack = this.makeKitchenKnifeRack();
+		knifeRack.rotation.y = -Math.PI / 2;
+		this.addBreakable(
+			'MESSENREK',
+			90,
+			knifeRack,
+			[KITCHEN_MAX_X - 0.14, 1.18, 0.2],
+			0.66,
+			1.18,
+			'metal'
+		);
+		const panRack = this.makeKitchenPanRack();
+		panRack.rotation.y = -Math.PI / 2;
+		this.addBreakable(
+			'PANNENREK',
+			120,
+			panRack,
+			[KITCHEN_MAX_X - 0.14, 1.14, 1.72],
+			0.76,
+			1.24,
+			'metal'
+		);
 		this.kitchenHatchBreakable = this.addBreakable(
 			'KELDERLUIK',
 			90,
@@ -2508,6 +2550,16 @@ export class StampKonijnGame {
 			'ceramic'
 		);
 		this.addBreakable('BED', 240, this.makeBed(), [-10.25, 0, 3.3], 1.35, 0.86, 'wood');
+		this.addBreakable(
+			'KLEDINGKAST',
+			260,
+			this.makeBedroomWardrobe(),
+			[LEFT_ROOMS_MIN_X + 0.52, 0, 3.25],
+			0.84,
+			2.2,
+			'wood',
+			2
+		);
 		this.upstairsBreakables.push(
 			this.addBreakable(
 				'KO-9 COMMAND DESK',
@@ -4140,6 +4192,73 @@ export class StampKonijnGame {
 		return group;
 	}
 
+	private makeKitchenLowerCabinet(withSink: boolean) {
+		const group = new THREE.Group();
+		const cabinetGreen = 0x78966f;
+		const panelGreen = 0x89a47f;
+		group.add(box([1.18, 0.86, 0.68], [0, 0.43, 0], cabinetGreen));
+		for (const x of [-0.29, 0.29]) {
+			group.add(box([0.54, 0.72, 0.055], [x, 0.43, 0.365], panelGreen));
+			group.add(box([0.025, 0.2, 0.045], [x > 0 ? 0.08 : -0.08, 0.46, 0.41], 0x4f5551));
+		}
+		group.add(box([1.28, 0.14, 0.84], [0, 0.93, 0.05], 0x4a403a));
+		if (withSink) {
+			group.add(box([0.78, 0.045, 0.46], [0, 1.015, 0.08], 0xa9aaa3));
+			group.add(cylinder(0.035, 0.035, 0.34, [0, 1.18, -0.2], 0x6f7373, 10));
+			const spout = cylinder(0.035, 0.035, 0.34, [0, 1.32, -0.04], 0x6f7373, 10);
+			spout.rotation.x = Math.PI / 2;
+			group.add(spout);
+		}
+		return group;
+	}
+
+	private makeKitchenUpperCabinet() {
+		const group = new THREE.Group();
+		group.add(box([1.18, 0.86, 0.48], [0, 0.43, 0], 0x91aa86));
+		for (const x of [-0.29, 0.29]) {
+			group.add(box([0.54, 0.72, 0.05], [x, 0.43, 0.265], 0xa3b89a));
+			group.add(box([0.025, 0.2, 0.045], [x > 0 ? 0.08 : -0.08, 0.43, 0.31], 0x4f5551));
+		}
+		return group;
+	}
+
+	private makeKitchenPanRack() {
+		const group = new THREE.Group();
+		group.add(box([1.38, 0.1, 0.08], [0, 1.13, 0], 0x303735));
+		for (const [index, x] of [-0.46, 0, 0.46].entries()) {
+			const panColor = [0x565b59, 0x2f3534, 0x777b76][index];
+			const pan = cylinder(0.23, 0.2, 0.09, [x, 0.44 + (index % 2) * 0.08, 0.08], panColor, 18);
+			pan.rotation.x = Math.PI / 2;
+			group.add(pan);
+			const handle = box([0.09, 0.58, 0.07], [x, 0.78 + (index % 2) * 0.08, 0.075], 0x282d2c);
+			handle.rotation.z = (index - 1) * 0.09;
+			group.add(handle);
+			group.add(cylinder(0.035, 0.035, 0.1, [x, 1.06, 0.055], 0xb5aa90, 8));
+		}
+		return group;
+	}
+
+	private makeKitchenKnifeRack() {
+		const group = new THREE.Group();
+		group.add(box([1.28, 0.13, 0.08], [0, 0.9, 0], 0x343a38));
+		for (const [index, x] of [-0.45, -0.15, 0.15, 0.45].entries()) {
+			const bladeShape = new THREE.Shape();
+			bladeShape.moveTo(-0.075, 0);
+			bladeShape.lineTo(0.075, 0);
+			bladeShape.lineTo(0.045, -0.5 + index * 0.035);
+			bladeShape.lineTo(-0.06, -0.44 + index * 0.025);
+			bladeShape.closePath();
+			const blade = shadowMesh(
+				new THREE.ExtrudeGeometry(bladeShape, { depth: 0.035, bevelEnabled: false }),
+				material(0xc8cbc5, 0.32, 0.72)
+			);
+			blade.position.set(x, 0.84, 0.035);
+			group.add(blade);
+			group.add(box([0.14, 0.3, 0.1], [x, 1.07, 0.055], index % 2 ? 0x382c25 : 0x242827));
+		}
+		return group;
+	}
+
 	private makeKitchenHatch() {
 		const group = new THREE.Group();
 		const plankDepth = KITCHEN_HATCH_DEPTH / 4;
@@ -4211,6 +4330,22 @@ export class StampKonijnGame {
 		group.add(box([0.72, 0.18, 0.52], [-0.58, 0.72, -0.36], 0xeee5d8));
 		group.add(box([0.72, 0.18, 0.52], [0.58, 0.72, -0.36], 0xeee5d8));
 		group.add(box([2.34, 0.92, 0.14], [0, 0.46, -0.74], 0x6f5142));
+		return group;
+	}
+
+	private makeBedroomWardrobe() {
+		const group = new THREE.Group();
+		group.add(box([0.82, 2.2, 1.35], [0, 1.1, 0], 0x68483a));
+		for (const z of [-0.34, 0.34]) {
+			group.add(box([0.055, 1.82, 0.59], [0.44, 1.12, z], 0x7d5a46));
+		}
+		group.add(box([0.08, 0.12, 1.48], [0.44, 2.16, 0], 0x53392f));
+		for (const z of [-0.08, 0.08]) {
+			group.add(box([0.07, 0.34, 0.055], [0.49, 1.16, z], 0x342c28));
+		}
+		for (const z of [-0.5, 0.5]) {
+			group.add(box([0.64, 0.12, 0.14], [0, 0.06, z], 0x4b342b));
+		}
 		return group;
 	}
 
