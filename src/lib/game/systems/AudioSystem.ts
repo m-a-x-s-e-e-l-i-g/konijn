@@ -13,7 +13,13 @@ import {
 } from '../config/audio';
 import type { BreakMaterial, BulletImpactMaterial, GunWeapon } from '../types';
 
-const CHAIR_BREAK_LABELS = new Set(['STOEL', 'TUINSTOEL', 'BOEKENKAST', 'PICKNICKTAFEL']);
+const CHAIR_BREAK_LABELS = new Set([
+	'STOEL',
+	'TUINSTOEL',
+	'BANK',
+	'BOEKENKAST',
+	'PICKNICKTAFEL'
+]);
 
 export class AudioSystem {
 	private muted = false;

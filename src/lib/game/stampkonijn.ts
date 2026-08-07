@@ -2459,46 +2459,71 @@ export class StampKonijnGame {
 	}
 
 	private createBreakables() {
+		const livingRoomSofa = this.makeLivingRoomSofa();
+		livingRoomSofa.rotation.y = Math.PI / 2;
 		this.addBreakable(
-			'VAAS',
+			'BANK',
+			280,
+			livingRoomSofa,
+			[-5.25, 0, -0.1],
+			1.58,
+			1.34,
+			'wood',
+			2
+		);
+		this.addBreakable(
+			'BLAUWE VLOERVAAS',
 			20,
 			this.makeVase(COLORS.blue),
-			[-4.2, 0, -2.5],
+			[-4.25, 0, -3.15],
 			0.48,
 			1.05,
 			'ceramic'
 		);
 		this.addBreakable(
+			'BIJZETTAFEL',
+			45,
+			this.makeLivingRoomSideTable(),
+			[-3.15, 0, 2.85],
+			0.58,
+			0.76,
+			'wood'
+		);
+		this.addBreakable(
 			'DIKKE VAAS',
 			35,
 			this.makeVase(COLORS.pink),
-			[4.7, 0, -1.4],
+			[-3.15, 0.77, 2.85],
 			0.54,
 			1.15,
 			'ceramic'
 		);
-		this.addBreakable('LAMP', 45, this.makeLamp(), [5.7, 0, 2.2], 0.6, 2.25, 'metal');
+		this.addBreakable('LAMP', 45, this.makeLamp(), [5.35, 0, 3.15], 0.6, 2.25, 'metal');
+		const loungeChair = this.makeChair(COLORS.yellow);
+		loungeChair.rotation.y = -2.32;
 		this.addBreakable(
 			'STOEL',
 			35,
-			this.makeChair(COLORS.yellow),
-			[-3.5, 0, 1.2],
+			loungeChair,
+			[2.75, 0, 2.45],
 			0.85,
 			1.45,
 			'wood'
 		);
-		this.addBreakable('TAFEL', 60, this.makeTable(), [2.7, 0, 0.2], 1.0, 1.05, 'wood');
-		this.addBreakable('MONSTERA', 30, this.makePlant(), [-5.5, 0, 2.5], 0.7, 1.8, 'plant');
+		this.addBreakable('SALONTAFEL', 60, this.makeTable(), [0.45, 0, -0.05], 1.0, 1.05, 'wood');
+		this.addBreakable('MONSTERA', 30, this.makePlant(), [-5.55, 0, 3.25], 0.7, 1.8, 'plant');
+		const television = this.makeTelevision();
+		television.rotation.y = -Math.PI / 2;
 		this.addBreakable(
-			'TELEVISIE',
-			250,
-			this.makeTelevision(),
-			[4.1, 0, -3.75],
-			1.1,
-			1.65,
+			'TV-MEUBEL',
+			330,
+			television,
+			[6.02, 0, -2.15],
+			1.24,
+			1.92,
 			'electronics'
 		);
-		this.addBreakable('BOEKENKAST', 120, this.makeShelf(), [-5.6, 0, -3.65], 1.0, 2.1, 'wood');
+		this.addBreakable('BOEKENKAST', 120, this.makeShelf(), [-5.72, 0, -3.75], 1.0, 2.1, 'wood');
 		this.addBreakable(
 			'KONIJN #30',
 			240,
@@ -2521,12 +2546,12 @@ export class StampKonijnGame {
 			'FRUITSCHAAL',
 			20,
 			this.makeFruitBowl(),
-			[2.7, 1.08, 0.2],
+			[0.45, 1.08, -0.05],
 			0.55,
 			0.45,
 			'ceramic'
 		);
-		this.addBreakable('KRUKJE', 25, this.makeStool(), [0.15, 0, -2.8], 0.62, 0.82, 'wood');
+		this.addBreakable('POEF', 25, this.makeStool(), [-1.55, 0, -1.85], 0.62, 0.82, 'wood');
 		const fridge = this.makeFridge();
 		fridge.rotation.y = -Math.PI / 2;
 		this.kitchenFridgeBreakable = this.addBreakable(
@@ -2996,6 +3021,49 @@ export class StampKonijnGame {
 		return group;
 	}
 
+	private makeLivingRoomSofa() {
+		const group = new THREE.Group();
+		const upholstery = 0x6e8b7b;
+		const cushion = 0x82a08f;
+		group.add(box([2.75, 0.48, 1.08], [0, 0.48, 0], upholstery));
+		group.add(box([2.62, 0.82, 0.28], [0, 0.94, -0.43], upholstery, -0.08));
+		for (const x of [-1.36, 1.36]) {
+			group.add(box([0.34, 0.7, 1.12], [x, 0.66, 0], upholstery));
+			group.add(box([0.11, 0.2, 0.11], [x, 0.1, -0.34], COLORS.ink));
+			group.add(box([0.11, 0.2, 0.11], [x, 0.1, 0.34], COLORS.ink));
+		}
+		for (const x of [-0.78, 0, 0.78]) {
+			const seat = box([0.68, 0.18, 0.78], [x, 0.77, 0.08], cushion);
+			seat.rotation.z = x * 0.015;
+			group.add(seat);
+		}
+		const leftPillow = box([0.52, 0.46, 0.18], [-0.88, 1.07, -0.23], COLORS.orange);
+		leftPillow.rotation.z = -0.17;
+		const rightPillow = box([0.48, 0.42, 0.18], [0.92, 1.05, -0.23], COLORS.pink);
+		rightPillow.rotation.z = 0.2;
+		group.add(leftPillow, rightPillow);
+		return group;
+	}
+
+	private makeLivingRoomSideTable() {
+		const group = new THREE.Group();
+		group.add(cylinder(0.5, 0.5, 0.11, [0, 0.71, 0], 0x79533e, 24));
+		for (const angle of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
+			const leg = cylinder(
+				0.055,
+				0.075,
+				0.64,
+				[Math.cos(angle) * 0.29, 0.33, Math.sin(angle) * 0.29],
+				COLORS.ink,
+				9
+			);
+			leg.rotation.z = Math.cos(angle) * 0.12;
+			leg.rotation.x = Math.sin(angle) * 0.12;
+			group.add(leg);
+		}
+		return group;
+	}
+
 	private makeLamp() {
 		const group = new THREE.Group();
 		group.add(cylinder(0.42, 0.5, 0.16, [0, 0.08, 0], COLORS.ink));
@@ -3045,10 +3113,19 @@ export class StampKonijnGame {
 
 	private makeTelevision() {
 		const group = new THREE.Group();
-		group.add(box([1.85, 1.15, 0.28], [0, 1.18, 0], COLORS.ink));
-		group.add(box([1.58, 0.88, 0.06], [0, 1.2, 0.17], 0x83b7c7));
-		group.add(box([0.16, 0.65, 0.16], [0, 0.48, 0], COLORS.ink));
-		group.add(box([1.1, 0.14, 0.58], [0, 0.1, 0], COLORS.ink));
+		group.add(box([2.45, 0.58, 0.7], [0, 0.29, 0], 0x76503d));
+		for (const x of [-0.78, 0, 0.78]) {
+			group.add(box([0.66, 0.38, 0.045], [x, 0.31, 0.37], x === 0 ? 0x8a634d : 0x6c4939));
+			group.add(box([0.22, 0.035, 0.035], [x, 0.31, 0.405], 0x343937));
+		}
+		for (const x of [-1.02, 1.02]) {
+			group.add(box([0.11, 0.24, 0.11], [x, 0.1, -0.22], COLORS.ink));
+			group.add(box([0.11, 0.24, 0.11], [x, 0.1, 0.22], COLORS.ink));
+		}
+		group.add(box([1.9, 1.1, 0.24], [0, 1.32, 0], COLORS.ink));
+		group.add(box([1.62, 0.82, 0.055], [0, 1.34, 0.15], 0x83b7c7));
+		group.add(box([0.14, 0.45, 0.14], [0, 0.72, 0], COLORS.ink));
+		group.add(box([0.92, 0.1, 0.46], [0, 0.56, 0], COLORS.ink));
 		return group;
 	}
 
@@ -8498,9 +8575,11 @@ export class StampKonijnGame {
 	private breakObject(breakable: Breakable, effect: 'smash' | 'sink' = 'smash') {
 		if (breakable.broken) return;
 		const supportedObject =
-			breakable.label === 'TAFEL'
+			breakable.label === 'SALONTAFEL'
 				? this.breakables.find((item) => item.label === 'FRUITSCHAAL' && !item.broken)
-				: undefined;
+				: breakable.label === 'BIJZETTAFEL'
+					? this.breakables.find((item) => item.label === 'DIKKE VAAS' && !item.broken)
+					: undefined;
 		const releasedKo9Lockdown = breakable === this.ko9ServerBreakable && this.ko9LockdownActive;
 		breakable.broken = true;
 		if (breakable === this.washingMachineBreakable) {
