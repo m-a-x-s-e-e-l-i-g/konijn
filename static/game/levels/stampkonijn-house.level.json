@@ -591,8 +591,8 @@
       "shape": "mesh"
     },
     {
-      "id": "sewer_back_wall_main",
-      "node": "sewer_back_wall_main",
+      "id": "sewer_back_wall",
+      "node": "sewer_back_wall",
       "zone": "sewer",
       "shape": "mesh"
     },

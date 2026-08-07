@@ -75,7 +75,6 @@ interface WaterDroplet {
 
 interface SewerDrip {
 	drop: THREE.Mesh<THREE.SphereGeometry, THREE.MeshPhysicalMaterial>;
-	splash: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
 	startY: number;
 	endY: number;
 	speed: number;
@@ -1524,7 +1523,7 @@ export class StampKonijnGame {
 		this.createSewerDrips();
 		this.createPoopieMonster();
 		const gateLight = new THREE.PointLight(0x81935f, 2.2, 5.4, 2);
-		gateLight.position.set(SEWER_MIN_X + 1.8, SEWER_FLOOR_Y + 2.15, SEWER_CENTER_Z + 0.38);
+		gateLight.position.set(SEWER_MIN_X + 0.7, SEWER_FLOOR_Y + 2.15, SEWER_CENTER_Z + 0.38);
 		this.sewerRoot.add(gateLight);
 
 		const distantGlow = new THREE.PointLight(0xffb260, 8, 11, 2);
@@ -1563,26 +1562,14 @@ export class StampKonijnGame {
 			const [x, startY, z] = dripPositions[index];
 			const drop = new THREE.Mesh(new THREE.SphereGeometry(0.055, 9, 7), dripMaterial.clone());
 			drop.position.set(x, startY, z);
-			drop.scale.set(0.72, 1.75, 0.72);
+			drop.scale.set(0.72, 1.2, 0.72);
 			drop.renderOrder = 2;
-			const splashMaterial = new THREE.MeshBasicMaterial({
-				color: 0x82905a,
-				transparent: true,
-				opacity: 0,
-				depthWrite: false,
-				side: THREE.DoubleSide
-			});
-			const splash = new THREE.Mesh(new THREE.RingGeometry(0.04, 0.072, 16), splashMaterial);
-			splash.position.set(x, SEWER_FLOOR_Y + 0.05, z);
-			splash.rotation.x = -Math.PI / 2;
-			splash.renderOrder = 2;
-			this.sewerRoot.add(drop, splash);
+			this.sewerRoot.add(drop);
 			this.sewerDrips.push({
 				drop,
-				splash,
 				startY,
 				endY: SEWER_FLOOR_Y + 0.07,
-				speed: 0.32 + (index % 3) * 0.055,
+				speed: 0.64 + (index % 3) * 0.08,
 				phase: index * 0.173
 			});
 		}
@@ -8076,16 +8063,11 @@ export class StampKonijnGame {
 		if (!this.sewerRoot.visible) return;
 		for (const drip of this.sewerDrips) {
 			drip.phase = (drip.phase + delta * drip.speed) % 1;
-			const fallProgress = Math.min(1, drip.phase / 0.86);
-			const easedFall = Math.pow(fallProgress, 0.72);
+			const fallProgress = Math.min(1, drip.phase / 0.78);
+			const easedFall = Math.pow(fallProgress, 2.15);
 			drip.drop.position.y = THREE.MathUtils.lerp(drip.startY, drip.endY, easedFall);
-			drip.drop.visible = drip.phase < 0.86;
-			const stretch = 1 + Math.sin(fallProgress * Math.PI) * 0.55;
-			drip.drop.scale.set(0.72, 1.5 * stretch, 0.72);
-
-			const splashProgress = THREE.MathUtils.clamp((drip.phase - 0.84) / 0.16, 0, 1);
-			drip.splash.scale.setScalar(0.65 + splashProgress * 2.25);
-			drip.splash.material.opacity = Math.sin(splashProgress * Math.PI) * 0.5;
+			drip.drop.visible = drip.phase < 0.78;
+			drip.drop.scale.set(0.72, 1.15 + fallProgress * 1.35, 0.72);
 		}
 	}
 

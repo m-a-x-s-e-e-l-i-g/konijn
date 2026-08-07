@@ -1040,8 +1040,6 @@ function addBasement(basement) {
 }
 
 function addSewer(sewer) {
-	const gateWidth = 3.4;
-	const gateRight = SEWER_MIN_X + gateWidth;
 	addCollider(
 		sewer,
 		mesh(
@@ -1062,46 +1060,37 @@ function addSewer(sewer) {
 			0x5a4b3b
 		],
 		[
-			'sewer_back_wall_main',
-			[SEWER_MAX_X - gateRight, SEWER_HEIGHT, 0.18],
-			[(gateRight + SEWER_MAX_X) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
+			'sewer_back_wall',
+			[SEWER_WIDTH, SEWER_HEIGHT, 0.18],
+			[SEWER_CENTER_X, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z],
 			0x3a423b
 		]
 	]) {
 		addCollider(sewer, box(name, size, position, color), 'wall');
 	}
 
-	const gateZ = SEWER_MIN_Z + 0.025;
-	addStatic(
-		sewer,
-		box(
-			'sewer_left_gate_darkness',
-			[gateWidth - 0.08, SEWER_HEIGHT - 0.12, 0.12],
-			[(SEWER_MIN_X + gateRight) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, SEWER_MIN_Z - 0.38],
-			0x111913,
-			{ roughness: 1 }
-		)
-	);
-	for (const [index, x] of [SEWER_MIN_X, gateRight].entries()) {
+	const gateX = SEWER_MIN_X + 0.055;
+	const gateDepth = SEWER_DEPTH - 0.2;
+	for (const [index, z] of [SEWER_MIN_Z + 0.12, SEWER_MAX_Z - 0.12].entries()) {
 		addStatic(
 			sewer,
 			box(
 				`sewer_left_gate_post_${index}`,
 				[0.2, SEWER_HEIGHT, 0.2],
-				[x, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ],
+				[gateX, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, z],
 				0x865d42,
 				{ roughness: 0.58, metalness: 0.62 }
 			)
 		);
 	}
 	for (let index = 0; index < 8; index += 1) {
-		const x = SEWER_MIN_X + 0.22 + (index * (gateWidth - 0.44)) / 7;
+		const z = SEWER_MIN_Z + 0.22 + (index * (SEWER_DEPTH - 0.44)) / 7;
 		addStatic(
 			sewer,
 			box(
 				`sewer_left_gate_bar_${index}`,
-				[0.085, SEWER_HEIGHT - 0.24, 0.09],
-				[x, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ + 0.02],
+				[0.09, SEWER_HEIGHT - 0.24, 0.085],
+				[gateX + 0.02, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, z],
 				index % 3 === 0 ? 0x93694a : 0x725343,
 				{ roughness: 0.5, metalness: 0.7 }
 			)
@@ -1112,8 +1101,8 @@ function addSewer(sewer) {
 			sewer,
 			box(
 				`sewer_left_gate_rail_${index}`,
-				[gateWidth, 0.13, 0.12],
-				[(SEWER_MIN_X + gateRight) / 2, y, gateZ + 0.04],
+				[0.13, 0.13, gateDepth],
+				[gateX + 0.04, y, SEWER_CENTER_Z],
 				0x805c45,
 				{ roughness: 0.55, metalness: 0.66 }
 			)
@@ -1122,23 +1111,9 @@ function addSewer(sewer) {
 	addStatic(
 		sewer,
 		box(
-			'sewer_left_gate_brace',
-			[Math.hypot(gateWidth - 0.5, SEWER_HEIGHT - 0.85), 0.11, 0.1],
-			[(SEWER_MIN_X + gateRight) / 2, SEWER_FLOOR_Y + SEWER_HEIGHT / 2, gateZ + 0.07],
-			0x896247,
-			{
-				roughness: 0.54,
-				metalness: 0.64,
-				rotation: [0, 0, Math.atan2(SEWER_HEIGHT - 0.85, gateWidth - 0.5)]
-			}
-		)
-	);
-	addStatic(
-		sewer,
-		box(
 			'sewer_left_gate_lock',
 			[0.34, 0.42, 0.16],
-			[gateRight - 0.4, SEWER_FLOOR_Y + SEWER_HEIGHT * 0.52, gateZ + 0.13],
+			[gateX + 0.16, SEWER_FLOOR_Y + SEWER_HEIGHT * 0.52, SEWER_MAX_Z - 0.38],
 			0x8a6b43,
 			{ roughness: 0.48, metalness: 0.72 }
 		)
@@ -1192,21 +1167,6 @@ function addSewer(sewer) {
 				[0.16, shaftHeight, SEWER_DEPTH - 0.18],
 				[x, SEWER_CEILING_Y + shaftHeight / 2, SEWER_CENTER_Z],
 				0x3f473f
-			)
-		);
-	}
-	for (const [index, y] of [SEWER_CEILING_Y + 0.28, -2.7, -1.3].entries()) {
-		addStatic(
-			sewer,
-			mesh(
-				`sewer_shaft_ring_${index}`,
-				new THREE.TorusGeometry(SEWER_SHAFT_HALF_WIDTH + 0.12, 0.07, 8, 24),
-				0x76533b,
-				[TOILET_X, y, SEWER_CENTER_Z],
-				{
-					rotation: [Math.PI / 2, 0, 0],
-					roughness: 0.86
-				}
 			)
 		);
 	}
