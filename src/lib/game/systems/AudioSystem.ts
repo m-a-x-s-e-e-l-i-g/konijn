@@ -433,6 +433,44 @@ export class AudioSystem {
 		oscillator.stop(now + duration);
 	}
 
+	playWashingMachineRattle(power = 1) {
+		if (this.muted) return;
+		this.ensure();
+		const audio = this.context;
+		if (!audio) return;
+		const strength = clamp(power, 0.45, 1.25);
+		const now = audio.currentTime;
+		const duration = 0.09;
+		const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+		const noise = buffer.getChannelData(0);
+		for (let index = 0; index < noise.length; index += 1) {
+			const progress = index / noise.length;
+			noise[index] = (Math.random() * 2 - 1) * Math.pow(1 - progress, 2.4);
+		}
+		const source = audio.createBufferSource();
+		const filter = audio.createBiquadFilter();
+		const noiseGain = audio.createGain();
+		source.buffer = buffer;
+		filter.type = 'bandpass';
+		filter.frequency.value = 520 + Math.random() * 220;
+		filter.Q.value = 0.7;
+		noiseGain.gain.setValueAtTime(0.035 * strength, now);
+		noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		source.connect(filter).connect(noiseGain).connect(this.getAudioOutput(audio));
+		source.start(now);
+
+		const motor = audio.createOscillator();
+		const motorGain = audio.createGain();
+		motor.type = 'sawtooth';
+		motor.frequency.setValueAtTime(58 + Math.random() * 14, now);
+		motor.frequency.exponentialRampToValueAtTime(42, now + duration);
+		motorGain.gain.setValueAtTime(0.018 * strength, now);
+		motorGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+		motor.connect(motorGain).connect(this.getAudioOutput(audio));
+		motor.start(now);
+		motor.stop(now + duration);
+	}
+
 	playKo9AlarmPulse() {
 		if (this.muted) return;
 		this.ensure();

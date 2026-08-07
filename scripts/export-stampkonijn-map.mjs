@@ -992,8 +992,7 @@ function addBasement(basement) {
 			[-4.25, BASEMENT_FLOOR_Y + 0.35, -3.35],
 			0x8b6548,
 			-0.12
-		],
-		['basement_old_cabinet', [1.35, 1.72, 0.42], [7.8, BASEMENT_FLOOR_Y + 0.86, -4.45], 0x4e514b, 0]
+		]
 	]) {
 		addStatic(basement, box(name, size, position, color, { rotation: [0, rotation, 0] }));
 	}

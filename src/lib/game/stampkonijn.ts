@@ -627,6 +627,15 @@ export class StampKonijnGame {
 	private kitchenHatchHole = new THREE.Group();
 	private basementEntryCooldown = 0;
 	private basementLights: THREE.PointLight[] = [];
+	private washingMachineBreakable: Breakable | null = null;
+	private washingMachineActive = false;
+	private washingMachineTime = 0;
+	private washingMachineRattleCooldown = 0;
+	private washingMachineVelocity = new THREE.Vector3(1.25, 0, 0.8);
+	private basementFalseWallBreakable: Breakable | null = null;
+	private basementFalseWallDamage = new THREE.Group();
+	private basementGrowBreakables: Breakable[] = [];
+	private basementGrowFan = new THREE.Group();
 	private upstairsLights: THREE.PointLight[] = [];
 	private sewerLight = new THREE.PointLight(0xb7cb74, 0, 40, 2);
 	private sewerObstacles: SewerObstacle[] = [];
@@ -2726,6 +2735,55 @@ export class StampKonijnGame {
 			1,
 			'basement'
 		);
+		const workbench = this.makeBasementWorkbench();
+		workbench.rotation.y = Math.PI;
+		this.addBreakable(
+			'WERKBANK',
+			310,
+			workbench,
+			[-4.2, BASEMENT_FLOOR_Y, 3.88],
+			1.32,
+			1.82,
+			'wood',
+			2,
+			'basement'
+		);
+		this.washingMachineBreakable = this.addBreakable(
+			'OUDE WASMACHINE',
+			460,
+			this.makeWashingMachine(),
+			[11.35, BASEMENT_FLOOR_Y, 0.55],
+			0.78,
+			1.34,
+			'metal',
+			3,
+			'basement'
+		);
+		this.basementFalseWallBreakable = this.addBreakable(
+			'VERDACHTE KELDERKAST',
+			280,
+			this.makeBasementFalseWall(),
+			[7.25, BASEMENT_FLOOR_Y, -4.25],
+			1.68,
+			2.55,
+			'wood',
+			2,
+			'basement',
+			false
+		);
+		this.basementGrowBreakables.push(
+			this.addBreakable(
+				'ILLEGALE WORTELKWEEK',
+				880,
+				this.makeBasementCarrotGrow(),
+				[7.25, BASEMENT_FLOOR_Y, -4.67],
+				1.58,
+				2.62,
+				'electronics',
+				2,
+				'basement'
+			)
+		);
 
 		this.addBreakable('BBQ', 180, this.makeBarbecue(), [-1.7, 0, -10.1], 0.82, 1.45, 'metal');
 		this.addBreakable(
@@ -3647,6 +3705,232 @@ export class StampKonijnGame {
 		return group;
 	}
 
+	private makeBasementWorkbench() {
+		const group = new THREE.Group();
+		const oldWood = 0x65452f;
+		const darkWood = 0x473126;
+		group.add(box([2.45, 0.18, 0.78], [0, 0.92, 0], oldWood));
+		for (const x of [-1.02, 1.02]) {
+			for (const z of [-0.27, 0.27]) {
+				group.add(box([0.15, 0.88, 0.15], [x, 0.44, z], darkWood));
+			}
+		}
+		group.add(box([2.34, 0.82, 0.11], [0, 1.36, -0.33], 0x786149));
+		for (let column = 0; column < 11; column += 1) {
+			for (let row = 0; row < 4; row += 1) {
+				const hole = shadowMesh(new THREE.CircleGeometry(0.018, 7), material(0x342c27));
+				hole.position.set(-1.03 + column * 0.205, 1.08 + row * 0.18, -0.271);
+				group.add(hole);
+			}
+		}
+
+		const hammerHandle = box([0.09, 0.55, 0.07], [-0.68, 1.42, -0.24], 0x8a5d38);
+		hammerHandle.rotation.z = -0.2;
+		group.add(hammerHandle);
+		const hammerHead = box([0.4, 0.13, 0.12], [-0.74, 1.7, -0.23], 0x4c5351);
+		hammerHead.rotation.z = -0.2;
+		group.add(hammerHead);
+		for (const [index, x] of [-0.12, 0.18, 0.48].entries()) {
+			const tool = box(
+				[0.075, 0.48 - index * 0.045, 0.075],
+				[x, 1.42, -0.235],
+				index === 1 ? 0xcf6c39 : 0x485351
+			);
+			tool.rotation.z = (index - 1) * 0.12;
+			group.add(tool);
+		}
+
+		for (const [index, x] of [-0.8, 0.05, 0.72].entries()) {
+			const can = cylinder(
+				0.19 - index * 0.015,
+				0.19 - index * 0.015,
+				0.34 + index * 0.04,
+				[x, 1.18 + index * 0.02, 0.12],
+				[0xc36a3d, 0x6b8768, 0x577c91][index],
+				14
+			);
+			group.add(can);
+			group.add(cylinder(0.13, 0.13, 0.025, [x, 1.36 + index * 0.04, 0.12], 0xc7bda4, 14));
+		}
+
+		for (const [index, x] of [0.98, 1.14].entries()) {
+			const jar = shadowMesh(
+				new THREE.CylinderGeometry(0.105, 0.12, 0.3 + index * 0.05, 12),
+				new THREE.MeshPhysicalMaterial({
+					color: 0xaab8aa,
+					roughness: 0.18,
+					transparent: true,
+					opacity: 0.62
+				})
+			);
+			jar.position.set(x, 1.16 + index * 0.025, 0.08);
+			group.add(jar);
+		}
+
+		for (let index = 0; index < 9; index += 1) {
+			const nail = cylinder(0.012, 0.018, 0.18 + (index % 3) * 0.035, [0, 0, 0], 0x777d7a, 7);
+			nail.rotation.x = Math.PI / 2;
+			nail.rotation.z = (index % 4) * 0.31;
+			nail.position.set(-0.42 + (index % 5) * 0.18, 1.035, -0.02 + Math.floor(index / 5) * 0.15);
+			group.add(nail);
+		}
+		const workLight = shadowMesh(
+			new THREE.SphereGeometry(0.075, 10, 7),
+			new THREE.MeshStandardMaterial({
+				color: 0xffd394,
+				emissive: 0xffa64a,
+				emissiveIntensity: 2.2,
+				roughness: 0.3
+			})
+		);
+		workLight.position.set(0.02, 1.73, 0.18);
+		group.add(workLight);
+		const workLightGlow = new THREE.PointLight(0xffb96c, 3.4, 3.2, 2);
+		workLightGlow.position.set(0.02, 1.62, 0.42);
+		group.add(workLightGlow);
+		return group;
+	}
+
+	private makeWashingMachine() {
+		const group = new THREE.Group();
+		group.add(box([1.24, 1.28, 1.04], [0, 0.66, 0], 0xb9b5a6));
+		group.add(box([1.12, 0.25, 0.06], [0, 1.12, 0.55], 0xa49d8d));
+		const drumGlass = shadowMesh(
+			new THREE.CircleGeometry(0.35, 24),
+			new THREE.MeshPhysicalMaterial({
+				color: 0x334247,
+				roughness: 0.12,
+				metalness: 0.18,
+				clearcoat: 0.62
+			})
+		);
+		drumGlass.position.set(0, 0.61, 0.535);
+		group.add(drumGlass);
+		const drumRim = shadowMesh(
+			new THREE.TorusGeometry(0.36, 0.075, 10, 28),
+			material(0x696e69, 0.46, 0.28)
+		);
+		drumRim.position.set(0, 0.61, 0.57);
+		group.add(drumRim);
+		group.add(cylinder(0.09, 0.09, 0.075, [-0.36, 1.14, 0.59], 0x454b48, 14));
+		for (const x of [0.06, 0.25, 0.43]) {
+			group.add(cylinder(0.035, 0.035, 0.075, [x, 1.14, 0.59], 0xc4b36c, 10));
+		}
+		for (const x of [-0.46, 0.46]) {
+			group.add(box([0.18, 0.11, 0.18], [x, 0.055, 0.28], 0x3a3935));
+			group.add(box([0.18, 0.11, 0.18], [x, 0.055, -0.28], 0x3a3935));
+		}
+		const rust = box([0.28, 0.035, 0.025], [0.39, 0.34, 0.535], 0x8a4d34);
+		rust.rotation.z = -0.28;
+		group.add(rust);
+		return group;
+	}
+
+	private makeBasementFalseWall() {
+		const group = new THREE.Group();
+		group.add(box([3.1, 2.48, 0.28], [0, 1.24, 0], 0x4d4c45));
+		for (const x of [-1.02, 0, 1.02]) {
+			group.add(box([0.93, 2.22, 0.06], [x, 1.21, 0.17], 0x59584f));
+			group.add(box([0.055, 0.36, 0.055], [x + 0.31, 1.2, 0.225], 0x292b29));
+		}
+		group.add(box([3.24, 0.14, 0.36], [0, 2.43, 0], 0x3f3f39));
+
+		this.basementFalseWallDamage = new THREE.Group();
+		for (const [length, x, y, angle] of [
+			[0.76, -0.38, 1.42, -0.72],
+			[0.62, -0.12, 1.12, 0.58],
+			[0.48, 0.18, 0.9, -0.48],
+			[0.38, 0.36, 0.72, 0.78]
+		] as Array<[number, number, number, number]>) {
+			const crack = box([0.035, length, 0.025], [x, y, 0.218], 0x171817);
+			crack.rotation.z = angle;
+			this.basementFalseWallDamage.add(crack);
+		}
+		this.basementFalseWallDamage.visible = false;
+		group.add(this.basementFalseWallDamage);
+		return group;
+	}
+
+	private makeBasementCarrotGrow() {
+		const group = new THREE.Group();
+		const frameColor = 0x2e3631;
+		group.add(box([3.02, 2.5, 0.14], [0, 1.25, -0.02], 0x202822));
+		for (const x of [-1.42, 1.42]) {
+			group.add(box([0.1, 2.52, 0.46], [x, 1.26, 0.14], frameColor));
+		}
+		for (const y of [0.12, 1.23, 2.46]) {
+			group.add(box([2.9, 0.1, 0.48], [0, y, 0.14], frameColor));
+		}
+
+		for (const y of [0.48, 1.58]) {
+			group.add(box([2.62, 0.33, 0.48], [0, y, 0.25], 0x4b3729));
+			group.add(box([2.48, 0.11, 0.39], [0, y + 0.19, 0.28], 0x281f19));
+		}
+
+		const plantPositions: Array<[number, number, number]> = [];
+		for (const y of [0.73, 1.83]) {
+			for (const x of [-1.03, -0.62, -0.21, 0.21, 0.62, 1.03]) {
+				plantPositions.push([x, y, 0.34]);
+			}
+		}
+		for (const [index, [x, y, z]] of plantPositions.entries()) {
+			const carrot = shadowMesh(
+				new THREE.ConeGeometry(0.075, 0.25, 9),
+				material(index % 3 === 0 ? 0xe56f2e : 0xcf6328, 0.82)
+			);
+			carrot.position.set(x, y - 0.06, z);
+			group.add(carrot);
+			for (const direction of [-1, 0, 1]) {
+				const leaf = shadowMesh(new THREE.SphereGeometry(0.06, 7, 5), material(0x60834d, 0.92));
+				leaf.scale.set(0.52, 2.3, 0.48);
+				leaf.rotation.z = direction * 0.48;
+				leaf.position.set(x + direction * 0.045, y + 0.13, z + direction * 0.014);
+				group.add(leaf);
+			}
+		}
+
+		const irrigationPipe = cylinder(0.045, 0.045, 2.55, [0, 1.14, 0.42], 0x607c78, 10);
+		irrigationPipe.rotation.z = Math.PI / 2;
+		group.add(irrigationPipe);
+		for (const x of [-1.05, -0.52, 0, 0.52, 1.05]) {
+			group.add(cylinder(0.018, 0.018, 0.34, [x, 0.98, 0.42], 0x607c78, 7));
+		}
+
+		const lampMaterial = new THREE.MeshStandardMaterial({
+			color: 0xffd37c,
+			emissive: 0xffa93b,
+			emissiveIntensity: 2.1,
+			roughness: 0.34
+		});
+		for (const x of [-0.72, 0.72]) {
+			group.add(box([1.2, 0.12, 0.32], [x, 2.28, 0.22], 0x3b403b));
+			const glow = shadowMesh(new THREE.BoxGeometry(1.04, 0.035, 0.24), lampMaterial.clone());
+			glow.position.set(x, 2.21, 0.32);
+			group.add(glow);
+			const light = new THREE.PointLight(0xffbd68, 5.2, 3.6, 2);
+			light.position.set(x, 2.08, 0.55);
+			group.add(light);
+		}
+
+		const fanRing = shadowMesh(
+			new THREE.TorusGeometry(0.29, 0.045, 8, 24),
+			material(0x687069, 0.52, 0.3)
+		);
+		fanRing.position.set(1.05, 1.63, 0.39);
+		group.add(fanRing);
+		this.basementGrowFan = new THREE.Group();
+		this.basementGrowFan.position.set(1.05, 1.63, 0.42);
+		for (let index = 0; index < 4; index += 1) {
+			const blade = box([0.09, 0.24, 0.035], [0, 0.14, 0], 0x929a91);
+			blade.rotation.z = (index / 4) * Math.PI * 2;
+			blade.position.applyAxisAngle(new THREE.Vector3(0, 0, 1), blade.rotation.z);
+			this.basementGrowFan.add(blade);
+		}
+		this.basementGrowFan.add(cylinder(0.065, 0.065, 0.06, [0, 0, 0], 0x343a36, 10));
+		group.add(this.basementGrowFan);
+		return group;
+	}
+
 	private makeArtwork(source: string) {
 		const group = new THREE.Group();
 		group.add(box([1.55, 1.9, 0.14], [0, 0, 0], COLORS.ink));
@@ -4476,6 +4760,7 @@ export class StampKonijnGame {
 		}
 		this.updateKo9Hq(delta);
 		this.updateKo9Lighting(delta);
+		this.updateBasementFeatures(delta);
 		if (this.weaponHeld && this.weaponCooldown <= 0) {
 			this.useWeapon();
 		}
@@ -4541,6 +4826,73 @@ export class StampKonijnGame {
 		);
 		this.rabbitSquash.position.y = -PLAYER_HEIGHT / 2 + squashEase * 0.03;
 		this.emitHud();
+	}
+
+	private updateBasementFeatures(delta: number) {
+		const growRoomRevealed = Boolean(this.basementFalseWallBreakable?.broken);
+		const growInstallation = this.basementGrowBreakables[0];
+		if (growRoomRevealed && growInstallation && !growInstallation.broken) {
+			this.basementGrowFan.rotation.z -= delta * (this.reducedMotion ? 2.2 : 8.5);
+		}
+
+		const washingMachine = this.washingMachineBreakable;
+		if (!washingMachine || washingMachine.broken || !this.washingMachineActive) return;
+		if (!this.playerInBasement) {
+			washingMachine.group.position.y = washingMachine.basePosition.y;
+			return;
+		}
+
+		this.washingMachineTime += delta;
+		this.washingMachineRattleCooldown = Math.max(0, this.washingMachineRattleCooldown - delta);
+		const turn =
+			Math.sin(this.washingMachineTime * 1.9) * 0.78 +
+			Math.sin(this.washingMachineTime * 0.73 + 1.4) * 0.46;
+		const turnAngle = turn * delta;
+		const velocityX = this.washingMachineVelocity.x;
+		const velocityZ = this.washingMachineVelocity.z;
+		this.washingMachineVelocity.x =
+			velocityX * Math.cos(turnAngle) - velocityZ * Math.sin(turnAngle);
+		this.washingMachineVelocity.z =
+			velocityX * Math.sin(turnAngle) + velocityZ * Math.cos(turnAngle);
+		const targetSpeed = 1.35 + Math.sin(this.washingMachineTime * 3.1) * 0.34;
+		this.washingMachineVelocity.setLength(targetSpeed);
+		washingMachine.group.position.addScaledVector(this.washingMachineVelocity, delta);
+
+		const minX = 10.05;
+		const maxX = BASEMENT_MAX_X - washingMachine.radius - 0.12;
+		const minZ = -1.65;
+		const maxZ = 1.85;
+		if (washingMachine.group.position.x < minX || washingMachine.group.position.x > maxX) {
+			washingMachine.group.position.x = THREE.MathUtils.clamp(
+				washingMachine.group.position.x,
+				minX,
+				maxX
+			);
+			this.washingMachineVelocity.x *= -1;
+		}
+		if (washingMachine.group.position.z < minZ || washingMachine.group.position.z > maxZ) {
+			washingMachine.group.position.z = THREE.MathUtils.clamp(
+				washingMachine.group.position.z,
+				minZ,
+				maxZ
+			);
+			this.washingMachineVelocity.z *= -1;
+		}
+
+		const stride = this.washingMachineTime * 17;
+		const motionScale = this.reducedMotion ? 0.36 : 1;
+		washingMachine.group.position.y =
+			washingMachine.basePosition.y + Math.abs(Math.sin(stride)) * 0.105 * motionScale;
+		washingMachine.group.rotation.set(
+			Math.cos(stride * 0.73) * 0.075 * motionScale,
+			Math.atan2(this.washingMachineVelocity.x, this.washingMachineVelocity.z),
+			Math.sin(stride) * 0.13 * motionScale
+		);
+
+		if (this.washingMachineRattleCooldown <= 0) {
+			this.washingMachineRattleCooldown = 0.18 + Math.random() * 0.07;
+			this.audio.playWashingMachineRattle(0.75 + washingMachine.stampCount * 0.16);
+		}
 	}
 
 	private syncUpstairsVisibility() {
@@ -5407,7 +5759,9 @@ export class StampKonijnGame {
 	}
 
 	private isBreakableActive(breakable: Breakable) {
-		return breakable.biome === this.getActiveBiome();
+		const hiddenGrowInstallation =
+			this.basementGrowBreakables.includes(breakable) && !this.basementFalseWallBreakable?.broken;
+		return breakable.biome === this.getActiveBiome() && !hiddenGrowInstallation;
 	}
 
 	private isObjectVisibleInScene(object: THREE.Object3D) {
@@ -5430,6 +5784,7 @@ export class StampKonijnGame {
 			const sinkingToilet = breakable === this.toiletBreakable && this.toiletSinking;
 			breakable.group.visible = breakable.biome === biome && (!breakable.broken || sinkingToilet);
 		}
+		this.syncBasementGrowRoomVisibility();
 		this.syncGroundRoomVisibility();
 		this.syncUpstairsVisibility();
 
@@ -6977,6 +7332,14 @@ export class StampKonijnGame {
 		if (source === 'stamp') {
 			this.playStampImpactSample(Math.min(1, this.velocity.length() / 12));
 		}
+		if (breakable === this.washingMachineBreakable) {
+			this.damageWashingMachine(breakable, source);
+			return;
+		}
+		if (breakable === this.basementFalseWallBreakable) {
+			this.damageBasementFalseWall(breakable, source);
+			return;
+		}
 		if (breakable === this.ko9AlarmButtonBreakable) {
 			if (source === 'bullet') {
 				this.emitFeedback('NOODKNOP: STAMP OM LOCKDOWN TE ACTIVEREN!');
@@ -7058,6 +7421,61 @@ export class StampKonijnGame {
 		this.pendingStampFeedback =
 			stampsLeft === 1 ? 'KRAK! NOG 1 STAMP!' : `KRAK! NOG ${stampsLeft} STAMPEN!`;
 		this.cameraShake = Math.max(this.cameraShake, 0.42);
+	}
+
+	private damageWashingMachine(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (source === 'bullet') {
+			this.emitFeedback('DE WASMACHINE WIL EEN KONTSTAMP, GEEN KOGEL!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.pendingStampFeedback = 'WASMACHINE GESLOOPT! EINDELIJK STIL!';
+			this.breakObject(breakable);
+			return;
+		}
+
+		const awayFromRabbit = breakable.group.position.clone().sub(this.player.position).setY(0);
+		if (awayFromRabbit.lengthSq() < 0.01) awayFromRabbit.set(1, 0, 0.65);
+		this.washingMachineVelocity.copy(awayFromRabbit.normalize()).multiplyScalar(1.55);
+		this.washingMachineActive = true;
+		this.washingMachineRattleCooldown = 0;
+		this.audio.playWashingMachineRattle(1.18);
+		this.cameraShake = Math.max(this.cameraShake, 0.58);
+		this.pendingStampFeedback =
+			breakable.stampCount === 1
+				? 'DE WASMACHINE ONTWAAKT EN LOOPT WEG!'
+				: 'HIJ WORDT NOG GEKKER! NOG 1 STAMP!';
+	}
+
+	private damageBasementFalseWall(breakable: Breakable, source: 'stamp' | 'bullet') {
+		if (source === 'bullet') {
+			this.emitFeedback('DE VERDACHTE KAST MOET JE OPENSTAMPEN!');
+			return;
+		}
+		if (breakable.lastStampSequence === this.stampSequence) return;
+		breakable.lastStampSequence = this.stampSequence;
+		breakable.stampCount += 1;
+		if (breakable.stampCount >= breakable.stampsRequired) {
+			this.pendingStampFeedback = 'VALSE WAND! ILLEGALE WORTELKWEEK ONTDEKT!';
+			this.breakObject(breakable);
+			return;
+		}
+		this.basementFalseWallDamage.visible = true;
+		this.pendingStampFeedback = 'HOLLE KRAK... DIT IS GEEN ECHTE KAST!';
+		this.cameraShake = Math.max(this.cameraShake, 0.5);
+	}
+
+	private syncBasementGrowRoomVisibility() {
+		const revealed = Boolean(
+			this.basementFalseWallBreakable?.broken && this.getActiveBiome() === 'basement'
+		);
+		for (const breakable of this.basementGrowBreakables) {
+			breakable.group.visible = revealed && !breakable.broken;
+		}
 	}
 
 	private activateKo9Lockdown() {
@@ -7230,6 +7648,10 @@ export class StampKonijnGame {
 				: undefined;
 		const releasedKo9Lockdown = breakable === this.ko9ServerBreakable && this.ko9LockdownActive;
 		breakable.broken = true;
+		if (breakable === this.washingMachineBreakable) {
+			this.washingMachineActive = false;
+			breakable.group.position.y = breakable.basePosition.y;
+		}
 		if (breakable === this.poolBreakable) this.rabbitInPoolWater = false;
 		if (breakable === this.ko9ServerBreakable) {
 			this.ko9ServerFaultLevel = 1;
@@ -7249,6 +7671,7 @@ export class StampKonijnGame {
 		this.spawnGarbagePile(breakable);
 		if (breakable === this.ko9ArchiveBreakable) this.spawnClassifiedDocuments(breakable);
 		if (breakable === this.poolBreakable) this.spawnPoolPuddle(breakable);
+		if (breakable === this.basementFalseWallBreakable) this.syncBasementGrowRoomVisibility();
 		this.events.emit('impact', { label: breakable.label, value: points });
 		if (breakable === this.gunRackBreakable) this.dropG36Pickup();
 		if (breakable === this.ko9ServerBreakable) {
@@ -8440,6 +8863,12 @@ export class StampKonijnGame {
 			this.ko9AlarmRotors[index].rotation.y = 0;
 		}
 		this.basementEntryCooldown = 0;
+		this.washingMachineActive = false;
+		this.washingMachineTime = 0;
+		this.washingMachineRattleCooldown = 0;
+		this.washingMachineVelocity.set(1.25, 0, 0.8);
+		this.basementFalseWallDamage.visible = false;
+		this.basementGrowFan.rotation.z = 0;
 		this.toiletHoleOpen = false;
 		this.kitchenHatchOpen = false;
 		this.toiletSinking = false;
