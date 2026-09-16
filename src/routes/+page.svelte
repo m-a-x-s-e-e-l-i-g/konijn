@@ -12,6 +12,7 @@
 	import { Howl } from 'howler';
 	import { Image } from '@unpic/svelte';
 	import { artworkCollection, getArtworkById, type ArtworkMetadata } from '$lib/data/artwork-tags';
+	import StampkonijnBanner from '$lib/components/StampkonijnBanner.svelte';
 
 	// Image preview modal
 	let previewModalOpen = $state(false);
@@ -365,17 +366,33 @@
 			}
 		}
 
-		window.addEventListener('keydown', (event) => {
+		const handleKeydown = (event: KeyboardEvent) => {
 			if (event.key === 'n') {
 				switchWeapon();
 			} else if (event.key === 'x') {
 				shoot();
 			}
-		});
+		};
+		window.addEventListener('keydown', handleKeydown);
 
 		$effect(() => {
 			displayWeapon();
 		});
+
+		return () => {
+			tl.kill();
+			if (rabbitTimeline === tl) rabbitTimeline = null;
+			window.removeEventListener('keydown', handleKeydown);
+			bounceSound.stop();
+			bounceSound.unload();
+			weapons.forEach(({ sound, equipSound }) => {
+				sound.stop();
+				sound.unload();
+				equipSound.stop();
+				equipSound.unload();
+			});
+			document.querySelectorAll('.poop-particle').forEach((particle) => particle.remove());
+		};
 	});
 </script>
 
@@ -539,6 +556,7 @@
 	</div>
 </div>
 <main class="pb-5">
+	<StampkonijnBanner />
 	<div id="title" class="my-10 p-4 text-center">
 		<h1 class="text-2xl sm:text-3xl md:text-4xl">
 			🐰 <span class="rubik-regular">Konine</span> -
@@ -546,12 +564,6 @@
 			- <span class="indie-flower-regular">Konijn</span> 🐇
 		</h1>
 		<p class="text-lg">The bounciest rabbit in the world!</p>
-		<a
-			href="/stampkonijn"
-			class="chewy-regular mt-5 inline-flex -rotate-2 items-center gap-2 rounded-md border-[3px] border-black bg-orange-500 px-5 py-3 text-xl text-black shadow-[5px_5px_0_#000] transition-transform duration-200 hover:-translate-y-1 hover:rotate-1 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-orange-500"
-		>
-			🐇 SPEEL STAMPKONIJN <span aria-hidden="true">→</span>
-		</a>
 	</div>
 
 	<div id="image-container">

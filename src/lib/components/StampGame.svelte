@@ -235,7 +235,7 @@
 	{/if}
 
 	<header class="game-nav">
-		<a href="/" class="back-link" aria-label="Terug naar de Konine kunstgalerie">
+		<a href="/" class="back-link" aria-label="Terug naar de Konine kunstgalerie" data-sveltekit-reload>
 			<span aria-hidden="true">←</span>
 			<span>GALERIE</span>
 		</a>
@@ -301,7 +301,7 @@
 	{#if error}
 		<div class="game-message game-message--error" role="alert">
 			<p>{error}</p>
-			<a href="/">TERUG NAAR DE GALERIE</a>
+			<a href="/" data-sveltekit-reload>TERUG NAAR DE GALERIE</a>
 		</div>
 	{:else if hud.phase === 'idle'}
 		<div class="start-layer">
@@ -342,7 +342,7 @@
 					: `${hud.destroyed} VAN DE ${hud.total} SPULLEN KAPOT.`}
 			</p>
 			<button class="start-button" type="button" onclick={startGame}>NOG EEN KEER STAMPEN</button>
-			<a href="/" class="finish-link">BEKIJK DE KUNST DIE NOG HEEL IS</a>
+			<a href="/" class="finish-link" data-sveltekit-reload>BEKIJK DE KUNST DIE NOG HEEL IS</a>
 		</div>
 	{/if}
 
