@@ -12,6 +12,9 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint ."
 	},
+	"overrides": {
+		"cookie": "0.7.2"
+	},
 	"devDependencies": {
 		"@sveltejs/adapter-netlify": "^5.0.2",
 		"@sveltejs/kit": "^2.70.1",
