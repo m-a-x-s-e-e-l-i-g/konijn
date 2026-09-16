@@ -3,5 +3,7 @@ declare module 'howler' {
     constructor(options: any)
     play(id?: string | number): number
     rate(val?: number, id?: number): number
+    stop(id?: string | number): Howl
+    unload(): Howl
   }
 }
