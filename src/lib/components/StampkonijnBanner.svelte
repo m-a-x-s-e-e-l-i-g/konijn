@@ -75,7 +75,6 @@
 		const loader = new GLTFLoader();
 		const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 		let reducedMotion = reducedMotionQuery.matches;
-		let visible = true;
 		let animationFrame = 0;
 		let resizeObserver: ResizeObserver | null = null;
 
@@ -122,14 +121,6 @@
 		};
 		reducedMotionQuery.addEventListener('change', handleMotionPreference);
 
-		const visibilityObserver = new IntersectionObserver(
-			([entry]) => {
-				visible = entry?.isIntersecting ?? true;
-			},
-			{ threshold: 0.01 }
-		);
-		visibilityObserver.observe(host);
-
 		resizeObserver = new ResizeObserver(updateSize);
 		resizeObserver.observe(host);
 		window.addEventListener('resize', updateSize);
@@ -138,7 +129,6 @@
 		const clock = new THREE.Clock();
 		const animate = () => {
 			animationFrame = requestAnimationFrame(animate);
-			if (!visible) return;
 
 			const elapsed = clock.getElapsedTime();
 			if (!reducedMotion) {
@@ -152,7 +142,6 @@
 
 		return () => {
 			cancelAnimationFrame(animationFrame);
-			visibilityObserver.disconnect();
 			resizeObserver?.disconnect();
 			window.removeEventListener('resize', updateSize);
 			reducedMotionQuery.removeEventListener('change', handleMotionPreference);

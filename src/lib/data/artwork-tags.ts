@@ -34,7 +34,7 @@ export const artworkCollection: ArtworkMetadata[] = [
   { id: 7, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 6, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
   { id: 5, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
-  { id: 4, tags: ['paper', 'A4', 'RESERVED'] },
+  { id: 4, tags: ['paper', 'A4', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 3, tags: ['paper', 'A4'] },
   { id: 2, tags: ['canvas', '30x40cm'] },
   { id: 1, tags: ['cardboard', '26x27cm'] },
