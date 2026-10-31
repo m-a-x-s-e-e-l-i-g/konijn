@@ -17,8 +17,8 @@
 		"postcss-selector-parser": "7.1.6"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-netlify": "^5.0.2",
-		"@sveltejs/kit": "^2.70.1",
+		"@sveltejs/adapter-netlify": "^7.0.1",
+		"@sveltejs/kit": "^3.1.1",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@types/eslint": "^9.6.0",
 		"@types/three": "^0.185.1",
