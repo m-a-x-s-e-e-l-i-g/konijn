@@ -50,7 +50,7 @@
 		} = {
 			src: `/images/artwork/${artwork.id}.webp`,
 			alt: artwork.title || `Konijn Artwork ${artwork.id}`,
-			aspectRatio: 12 / 15,
+			aspectRatio: artwork.aspectRatio ?? 12 / 15,
 			width: 800,
 			background: 'auto'
 		};

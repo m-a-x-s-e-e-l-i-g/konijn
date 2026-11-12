@@ -2,12 +2,14 @@
 export interface ArtworkMetadata {
   id: number;
   tags: string[];
+  aspectRatio?: number;
   title?: string;  // Optional title for the artwork
   description?: string; // Optional description
 }
 
 // Artwork metadata collection
 export const artworkCollection: ArtworkMetadata[] = [
+  { id: 31, tags: ['canvas', '15x15cm', 'SOLD'], aspectRatio: 1 },
   { id: 30, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 29, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass', 'SOLD'] },
   { id: 28, tags: ['canvas', '24x30cm', 'Frameless Anti-Reflective Glass'] },
